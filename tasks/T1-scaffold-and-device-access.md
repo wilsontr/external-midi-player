@@ -14,7 +14,7 @@ Stand up the static Vite + TypeScript app (no backend, one runtime dependency: `
 
 ## Scope
 
-- Vite + TypeScript project scaffold; single page, three-panel layout skeleton (header, playback, playlist, audio monitor placeholders).
+- Vite + TypeScript project scaffold; one screen: a header plus three stacked panels (playback, playlist, audio monitor) as placeholders, at least 360 px wide, keyboard-accessible.
 - Header panel: app name, unsupported-browser notice when `navigator.requestMIDIAccess` is missing, and a "Connect devices" button that triggers the MIDI and microphone permission prompts.
 - `midiDevices.ts`:
   - Call `navigator.requestMIDIAccess({ sysex: false })` on a user click (required for the Firefox permission flow).
@@ -32,6 +32,7 @@ Stand up the static Vite + TypeScript app (no backend, one runtime dependency: `
 - [ ] In Firefox, the add-on permission prompt is explained before it fires and a retry is offered after cancellation.
 - [ ] Browsers without `navigator.requestMIDIAccess` show the unsupported-browser notice instead of a broken UI.
 - [ ] "Connect devices" triggers both the MIDI and microphone permission prompts.
+- [ ] The layout renders at at least 360 px wide as a single screen and is keyboard-accessible.
 
 ## Notes
 

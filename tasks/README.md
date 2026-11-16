@@ -48,7 +48,7 @@ Rules:
 | T4 | [T4-audio-monitoring.md](T4-audio-monitoring.md) | Audio monitoring | 1 day | pending |
 | T5 | [T5-hardening-and-deploy.md](T5-hardening-and-deploy.md) | Hardening and deploy | 1 day | pending |
 
-Requirement coverage: R1–R3 → T3, R4 → T1, R5, R8 → T2, R6, R7 → T3, R9–R11 → T4, R12 → T3.
+Requirement coverage (per task `Requirements` field): R1, R2 → T3; R3 → T2, T3; R4 → T1; R5 → T2, T5; R6, R7 → T3, T5; R8 → T2; R9, R10 → T4; R11 → T4, T5; R12 → T3.
 
 ## Backlog (post-MVP, from "After the MVP")
 

@@ -6,7 +6,7 @@
 - **Estimate**: 1 day
 - **Depends on**: T1
 - **Modules**: `parser.ts`, `scheduler.ts`
-- **Requirements**: R5, R8
+- **Requirements**: R3, R5, R8
 
 ## Objective
 
@@ -19,6 +19,7 @@ Turn a .mid file into absolute-time MIDI events and send them to a `MIDIOutput` 
   - Build one flat, time-sorted event list per song: note-on, note-off, control change, program change, pitch bend, channel pressure. Drop meta events other than tempo.
   - Keep original channel numbers; song duration = time of the last event.
   - Accept files by extension (.mid, .midi) and verify the `MThd` header during parsing; reject unreadable files with a message.
+  - Wrap parsing in try/catch so malformed or huge files mark the entry as `error` instead of throwing or stalling the UI.
   - Parse when a song is about to play, not when it is added; cache the last parsed song.
 - `scheduler.ts` (look-ahead scheduler):
   - On play, record `t0 = performance.now() + 100` ms, minus any resume offset.

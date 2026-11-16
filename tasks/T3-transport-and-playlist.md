@@ -22,13 +22,13 @@ Add the full transport (play/pause/stop/next/previous, auto-advance, progress di
   - Current entry highlighted; double-click plays an entry from the start.
   - Auto-advance to the next `ready` entry, skipping `error` entries, with a fixed 1 s gap so external synths finish their release tails.
   - Removing the playing entry stops playback; reordering during playback keeps the current song playing.
-  - Player state machine: `stopped`, `playing`, `paused`.
+  - Player state machine: play and resume go to `playing`; pause goes to `paused`; stop, end of list, and output disconnect go to `stopped`.
 - Transport (wraps `scheduler.ts`):
   - Play/pause/resume/stop/next/previous.
   - Pause: stop scheduler, record offset, note-off every sounding note, CC64 = 0 (sustain off); resume restarts from the offset and held notes are not re-struck.
   - Stop/next/previous: same release, offset reset to 0; release messages sent with a timestamp just after the last queued event.
 - `ui.ts` — playback panel:
-  - Transport buttons (previous, play/pause, stop, next), Panic, progress bar with elapsed and total time, current song title.
+  - MIDI output picker (populated by T1); transport buttons (previous, play/pause, stop, next); Panic; progress bar with elapsed and total time; current song title.
   - Keyboard shortcuts: Space = play/pause, Esc = Panic, ←/→ = previous/next.
   - Status messages (device lost, file rejected) in a single `aria-live` region.
 - Playlist panel: drop zone and "Add files" button; rows with name, duration, status, remove button; drag handles to reorder.
