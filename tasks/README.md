@@ -1,0 +1,69 @@
+# Task List — Browser MIDI Playlist Player (MVP)
+
+Task breakdown of [`Browser MIDI Playlist Player — MVP Design.md`](../Browser%20MIDI%20Playlist%20Player%20%E2%80%94%20MVP%20Design.md).
+Each file is one milestone, in build order. Total estimate: ~4.5 developer-days.
+
+## Task schema (fixed)
+
+Every task file **must** follow this exact schema, in this exact order:
+
+```markdown
+# T<n>: <Title>
+
+- **ID**: T<n>
+- **Milestone**: <milestone title from the design doc>
+- **Status**: pending | in-progress | blocked | done
+- **Estimate**: <effort in developer-days>
+- **Depends on**: <comma-separated task IDs, or "none">
+- **Modules**: <source files this task owns or edits>
+- **Requirements**: <R-IDs from the design doc's functional-requirements table>
+
+## Objective
+1–2 sentences: what this task delivers and why it is ordered here.
+
+## Scope
+Bulleted list of deliverables.
+
+## Acceptance criteria
+- [ ] Checkable items, taken from the doc's acceptance checks / risk mitigations.
+
+## Notes
+Design constraints, mitigations, and open questions that apply to this task.
+```
+
+Rules:
+
+- File naming: `T<n>-<kebab-case-title>.md`, ordered by milestone.
+- `Status` is one of: `pending`, `in-progress`, `blocked`, `done`. Update the table below when it changes.
+- `Requirements` cites R-IDs (R1–R12) from the design doc; every R-ID must appear in at least one task.
+- Do not add or remove schema fields; free content belongs in `Scope`, `Acceptance criteria`, or `Notes`.
+
+## Task index
+
+| ID | File | Milestone | Estimate | Status |
+| --- | --- | --- | --- | --- |
+| T1 | [T1-scaffold-and-device-access.md](T1-scaffold-and-device-access.md) | Scaffold and device access | 0.5 day | pending |
+| T2 | [T2-parsing-and-scheduler.md](T2-parsing-and-scheduler.md) | Parsing and scheduler | 1 day | pending |
+| T3 | [T3-transport-and-playlist.md](T3-transport-and-playlist.md) | Transport and playlist | 1 day | pending |
+| T4 | [T4-audio-monitoring.md](T4-audio-monitoring.md) | Audio monitoring | 1 day | pending |
+| T5 | [T5-hardening-and-deploy.md](T5-hardening-and-deploy.md) | Hardening and deploy | 1 day | pending |
+
+Requirement coverage: R1–R3 → T3, R4 → T1, R5, R8 → T2, R6, R7 → T3, R9–R11 → T4, R12 → T3.
+
+## Backlog (post-MVP, from "After the MVP")
+
+Not tracked as tasks yet; each would become its own task file if scheduled.
+
+- Seek within a song, restoring program changes and controllers (1–2 days)
+- Save playlists via IndexedDB / File System Access API on Chrome (1 day)
+- Tempo change, A–B looping, per-channel mute and remapping (2–4 days)
+- Record the monitored input to WAV (1 day)
+- Built-in SoundFont synth as an alternative output (2–3 days)
+- Installable offline app (0.5 day)
+
+## Open questions (from the design doc)
+
+- [ ] Is live play-along a goal? If so, recommend hardware direct monitoring (affects T4).
+- [ ] Do any target MIDI files rely on SysEx (GM/GS/XG resets)? Requires `sysex: true` (affects T1).
+- [ ] Should playback send a GM reset or program changes before each song? (affects T3)
+- [ ] Which audio interfaces must be supported; do any need inputs above channels 1–2? (affects T4)

@@ -1,0 +1,239 @@
+# Browser MIDI Playlist Player — MVP Design
+
+Nov 16, 2026 · @Trevor Wilson
+
+## Overview and goals
+
+The MVP is a static, single-page web app that plays a playlist of Standard MIDI Files (.mid) to any MIDI output the OS exposes, and monitors an external audio input through the computer's speakers. It targets desktop Chrome and Firefox, needs no backend, and is estimated at 4–5 developer-days.
+
+The intended setup: the browser drives an external synth or sound module over USB/DIN MIDI, and that instrument's audio comes back into an audio interface so it can be heard (and later recorded) on the computer.
+
+**MVP goals**
+
+- Load several .mid files by file picker or drag-and-drop into an ordered playlist.
+- Pick a MIDI output (hardware or virtual port) and play the playlist to it with tight timing.
+- Play, pause, stop, next, previous, and a Panic button that silences stuck notes.
+- Pick an audio input device and monitor it locally with a volume control, mute and level meter.
+- Pick the audio output device for monitoring where the browser allows it.
+
+**Non-goals for the MVP**
+
+- Safari and mobile browsers (no Web MIDI support in Safari).
+- A built-in software synth; playback always goes to a MIDI port.
+- Seeking within a song, tempo change, looping, or channel remapping.
+- Recording the monitored audio.
+- Saving playlists between visits.
+- MIDI input, SysEx, or editing MIDI files.
+
+## Target platforms
+
+Both browsers support every API the MVP needs, but they differ in how permission is granted and how audio output is chosen. The app must be served over HTTPS (or `localhost` in development), since Web MIDI and `getUserMedia` only work in a secure context.
+
+| Capability | Chrome / Edge (desktop) | Firefox (desktop) |
+| --- | --- | --- |
+| Web MIDI output | Yes; permission prompt on `requestMIDIAccess()` | Yes (108+); first use triggers a site-permission add-on install prompt |
+| Timestamped `MIDIOutput.send()` | Yes | Yes |
+| Audio input via `getUserMedia` | Yes | Yes |
+| Device names in `enumerateDevices()` | After mic permission is granted | After mic permission is granted |
+| Choose audio output | `AudioContext.setSinkId()` or `HTMLMediaElement.setSinkId()` | `HTMLMediaElement.setSinkId()`; outputs exposed via `selectAudioOutput()` |
+
+Minimum supported versions are the current release and the one before it at launch. The app shows an unsupported-browser notice when `navigator.requestMIDIAccess` is missing.
+
+## Functional requirements
+
+Each requirement below is in scope for the MVP and has an acceptance check.
+
+| ID | Requirement | Acceptance check |
+| --- | --- | --- |
+| R1 | Add .mid/.midi files by file picker or drag-and-drop | 10 files dropped at once all appear, in drop order |
+| R2 | Reorder and remove playlist entries | Drag to reorder; remove button per row |
+| R3 | Show each entry's name and duration; reject unreadable files with a message | A corrupt file shows an error row and is skipped |
+| R4 | List all MIDI outputs and update the list when devices are plugged in or out | Unplugging a USB synth removes it within 1 s |
+| R5 | Play the selected entry to the chosen output with no audible timing drift | A 5-minute file ends within 50 ms of its computed duration |
+| R6 | Play, pause, resume, stop, next, previous | Pause and stop leave no hanging notes |
+| R7 | Auto-advance to the next entry; stop at the end of the list | Last song ends, transport returns to stopped |
+| R8 | Panic button | Sends all-notes-off and reset-controllers on all 16 channels |
+| R9 | List audio inputs and monitor the chosen one | Input is audible through the chosen output |
+| R10 | Monitor volume, mute, and a live level meter | Mute is on by default |
+| R11 | Choose the monitoring output device where supported | Falls back to the system default with a note |
+| R12 | Show playback position and elapsed / total time | Updates at least 10 times per second |
+
+## Architecture
+
+The app has two independent paths: a MIDI path that drives external gear, and an audio path that only listens to what the interface delivers. It is a static Vite + TypeScript build with no backend and one runtime dependency, `@tonejs/midi`.
+
+&#91;embedded content: architecture · MIDI path out, audio path back in\]
+
+Modules map one-to-one to the boxes: `playlist.ts`, `parser.ts`, `scheduler.ts` and `midiDevices.ts` on the MIDI path; `audioMonitor.ts` on the audio path; a thin `ui.ts` wires both to the controls.
+
+## MIDI output
+
+Timing accuracy comes from handing every message to the browser with a future timestamp, not from JavaScript timers. A look-ahead scheduler converts the file into absolute-time events once, then queues the next \~200 ms of them on each tick.
+
+### Device access
+
+- Call `navigator.requestMIDIAccess({ sysex: false })` on a user click (needed for the Firefox permission flow).
+- Populate the output picker from `access.outputs`; label each with `name` and `manufacturer`.
+- Listen to `access.onstatechange`. If the selected output disconnects, stop playback and show a warning.
+- Remember the last chosen output by `name` in `localStorage` and reselect it if present.
+
+### File parsing
+
+- Parse with `@tonejs/midi`. It handles format 0 and 1 files, running status and the tempo map, and returns note and controller events with times in seconds.
+- Build one flat, time-sorted event list per song: note-on, note-off, control change, program change, pitch bend and channel pressure. Meta events other than tempo are dropped.
+- Keep the original channel numbers. Song duration = time of the last event.
+- Parse when a song is about to play, not when it is added, so large playlists load quickly. Cache the last parsed song.
+
+### Scheduler
+
+1. On play, record `t0 = performance.now() + 100` (ms) minus the resume offset.
+2. Every 25 ms (`setInterval`, or a Worker timer so background tabs are not throttled), send every event whose time falls before `now + 200 ms` with `output.send(bytes, t0 + eventTime)`.
+3. Track which notes are currently on, per channel, so they can be released.
+4. When the cursor passes the last event, wait for the scheduled tail to finish, then fire `ended`.
+
+### Transport
+
+- **Pause:** stop the scheduler, record the offset, send note-off for every sounding note, and send CC64 = 0 (sustain off). Resume restarts from the offset; notes held across the pause are not re-struck.
+- **Stop / next / previous:** same release, offset reset to 0.
+- Messages already handed to the browser cannot be cancelled in Chrome (`output.clear()` is not implemented), so the 200 ms look-ahead bounds the overhang. The release messages are sent with a timestamp just after the last queued event.
+- **Panic:** for channels 1–16, send CC123 (all notes off), CC120 (all sound off), CC121 (reset controllers) and CC64 = 0.
+
+## Playlist
+
+The playlist is an in-memory ordered list of `File` objects; nothing is uploaded or saved in the MVP. Reloading the page clears it.
+
+**Entry model**
+
+```
+PlaylistEntry {
+  id: string            // crypto.randomUUID()
+  file: File
+  name: string          // file.name without extension
+  durationSec?: number  // filled in by a background parse
+  status: 'ready' | 'error'
+  error?: string
+}
+```
+
+**Behaviour**
+
+- Files are accepted by extension (.mid, .midi) and by the `MThd` header check during parsing.
+- After adding, entries are parsed one at a time in the background to fill in durations; parsed data is then discarded to save memory.
+- The current entry is highlighted. Double-click plays an entry from the start.
+- Auto-advance moves to the next `ready` entry, skipping `error` entries, with a fixed 1 s gap so external synths finish their release tails.
+- Removing the playing entry stops playback. Reordering during playback keeps the current song playing.
+
+**Player state** is one of `stopped`, `playing` or `paused`. Play and resume go to `playing`; pause goes to `paused`; stop, end of list and output disconnect go to `stopped`.
+
+## Audio input routing
+
+The chosen input is captured with `getUserMedia`, passed through a gain stage and a meter in a Web Audio graph, and played to the chosen output. Browser voice processing is switched off so instrument audio passes through unaltered.
+
+### Capture
+
+```
+navigator.mediaDevices.getUserMedia({ audio: {
+  deviceId: { exact: inputId },
+  echoCancellation: false,
+  noiseSuppression: false,
+  autoGainControl: false,
+  channelCount: { ideal: 2 },
+  sampleRate: { ideal: 48000 }
+}})
+```
+
+- Call `getUserMedia` once with `{ audio: true }` on the first click to unlock device labels, then list `audioinput` devices from `enumerateDevices()`.
+- Listen to `mediaDevices.ondevicechange` and refresh both pickers.
+- On input change, stop the old tracks before opening the new one.
+
+### Graph
+
+`MediaStreamAudioSourceNode` → `GainNode` (volume and mute) → `AnalyserNode` (meter) → output.
+
+- Create the `AudioContext` with `latencyHint: 'interactive'` and resume it from a user click.
+- The meter reads peak level from the analyser on `requestAnimationFrame` and shows it in dBFS with a clip indicator above −1 dBFS.
+- Monitoring starts muted. The user unmutes after choosing devices, which avoids a feedback loop when the input is a microphone near speakers.
+
+### Output device
+
+- **Chrome:** `audioContext.setSinkId(outputId)` routes the graph directly. This is the lowest-latency path.
+- **Firefox:** `AudioContext.setSinkId` is not available. The graph ends in a `MediaStreamAudioDestinationNode` played by a hidden `<audio>` element, and `audio.setSinkId(outputId)` picks the device after the user grants it with `selectAudioOutput()`. This path adds some buffering.
+- If neither is available, audio goes to the system default output and the picker is hidden.
+
+### Latency
+
+Expected round trip from input jack to speakers is roughly 10–40 ms on Chrome, depending on OS, driver and buffer size, and somewhat higher on Firefox's `<audio>` path. That is fine for listening to playback, but not for playing along live. The UI shows `audioContext.baseLatency + outputLatency` so users can see the browser's share; the interface's own direct monitoring remains the low-latency option.
+
+## UI layout
+
+One screen, three stacked panels, keyboard-accessible, at least 360 px wide:
+
+1. **Header:** app name, browser-support warning when needed, and a "Connect devices" button that triggers the MIDI and microphone permission prompts.
+2. **Playback panel:** MIDI output picker; transport buttons (previous, play/pause, stop, next); Panic; progress bar with elapsed and total time; the current song title.
+3. **Playlist panel:** drop zone and "Add files" button; rows with name, duration, status and a remove button; drag handles to reorder.
+4. **Audio monitor panel:** input picker, output picker (or "System default"), mute toggle (on by default), volume slider, stereo level meter, and the latency readout.
+
+Keyboard shortcuts: Space = play/pause, Esc = Panic, ←/→ = previous/next. Status messages (device lost, file rejected) appear in a single `aria-live` region.
+
+## Risks and mitigations
+
+The biggest risks are Firefox's audio output routing and stuck notes on external gear; both have fallbacks.
+
+| Risk | Impact | Mitigation |
+| --- | --- | --- |
+| Firefox cannot set the output device on an `AudioContext` | Monitoring goes to the default output, or adds latency via `<audio>` | Use the `<audio>` + `setSinkId` path; default output as last resort |
+| Firefox's MIDI add-on prompt confuses users | Users cancel and see no devices | Explain the prompt before clicking "Connect devices"; show a retry |
+| Notes hang after pause, stop or disconnect | External synth drones | Track sounding notes; release them, plus CC64 = 0; Panic button |
+| Scheduled messages cannot be cancelled in Chrome | Up to 200 ms of notes play after pause | Keep look-ahead at 200 ms; release after the last queued event |
+| Background tabs throttle timers to 1 s | Gaps or bursts in playback | Run the scheduler tick in a Worker; look-ahead covers short stalls |
+| Multichannel interfaces expose only 2 channels | Inputs above 1–2 unreachable | Document it; route the instrument to inputs 1–2 for the MVP |
+| Monitoring a mic through speakers | Feedback howl | Monitor starts muted; warning when input and output share a device |
+| Malformed or huge MIDI files | Parser throws or UI stalls | Parse in try/catch; mark entry as error; skip on auto-advance |
+| A virtual MIDI port loops back into the same synth | Doubled notes | Out of scope; documented in help text |
+
+## Testing
+
+Automated tests cover parsing and scheduling logic; device behaviour is checked by hand on real hardware in both browsers.
+
+**Automated (Vitest)**
+
+- Event-list builder: format 0 and 1 fixtures, tempo changes, overlapping notes on one channel.
+- Scheduler with a fake clock and a mock `MIDIOutput`: every event sent once, timestamps correct, release messages sent on pause and stop.
+- Playlist reducer: add, remove, reorder, auto-advance skipping error entries.
+
+**Automated (Playwright, Chromium and Firefox)**
+
+- UI flows with mocked `requestMIDIAccess` and `getUserMedia`: add files, play, pause, next, Panic, device disconnect.
+
+**Manual matrix**
+
+- Browsers: Chrome and Firefox, current release, on Windows and macOS.
+- MIDI: one USB-MIDI synth, one DIN interface, one virtual port (IAC on macOS, loopMIDI on Windows).
+- Audio: one USB audio interface with the synth's output connected.
+- Checks: timing over a 5-minute file, no hanging notes after each transport action, hot-plug of MIDI and audio devices, monitoring latency readout, feedback-safe default.
+
+## Milestones and effort
+
+The MVP is about 4.5 developer-days for one experienced front-end developer, built in this order so each step can be demoed:
+
+1. **Scaffold and device access (0.5 day):** Vite + TypeScript app, permission flow, MIDI output picker with hot-plug.
+2. **Parsing and scheduler (1 day):** event-list builder, look-ahead scheduler, note tracking, Panic, unit tests.
+3. **Transport and playlist (1 day):** play/pause/stop/next/previous, auto-advance, drag-and-drop, reorder, progress display.
+4. **Audio monitoring (1 day):** input and output pickers, graph, meter, mute, Chrome and Firefox output paths, latency readout.
+5. **Hardening (1 day):** Worker timer, error states, Playwright tests, manual matrix, static deploy (any HTTPS host).
+
+### After the MVP
+
+- Seek within a song, restoring program changes and controllers at the new position (1–2 days).
+- Save playlists using IndexedDB or the File System Access API on Chrome (1 day).
+- Tempo change, A–B looping, per-channel mute and remapping (2–4 days).
+- Record the monitored input to WAV (1 day).
+- A built-in SoundFont synth as an alternative output (2–3 days).
+- Installable offline app (0.5 day).
+
+### Open questions
+
+- [ ] Is live play-along a goal? If so, monitoring latency rules out browser monitoring and the doc should recommend hardware direct monitoring.
+- [ ] Do any target MIDI files rely on SysEx (for example GM/GS/XG resets)? That would require `sysex: true` and a stronger permission prompt.
+- [ ] Should playback send a GM reset or program changes before each song so external synths start from a known state?
+- [ ] Which audio interfaces must be supported, and do any need inputs above channels 1–2?
