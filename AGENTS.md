@@ -38,6 +38,9 @@ A task is complete when ALL pass:
   `curl http://montmartre.local:8080/v1/chat/completions -d '{"model":"MiniCPM-o-4_5","messages":[{"role":"user","content":[{"type":"text","text":"Describe this UI"},{"type":"image_url","image_url":{"url":"data:image/png;base64,..."}}]}]}'`
 - **Chrome DevTools MCP** (server `chrome-devtools`, global): drives a real Chrome — navigate, inspect DOM, evaluate JS, screenshots, console/network logs, performance traces. Use for browser verification of the app.
 
+## Subagents
+- Always run subagents serially — never in parallel. The coding model host bogs down under concurrent model requests; run one subagent at a time.
+
 ## Boundaries
 - ✅ Always: serve over HTTPS/localhost; verify against the task's acceptance criteria; keep runtime deps to `@tonejs/midi` only
 - ⚠️ Ask first: adding a runtime dependency, changing the module split, adding UI panels
