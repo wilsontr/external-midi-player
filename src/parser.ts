@@ -13,6 +13,12 @@
  * channel pressure, each with its original channel, with running status
  * already resolved.
  *
+ * `midi-file` is not listed in package.json: it arrives transitively as
+ * `@tonejs/midi`'s own parser dependency (`^1.2.2`, the version whose event
+ * types this module consumes). Nothing here is added to the dependency list;
+ * if `@tonejs/midi` ever drops or re-ranges that dependency, promote
+ * `midi-file` to a direct dependency at the same minor.
+ *
  * The tempo map (ticks → seconds) is built directly from the file's setTempo
  * events using the MIDI default of 500000 µs/beat (120 BPM) where the file
  * gives no tempo. This mirrors the semantics of @tonejs/midi's Header while
@@ -122,20 +128,28 @@ function collectEvents(raw: MidiData): { events: RawEvent[]; tempos: TempoPoint[
 }
 
 /**
- * Dedupes tempo points that land on the same tick (the later point wins,
- * matching @tonejs/midi's binary-search semantics) and builds tempo segments
- * with precomputed start times, so ticks → seconds is an O(log n) lookup.
+ * Sorts tempo points by tick and keeps only the last point when several land
+ * on the same tick (the later point wins, matching @tonejs/midi's binary-search
+ * semantics, so a shadowed point never appears in the public tempo list).
  */
-function buildTempoSegments(tempos: TempoPoint[], ppq: number): TempoSegment[] {
+function normalizeTempoPoints(tempos: TempoPoint[]): TempoPoint[] {
   const points: TempoPoint[] = [];
   for (const p of [...tempos].sort((a, b) => a.ticks - b.ticks)) {
     const last = points[points.length - 1];
     if (last !== undefined && last.ticks === p.ticks) {
-      points[points.length - 1] = p; // later point at the same tick wins
+      points[points.length - 1] = p;
     } else {
       points.push(p);
     }
   }
+  return points;
+}
+
+/**
+ * Builds tempo segments from normalized points, with precomputed start times,
+ * so ticks → seconds is an O(log n) lookup.
+ */
+function buildTempoSegments(points: TempoPoint[], ppq: number): TempoSegment[] {
   const segments: TempoSegment[] = [];
   let ticks = 0;
   let seconds = 0;
@@ -185,7 +199,10 @@ export function parseMidiData(buffer: ArrayBuffer | Uint8Array): ParsedSong {
     throw new ParseError('Not a MIDI file: missing "MThd" header');
   }
   const headerLength = ((bytes[4] << 24) | (bytes[5] << 16) | (bytes[6] << 8) | bytes[7]) >>> 0;
-  if (headerLength !== 6) {
+  // The spec fixes the header at 6 bytes; some writers append extra bytes and
+  // the underlying parser skips them, so accept >= 6 and reject only a header
+  // too short to be readable.
+  if (headerLength < 6) {
     throw new ParseError('Invalid MIDI header length');
   }
 
@@ -202,7 +219,8 @@ export function parseMidiData(buffer: ArrayBuffer | Uint8Array): ParsedSong {
   }
 
   const { events, tempos } = collectEvents(raw);
-  for (const p of tempos) {
+  const points = normalizeTempoPoints(tempos);
+  for (const p of points) {
     if (p.usPerBeat <= 0) {
       throw new ParseError('Invalid tempo: 0 microseconds per beat');
     }
@@ -210,7 +228,7 @@ export function parseMidiData(buffer: ArrayBuffer | Uint8Array): ParsedSong {
 
   // Stable sort: events at the same tick keep file order.
   events.sort((a, b) => a.ticks - b.ticks);
-  const segments = buildTempoSegments(tempos, ppq);
+  const segments = buildTempoSegments(points, ppq);
   const songEvents: ParsedMidiEvent[] = events.map((e) => {
     const time = ticksToSeconds(e.ticks, segments, ppq);
     const channel = e.channel & 0x0f;
@@ -230,15 +248,13 @@ export function parseMidiData(buffer: ArrayBuffer | Uint8Array): ParsedSong {
     }
   });
 
-  const last = events[events.length - 1];
-  const duration = last === undefined ? 0 : ticksToSeconds(last.ticks, segments, ppq);
-  const temposOut = tempos
-    .slice()
-    .sort((a, b) => a.ticks - b.ticks)
-    .map((p) => ({
-      time: ticksToSeconds(p.ticks, segments, ppq),
-      bpm: 60_000_000 / p.usPerBeat,
-    }));
+  // Duration is the time of the last event, so reuse the mapped time instead
+  // of running the tempo lookup again.
+  const duration = songEvents.length === 0 ? 0 : songEvents[songEvents.length - 1].time;
+  const temposOut = points.map((p) => ({
+    time: ticksToSeconds(p.ticks, segments, ppq),
+    bpm: 60_000_000 / p.usPerBeat,
+  }));
 
   return { events: songEvents, duration, tempos: temposOut };
 }
@@ -299,9 +315,10 @@ export async function parseSongForPlayback(file: MidiFileLike): Promise<ParseRes
     lastParse = { key, result };
     return result;
   } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
     const result: ParseResult = {
       status: 'error',
-      message: err instanceof ParseError ? err.message : 'Unknown parse error',
+      message: err instanceof ParseError ? err.message : `Unknown parse error: ${detail}`,
     };
     lastParse = { key, result };
     return result;

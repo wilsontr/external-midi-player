@@ -92,17 +92,12 @@ function buildMidi(format: 0 | 1 | 2, ppq: number, tracks: RawEventSpec[][]): Ui
 const TEMPO_120 = { d: 0, tempo: 500_000 };
 
 /** A file as the parser reads it. */
-function fakeFile(name: string, bytes: Uint8Array<ArrayBuffer>, reject = false): MidiFileLike {
+function fakeFile(name: string, bytes: Uint8Array<ArrayBuffer>): MidiFileLike {
   return {
     name,
     size: bytes.length,
     lastModified: 123,
-    arrayBuffer: async () => {
-      if (reject) {
-        throw new Error('disk exploded');
-      }
-      return bytes.buffer;
-    },
+    arrayBuffer: async () => bytes.buffer,
   };
 }
 
@@ -249,13 +244,48 @@ describe('parseMidiData', () => {
     expect(() => parseMidiData(bytes)).toThrow('File too small');
   });
 
-  it('rejects an invalid header length', () => {
+  it('rejects a header that is too short', () => {
     const bytes = buildMidi(0, 60, [[TEMPO_120]]);
-    bytes[4] = 1;
+    bytes[4] = 0;
     bytes[5] = 0;
     bytes[6] = 0;
-    bytes[7] = 7;
+    bytes[7] = 5;
     expect(() => parseMidiData(bytes)).toThrow('Invalid MIDI header length');
+  });
+
+  it('accepts a header longer than 6 bytes', () => {
+    // Some writers append bytes to the header chunk; the underlying parser
+    // skips them, so rejecting these would refuse otherwise playable files.
+    const track = [
+      0x00, 0x90, 60, 100, // note-on
+      0x30, 0x80, 60, 0, // note-off at tick 48
+      0x00, 0xff, 0x2f, 0x00, // end of track
+    ];
+    const bytes = Uint8Array.from([
+      0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 8, // MThd, length 8
+      0, 0, 0, 1, 0, 60, 0, 0, // format 0, 1 track, 60 ppq, 2 padding bytes
+      0x4d, 0x54, 0x72, 0x6b, 0, 0, 0, track.length,
+      ...track,
+    ]);
+    const song = parseMidiData(bytes);
+    expect(song.events).toEqual([
+      { type: 'note-on', time: 0, channel: 0, note: 60, velocity: 100 },
+      { type: 'note-off', time: 0.4, channel: 0, note: 60, velocity: 0 },
+    ]);
+  });
+
+  it('reports a single tempo per tick, keeping the one that takes effect', () => {
+    const bytes = buildMidi(0, 60, [
+      [
+        TEMPO_120,
+        { d: 48, tempo: 1_000_000 },
+        { d: 0, tempo: 2_000_000 }, // same tick: this one wins
+        { d: 48, noteOn: [0, 60, 100] },
+      ],
+    ]);
+    const song = parseMidiData(bytes);
+    expect(song.tempos).toHaveLength(2);
+    expect(song.tempos[1]).toEqual({ time: 0.4, bpm: 30 });
   });
 
   it('rejects a track with an unrecognised event type', () => {

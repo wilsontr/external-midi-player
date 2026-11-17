@@ -290,6 +290,29 @@ describe('Scheduler', () => {
     ]);
   });
 
+  it('releases a note that the file never turns off, when the song ends', () => {
+    // A truncated or sloppy file can end with an unpaired note-on. Clearing the
+    // state without a note-off would leave that note stuck on the hardware.
+    const events: ParsedMidiEvent[] = [
+      { type: 'note-on', time: 0, channel: 0, note: 60, velocity: 100 },
+      { type: 'note-on', time: 0.2, channel: 2, note: 67, velocity: 80 },
+      { type: 'note-off', time: 0.4, channel: 0, note: 60, velocity: 0 },
+    ];
+    const { output, calls } = makeOutput();
+    const scheduler = new Scheduler({ output, events, duration: 0.4 });
+    scheduler.play();
+    vi.advanceTimersByTime(800);
+    expect(calls).toEqual([
+      { bytes: [0x90, 60, 100], time: 100 },
+      { bytes: [0x92, 67, 80], time: 300 },
+      { bytes: [0x80, 60, 0], time: 500 },
+      // The hanging note 67 on channel 2 is released at the end of the song.
+      { bytes: [0x82, 67, 0], time: 501 },
+      { bytes: [0xb2, 64, 0], time: 501 },
+    ]);
+    expect(scheduler.isPlaying()).toBe(false);
+  });
+
   it('dispose stops the tick loop without sending', () => {
     const { output, calls } = makeOutput();
     const scheduler = new Scheduler({ output, events: EVENTS, duration: DURATION });

@@ -65,7 +65,7 @@ function eventToBytes(e: ParsedMidiEvent): Uint8Array {
   }
 }
 
-/** CC123 all notes off, CC120 reset all controllers, CC121 all sound off. */
+/** CC123 all notes off, CC120 all sound off, CC121 reset all controllers, CC64 sustain off. */
 const PANIC_RESET_CONTROLLERS = [0x7b, 0x78, 0x79, 0x40];
 
 export class Scheduler {
@@ -148,8 +148,8 @@ export class Scheduler {
   }
 
   /**
-   * Panics (R8): sends CC123 (all notes off), CC120 (reset controllers),
-   * CC121 (all sound off) and CC64 = 0 on all 16 channels, to recover
+   * Panics (R8): sends CC123 (all notes off), CC120 (all sound off),
+   * CC121 (reset all controllers) and CC64 = 0 on all 16 channels, to recover
    * hardware that is stuck.
    */
   panic(): void {
@@ -210,8 +210,11 @@ export class Scheduler {
       this.nextIndex += 1;
     }
     // The scheduled tail has finished once the last event's wall time has
-    // passed — the song ends at its computed duration.
+    // passed — the song ends at its computed duration. Release anything still
+    // sounding first: a file can end with an unpaired note-on, and clearing
+    // the map without a note-off would leave that note stuck on the hardware.
     if (this.nextIndex >= this.events.length && now >= t0 + this.duration * 1000) {
+      this.releaseSounding();
       this.stopTimer();
       this.t0 = null;
       this.pausedPositionMs = 0;
