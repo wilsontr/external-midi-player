@@ -2,7 +2,7 @@
 
 - **ID**: T2
 - **Milestone**: Parsing and scheduler
-- **Status**: pending
+- **Status**: done
 - **Estimate**: 1 day
 - **Depends on**: T1
 - **Modules**: `parser.ts`, `scheduler.ts`
@@ -33,11 +33,11 @@ Turn a .mid file into absolute-time MIDI events and send them to a `MIDIOutput` 
 
 ## Acceptance criteria
 
-- [ ] A 5-minute file ends within 50 ms of its computed duration, with no audible timing drift (R5).
-- [ ] A corrupt file shows an error message and is skipped (R3 support: parser rejection path).
-- [ ] Panic sends all-notes-off and reset-controllers on all 16 channels (R8).
-- [ ] Every event is sent exactly once, with correct absolute timestamps, per scheduler unit tests.
-- [ ] Sounding notes are tracked per channel and can be released on demand.
+- [x] A 5-minute file ends within 50 ms of its computed duration, with no audible timing drift (R5).
+- [x] A corrupt file shows an error message and is skipped (R3 support: parser rejection path).
+- [x] Panic sends all-notes-off and reset-controllers on all 16 channels (R8).
+- [x] Every event is sent exactly once, with correct absolute timestamps, per scheduler unit tests.
+- [x] Sounding notes are tracked per channel and can be released on demand.
 
 ## Notes
 
