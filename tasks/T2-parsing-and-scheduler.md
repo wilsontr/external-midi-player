@@ -43,6 +43,7 @@ Turn a .mid file into absolute-time MIDI events and send them to a `MIDIOutput` 
 
 - Timing accuracy comes from handing every message to the browser with a future timestamp, not from JavaScript timers.
 - Messages already handed to Chrome cannot be cancelled (`output.clear()` is not implemented), so the 200 ms look-ahead bounds the overhang; release messages are sent with a timestamp just after the last queued event.
-- `parser.ts` imports `midi-file` directly. It is not added to `package.json`: it arrives as `@tonejs/midi`'s own parser dependency (`^1.2.2`) and `@tonejs/midi` remains the only declared runtime dependency. If that transitive dependency is ever removed or re-ranged, `midi-file` has to be promoted to a direct dependency.
+- `parser.ts` imports `midi-file` directly, and it is a declared runtime dependency (`^1.2.4`). `@tonejs/midi` pins the same parser version, so npm dedupes them to one copy; declaring it keeps the event types this module consumes on a version this project controls.
+- `midi-file` is the second declared runtime dependency, alongside `@tonejs/midi`. Keep it to these two.
 - Any note still sounding when the song ends (an unpaired note-on in a truncated or sloppy file) is released with a note-off plus CC64 = 0, so it cannot hang the hardware.
 - Background tabs throttle `setInterval` to 1 s; moving the tick into a Worker is T5 (hardening) — the look-ahead covers short stalls in the meantime.

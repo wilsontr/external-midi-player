@@ -13,11 +13,11 @@
  * channel pressure, each with its original channel, with running status
  * already resolved.
  *
- * `midi-file` is not listed in package.json: it arrives transitively as
- * `@tonejs/midi`'s own parser dependency (`^1.2.2`, the version whose event
- * types this module consumes). Nothing here is added to the dependency list;
- * if `@tonejs/midi` ever drops or re-ranges that dependency, promote
- * `midi-file` to a direct dependency at the same minor.
+ * `midi-file` is a declared runtime dependency (`^1.2.4`) alongside
+ * `@tonejs/midi`, which pins the same parser version, so npm dedupes them to a
+ * single copy. Depending on it directly keeps the parser version that this
+ * module's event types are written against under this project's control rather
+ * than at the mercy of `@tonejs/midi`'s dependency range.
  *
  * The tempo map (ticks → seconds) is built directly from the file's setTempo
  * events using the MIDI default of 500000 µs/beat (120 BPM) where the file

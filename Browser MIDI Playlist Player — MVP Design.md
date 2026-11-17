@@ -60,7 +60,7 @@ Each requirement below is in scope for the MVP and has an acceptance check.
 
 ## Architecture
 
-The app has two independent paths: a MIDI path that drives external gear, and an audio path that only listens to what the interface delivers. It is a static Vite + TypeScript build with no backend and one runtime dependency, `@tonejs/midi`.
+The app has two independent paths: a MIDI path that drives external gear, and an audio path that only listens to what the interface delivers. It is a static Vite + TypeScript build with no backend and two runtime dependencies: `@tonejs/midi` and `midi-file` (the low-level parser `@tonejs/midi` itself wraps, used directly for per-event channel fidelity and linear-time parsing).
 
 &#91;embedded content: architecture · MIDI path out, audio path back in\]
 
@@ -79,7 +79,7 @@ Timing accuracy comes from handing every message to the browser with a future ti
 
 ### File parsing
 
-- Parse with `@tonejs/midi`. It handles format 0 and 1 files, running status and the tempo map, and returns note and controller events with times in seconds.
+- Parse with `parseMidi` from `midi-file` (the parser `@tonejs/midi` wraps). It handles format 0 and 1 files, running status and the tempo map, and yields note and controller events with times in seconds, keeping each event's channel. The high-level `@tonejs/midi` `Midi`/`Track` API is not used: it collapses a track to a single channel, drops channel pressure and program-change history, and pairs notes in O(n²), which stalls on large files.
 - Build one flat, time-sorted event list per song: note-on, note-off, control change, program change, pitch bend and channel pressure. Meta events other than tempo are dropped.
 - Keep the original channel numbers. Song duration = time of the last event.
 - Parse when a song is about to play, not when it is added, so large playlists load quickly. Cache the last parsed song.
