@@ -12,7 +12,6 @@ Browser-based MIDI playlist player: plays .mid files out to external MIDI hardwa
 - Browsers: desktop Chrome/Edge and Firefox, current + previous releases. Must be served over HTTPS or `localhost` (secure context).
 
 ## Commands
-Repo is docs-only until T1 scaffolds the app. After T1:
 - Dev server: `npm run dev` (use `localhost` — secure context for Web MIDI/getUserMedia)
 - Unit tests: `npx vitest run`
 - E2E: `npx playwright test`

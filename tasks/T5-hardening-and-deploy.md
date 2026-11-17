@@ -35,6 +35,7 @@ Harden the working app against the known risks (timer throttling, stuck notes, d
 
 ## Notes
 
+- Add a baseline content-security-policy (`default-src 'self'`) to the static deploy — deferred from T1 review because dev-mode HMR (websockets + inline module sources) fights a strict meta CSP.
 - Risks covered here: background-tab timer throttling, scheduled messages that cannot be cancelled in Chrome (200 ms overhang bound), malformed or huge MIDI files (parse in try/catch, mark entry as error, skip on auto-advance).
 - Virtual MIDI port looping back into the same synth (doubled notes) is out of scope; document it in help text.
 - Keep the look-ahead at 200 ms — it is the bound on post-pause overhang.
