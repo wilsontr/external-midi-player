@@ -48,10 +48,13 @@ Rules:
 | T4 | [T4-audio-monitoring.md](T4-audio-monitoring.md) | Audio monitoring | 1 day | done |
 | T5 | [T5-hardening-and-deploy.md](T5-hardening-and-deploy.md) | Hardening and deploy | 1 day | pending |
 | T6 | [T6-github-pages-deploy.md](T6-github-pages-deploy.md) | Hardening and deploy | 0.5 day | pending |
+| T7 | [T7-software-synth-output.md](T7-software-synth-output.md) | After the MVP | 2–3 days | pending |
 
-Requirement coverage (per task `Requirements` field): R1, R2 → T3; R3 → T2, T3; R4 → T1; R5 → T2, T5; R6, R7 → T3, T5; R8 → T2; R9, R10 → T4; R11 → T4, T5; R12 → T3; R13 → T1, T3, T4.
+Requirement coverage (per task `Requirements` field): R1, R2 → T3; R3 → T2, T3; R4 → T1; R5 → T2, T5, T7; R6, R7 → T3, T5; R8 → T2; R9, R10 → T4; R11 → T4, T5; R12 → T3; R13 → T1, T3, T4.
 
 T6 is a delivery task: it carries no new functional requirement and exercises R1–R13 against the production HTTPS origin. It splits the deploy half out of milestone 5 so the GitHub Pages + CI work can be reviewed on its own.
+
+T7 is a post-MVP enhancement; it adds no new R-ID. R5 is the timing bar if the chosen option becomes a playback output. Its first acceptance criterion is the engine/integration decision.
 
 ## Backlog (post-MVP, from "After the MVP")
 
@@ -61,7 +64,6 @@ Not tracked as tasks yet; each would become its own task file if scheduled.
 - Upgrade playlist persistence from localStorage to IndexedDB for very large playlists (0.5 day)
 - Tempo change, A–B looping, per-channel mute and remapping (2–4 days)
 - Record the monitored input to WAV (1 day)
-- Built-in SoundFont synth as an alternative output (2–3 days)
 - Installable offline app (0.5 day)
 
 ## Open questions (from the design doc)

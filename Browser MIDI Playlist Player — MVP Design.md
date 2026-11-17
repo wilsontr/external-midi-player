@@ -239,7 +239,7 @@ The MVP is about 4.5 developer-days for one experienced front-end developer, bui
 - Upgrade playlist persistence from `localStorage` to IndexedDB for very large playlists (0.5 day).
 - Tempo change, A–B looping, per-channel mute and remapping (2–4 days).
 - Record the monitored input to WAV (1 day).
-- A built-in SoundFont synth as an alternative output (2–3 days).
+- A built-in SoundFont synth as an alternative output (2–3 days; tracked as T7, with the engine decision as its first step).
 - Installable offline app (0.5 day).
 
 ### Open questions
