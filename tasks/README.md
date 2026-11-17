@@ -43,7 +43,7 @@ Rules:
 | ID | File | Milestone | Estimate | Status |
 | --- | --- | --- | --- | --- |
 | T1 | [T1-scaffold-and-device-access.md](T1-scaffold-and-device-access.md) | Scaffold and device access | 0.5 day | done |
-| T2 | [T2-parsing-and-scheduler.md](T2-parsing-and-scheduler.md) | Parsing and scheduler | 1 day | pending |
+| T2 | [T2-parsing-and-scheduler.md](T2-parsing-and-scheduler.md) | Parsing and scheduler | 1 day | done |
 | T3 | [T3-transport-and-playlist.md](T3-transport-and-playlist.md) | Transport and playlist | 1 day | pending |
 | T4 | [T4-audio-monitoring.md](T4-audio-monitoring.md) | Audio monitoring | 1 day | pending |
 | T5 | [T5-hardening-and-deploy.md](T5-hardening-and-deploy.md) | Hardening and deploy | 1 day | pending |

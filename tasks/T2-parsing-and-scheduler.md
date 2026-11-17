@@ -2,7 +2,7 @@
 
 - **ID**: T2
 - **Milestone**: Parsing and scheduler
-- **Status**: pending
+- **Status**: done
 - **Estimate**: 1 day
 - **Depends on**: T1
 - **Modules**: `parser.ts`, `scheduler.ts`
@@ -15,7 +15,7 @@ Turn a .mid file into absolute-time MIDI events and send them to a `MIDIOutput` 
 ## Scope
 
 - `parser.ts`:
-  - Parse with `@tonejs/midi` (format 0 and 1 files, running status, tempo map; note and controller events with times in seconds).
+  - Parse with `parseMidi` from `midi-file` — the raw event parser that `@tonejs/midi` wraps — instead of the high-level `Midi`/`Track` API, which collapses each track to a single channel, drops channel pressure and program-change history, and pairs notes in O(n²) (688 ms vs 12 ms on a 200k-event file). Format 0 and 1 files, running status, tempo map; note and controller events with times in seconds.
   - Build one flat, time-sorted event list per song: note-on, note-off, control change, program change, pitch bend, channel pressure. Drop meta events other than tempo.
   - Keep original channel numbers; song duration = time of the last event.
   - Accept files by extension (.mid, .midi) and verify the `MThd` header during parsing; reject unreadable files with a message.
@@ -33,14 +33,16 @@ Turn a .mid file into absolute-time MIDI events and send them to a `MIDIOutput` 
 
 ## Acceptance criteria
 
-- [ ] A 5-minute file ends within 50 ms of its computed duration, with no audible timing drift (R5).
-- [ ] A corrupt file shows an error message and is skipped (R3 support: parser rejection path).
-- [ ] Panic sends all-notes-off and reset-controllers on all 16 channels (R8).
-- [ ] Every event is sent exactly once, with correct absolute timestamps, per scheduler unit tests.
-- [ ] Sounding notes are tracked per channel and can be released on demand.
+- [x] A 5-minute file ends within 50 ms of its computed duration, with no audible timing drift (R5).
+- [x] A corrupt file shows an error message and is skipped (R3 support: parser rejection path).
+- [x] Panic sends all-notes-off and reset-controllers on all 16 channels (R8).
+- [x] Every event is sent exactly once, with correct absolute timestamps, per scheduler unit tests.
+- [x] Sounding notes are tracked per channel and can be released on demand.
 
 ## Notes
 
 - Timing accuracy comes from handing every message to the browser with a future timestamp, not from JavaScript timers.
 - Messages already handed to Chrome cannot be cancelled (`output.clear()` is not implemented), so the 200 ms look-ahead bounds the overhang; release messages are sent with a timestamp just after the last queued event.
+- `parser.ts` imports `midi-file` directly. It is not added to `package.json`: it arrives as `@tonejs/midi`'s own parser dependency (`^1.2.2`) and `@tonejs/midi` remains the only declared runtime dependency. If that transitive dependency is ever removed or re-ranged, `midi-file` has to be promoted to a direct dependency.
+- Any note still sounding when the song ends (an unpaired note-on in a truncated or sloppy file) is released with a note-off plus CC64 = 0, so it cannot hang the hardware.
 - Background tabs throttle `setInterval` to 1 s; moving the tick into a Worker is T5 (hardening) — the look-ahead covers short stalls in the meantime.
