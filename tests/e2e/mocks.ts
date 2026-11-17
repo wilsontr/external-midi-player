@@ -5,6 +5,7 @@ import type { Page } from '@playwright/test';
  *
  * Exposes `window.__mockMidi` on the page:
  *   - `calls.midi` / `calls.mic`: how many times each permission API was hit
+ *   - `sent`: every `output.send(bytes, timestamp)` call, across all outputs
  *   - `addOutput(id, name, manufacturer)` / `removeOutput(id)`:
  *     mutate the device map and fire `onstatechange`, exactly like a
  *     hot-plug event (R4)
@@ -30,7 +31,9 @@ export async function mockDevices(
         manufacturer,
         state: 'connected',
         longName: '',
-        send: () => {},
+        send: (data: ArrayLike<number>, timestamp?: number) => {
+          (window as any).__mockMidi.sent.push({ bytes: Array.from(data), timestamp });
+        },
       });
       const outputsMap = new Map(
         outputs.map((o) => [o.id, make(o.id, o.name, o.manufacturer)] as const),
@@ -42,6 +45,7 @@ export async function mockDevices(
       };
       (window as any).__mockMidi = {
         calls: { midi: 0, mic: 0 },
+        sent: [] as Array<{ bytes: number[]; timestamp?: number }>,
         addOutput(id: string, name: string, manufacturer: string) {
           outputsMap.set(id, make(id, name, manufacturer));
           access.onstatechange?.();

@@ -2,7 +2,7 @@
 
 - **ID**: T3
 - **Milestone**: Transport and playlist
-- **Status**: pending
+- **Status**: done
 - **Estimate**: 1 day
 - **Depends on**: T2
 - **Modules**: `playlist.ts`, `ui.ts` (transport and playlist panels)
@@ -36,13 +36,13 @@ Add the full transport (play/pause/stop/next/previous, auto-advance, progress di
 
 ## Acceptance criteria
 
-- [ ] 10 files dropped at once all appear, in drop order (R1).
-- [ ] Drag to reorder; remove button per row (R2).
-- [ ] Each entry shows name and duration; a corrupt file shows an error row and is skipped (R3).
-- [ ] Pause and stop leave no hanging notes (R6).
-- [ ] Auto-advance moves to the next entry; the last song ends and transport returns to stopped (R7).
-- [ ] Position and elapsed/total time update at least 10 times per second (R12).
-- [ ] Player state is always one of `stopped`, `playing`, `paused`.
+- [x] 10 files dropped at once all appear, in drop order (R1).
+- [x] Drag to reorder; remove button per row (R2).
+- [x] Each entry shows name and duration; a corrupt file shows an error row and is skipped (R3).
+- [x] Pause and stop leave no hanging notes (R6).
+- [x] Auto-advance moves to the next entry; the last song ends and transport returns to stopped (R7).
+- [x] Position and elapsed/total time update at least 10 times per second (R12).
+- [x] Player state is always one of `stopped`, `playing`, `paused`.
 
 ## Notes
 
