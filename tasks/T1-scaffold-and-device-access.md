@@ -2,7 +2,7 @@
 
 - **ID**: T1
 - **Milestone**: Scaffold and device access
-- **Status**: pending
+- **Status**: done
 - **Estimate**: 0.5 day
 - **Depends on**: none
 - **Modules**: `midiDevices.ts`, app scaffold (Vite + TypeScript config, entry point, `ui.ts` header wiring)
@@ -26,13 +26,13 @@ Stand up the static Vite + TypeScript app (no backend, one runtime dependency: `
 
 ## Acceptance criteria
 
-- [ ] Dropping a new USB synth into the machine makes it appear in the output picker; unplugging removes it within 1 s (R4).
-- [ ] The output picker labels show both name and manufacturer.
-- [ ] Reloading the page reselects the previously chosen output (by name) when still connected.
-- [ ] In Firefox, the add-on permission prompt is explained before it fires and a retry is offered after cancellation.
-- [ ] Browsers without `navigator.requestMIDIAccess` show the unsupported-browser notice instead of a broken UI.
-- [ ] "Connect devices" triggers both the MIDI and microphone permission prompts.
-- [ ] The layout renders at at least 360 px wide as a single screen and is keyboard-accessible.
+- [x] Dropping a new USB synth into the machine makes it appear in the output picker; unplugging removes it within 1 s (R4).
+- [x] The output picker labels show both name and manufacturer.
+- [x] Reloading the page reselects the previously chosen output (by name) when still connected.
+- [x] In Firefox, the add-on permission prompt is explained before it fires and a retry is offered after cancellation.
+- [x] Browsers without `navigator.requestMIDIAccess` show the unsupported-browser notice instead of a broken UI.
+- [x] "Connect devices" triggers both the MIDI and microphone permission prompts.
+- [x] The layout renders at at least 360 px wide as a single screen and is keyboard-accessible.
 
 ## Notes
 
