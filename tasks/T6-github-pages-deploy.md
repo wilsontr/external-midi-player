@@ -175,8 +175,9 @@ soon as T3/T4 are done, but do not call the deployment production-ready until
 T5's manual checks pass.
 
 **Constraints.** Pages is static and HTTPS-only, which matches R1–R13 (no
-backend, secure context required for Web MIDI and `getUserMedia`). A CSP, if
-added later, must allow the hashed `assets/` files and the app's inline
-styles; GitHub Pages does not let us set response headers, so a meta CSP is
-the option (T5 notes). A custom domain is optional and does not change the
-relative base; update the README URL and Pages settings if one is added.
+backend, secure context required for Web MIDI and `getUserMedia`). The
+production build now injects a baseline meta CSP (T5); keep it when deploying
+and verify the Pages origin has no CSP violations, including the Worker asset.
+GitHub Pages does not let us set response headers, so the meta CSP is the
+option. A custom domain is optional and does not change the relative base;
+update the README URL and Pages settings if one is added.

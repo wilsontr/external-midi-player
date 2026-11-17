@@ -312,12 +312,17 @@ describe('PlaylistPlayer', () => {
     player.add([file('a.mid'), file('b.mid')]);
     player.play();
     await flush();
+    const first = schedulers[0];
     player.next();
     await flush();
     expect(currentName()).toBe('b');
+    // Switching songs releases the old scheduler's sounding notes.
+    expect(first.calls).toContain('stop');
+    const second = schedulers[1];
     player.previous();
     await flush();
     expect(currentName()).toBe('a');
+    expect(second.calls).toContain('stop');
     player.next();
     await flush();
     player.next();
@@ -391,5 +396,17 @@ describe('PlaylistPlayer', () => {
     await failing.flushPersistence();
     expect(failing.playlist.entries).toHaveLength(1);
     expect(last(statuses)).toContain('Could not save the playlist');
+  });
+
+  it('stops and reports when the scheduler reports a send error', async () => {
+    player.add([file('a.mid')]);
+    await flush();
+    player.play();
+    await flush();
+
+    schedulers[0].options.onError?.('device gone');
+
+    expect(player.state).toBe('stopped');
+    expect(last(statuses)).toContain('MIDI output failed');
   });
 });

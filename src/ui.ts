@@ -570,7 +570,10 @@ export function createUi(root: HTMLElement): void {
     renderMonitorControls();
   });
 
-  if (!monitor.supported) monitorUnavailable.hidden = false;
+  if (!monitor.supported) {
+    monitorUnavailable.hidden = false;
+    setStatus('Audio monitoring is unavailable in this browser.');
+  }
   renderAudioDevices();
   renderMonitorControls();
   requestAnimationFrame(meterFrame);
@@ -635,9 +638,13 @@ export function createUi(root: HTMLElement): void {
   outputPicker.addEventListener('change', handlePickerChange);
 
   if (typeof navigator.requestMIDIAccess !== 'function') {
-    // Show a notice instead of a broken UI (ticket T1).
+    // Show a notice instead of a broken UI (ticket T1) and announce it in the
+    // single aria-live region (ticket T5).
     unsupportedNotice.hidden = false;
     connectButton.disabled = true;
+    setStatus(
+      'This browser does not support Web MIDI. Use a current desktop version of Chrome, Edge, or Firefox.',
+    );
   } else if (isFirefox()) {
     // Explain the add-on permission prompt *before* the first click.
     firefoxOnboarding.hidden = false;

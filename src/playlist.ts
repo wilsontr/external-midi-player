@@ -493,6 +493,12 @@ export class PlaylistPlayer {
       events: result.song.events,
       duration: result.song.duration,
       onEnded: () => this.handleEnded(scheduler),
+      // A send can throw if the device disappears mid-song; stop cleanly and
+      // report through the single aria-live region.
+      onError: (message) => {
+        this.outputLost();
+        this.options.onStatus(`MIDI output failed — playback stopped (${message}).`);
+      },
     });
     this.scheduler = scheduler;
     scheduler.play();

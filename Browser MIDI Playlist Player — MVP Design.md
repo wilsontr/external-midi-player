@@ -89,7 +89,7 @@ Timing accuracy comes from handing every message to the browser with a future ti
 ### Scheduler
 
 1. On play, record `t0 = performance.now() + 100` (ms) minus the resume offset.
-2. Every 25 ms (`setInterval`, or a Worker timer so background tabs are not throttled), send every event whose time falls before `now + 200 ms` with `output.send(bytes, t0 + eventTime)`.
+2. Every 25 ms a dedicated Worker timer (with a `setInterval` fallback) sends every event whose time falls before `now + 200 ms` with `output.send(bytes, t0 + eventTime)`.
 3. Track which notes are currently on, per channel, so they can be released.
 4. When the cursor passes the last event, wait for the scheduled tail to finish, then fire `ended`.
 
@@ -194,7 +194,7 @@ The biggest risks are Firefox's audio output routing and stuck notes on external
 | Firefox's MIDI add-on prompt confuses users | Users cancel and see no devices | Explain the prompt before clicking "Connect devices"; show a retry |
 | Notes hang after pause, stop or disconnect | External synth drones | Track sounding notes; release them, plus CC64 = 0; Panic button |
 | Scheduled messages cannot be cancelled in Chrome | Up to 200 ms of notes play after pause | Keep look-ahead at 200 ms; release after the last queued event |
-| Background tabs throttle timers to 1 s | Gaps or bursts in playback | Run the scheduler tick in a Worker; look-ahead covers short stalls |
+| Background tabs throttle timers to 1 s | Gaps or bursts in playback | Run the scheduler tick in a Worker (implemented in T5); look-ahead covers short stalls |
 | Multichannel interfaces expose only 2 channels | Inputs above 1–2 unreachable | Document it; route the instrument to inputs 1–2 for the MVP |
 | Monitoring a mic through speakers | Feedback howl | Monitor starts muted; warning when input and output share a device |
 | Malformed or huge MIDI files | Parser throws or UI stalls | Parse in try/catch; mark entry as error; skip on auto-advance |
@@ -211,6 +211,7 @@ Automated tests cover parsing and scheduling logic; device behaviour is checked 
 - Scheduler timing stress: a dense five-minute event list driven by a jittered tick loop — exact timestamps inside the look-ahead, bounded lateness after a 500 ms stall, no past timestamps and no drift.
 - Playlist reducer: add, remove, reorder, auto-advance skipping error entries.
 - Persistence: playlist and audio settings save/restore, corrupt data ignored, storage failures handled.
+- Worker tick timer: start/stop/dispose, pause/resume, and the worker-error fallback; a Playwright assertion that playback creates the Worker.
 
 **Automated (Playwright, Chromium and Firefox)**
 
@@ -232,7 +233,7 @@ The MVP is about 4.5 developer-days for one experienced front-end developer, bui
 2. **Parsing and scheduler (1 day):** event-list builder, look-ahead scheduler, note tracking, Panic, unit tests.
 3. **Transport and playlist (1 day):** play/pause/stop/next/previous, auto-advance, drag-and-drop, reorder, progress display.
 4. **Audio monitoring (1 day):** input and output pickers, graph, meter, mute, Chrome and Firefox output paths, latency readout.
-5. **Hardening and deploy (1 day):** Worker timer, error states, Playwright tests, manual matrix, static deploy (any HTTPS host; reference deployment: GitHub Pages via GitHub Actions, T6).
+5. **Hardening and deploy (1 day):** Worker timer, error states, baseline CSP, Playwright tests, manual matrix, static deploy (any HTTPS host; reference deployment: GitHub Pages via GitHub Actions, T6).
 
 ### After the MVP
 

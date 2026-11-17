@@ -324,4 +324,54 @@ describe('Scheduler', () => {
     expect(calls.length).toBe(countAfterDispose);
     expect(scheduler.isPlaying()).toBe(false);
   });
+
+  it('starts the tick timer on play, keeps it across pause and disposes it on stop', () => {
+    const timer = { start: vi.fn(), stop: vi.fn(), dispose: vi.fn() };
+    const { output } = makeOutput();
+    const scheduler = new Scheduler({
+      output,
+      events: EVENTS,
+      duration: DURATION,
+      createTimer: () => timer,
+    });
+
+    scheduler.play();
+    expect(timer.start).toHaveBeenCalledTimes(1);
+    expect(timer.start.mock.calls[0][0]).toBe(25);
+
+    scheduler.pause();
+    expect(timer.stop).toHaveBeenCalledTimes(1);
+    expect(timer.dispose).not.toHaveBeenCalled();
+
+    scheduler.play(); // resume reuses the same timer
+    expect(timer.start).toHaveBeenCalledTimes(2);
+
+    scheduler.stop();
+    expect(timer.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops cleanly and reports when output.send throws', () => {
+    const output = {
+      id: 'out',
+      name: 'Gone Out',
+      manufacturer: 'Test',
+      state: 'disconnected',
+      send: vi.fn(() => {
+        throw new Error('device gone');
+      }),
+    } as unknown as MIDIOutput;
+    const errors: string[] = [];
+    const scheduler = new Scheduler({
+      output,
+      events: EVENTS,
+      duration: DURATION,
+      onError: (message) => errors.push(message),
+    });
+
+    scheduler.play();
+    expect(() => vi.advanceTimersByTime(25)).not.toThrow();
+
+    expect(errors).toEqual(['device gone']);
+    expect(scheduler.isPlaying()).toBe(false);
+  });
 });

@@ -195,6 +195,19 @@ test.describe('T3 — transport and playlist', () => {
     await expect(rows.nth(1)).toHaveAttribute('aria-current', 'true');
   });
 
+  test('runs the scheduler tick in a dedicated Worker', async ({ page }) => {
+    const workers: string[] = [];
+    page.on('worker', (worker) => workers.push(worker.url()));
+
+    await setup(page);
+    await dropFiles(page, [song('a.mid', 4)]);
+    await page.getByTestId('play-button').click();
+    await expect(page.getByTestId('playback-state')).toHaveText('Playing');
+
+    await expect.poll(() => workers.length).toBeGreaterThan(0);
+    expect(workers.some((url) => url.includes('tickWorker'))).toBe(true);
+  });
+
   test('progress and elapsed time update at least 10 times per second (R12)', async ({ page }) => {
     await setup(page);
     await dropFiles(page, [song('long.mid', 20)]);

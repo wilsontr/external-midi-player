@@ -11,6 +11,8 @@ test.describe('T1 — scaffold and device access', () => {
 
     await expect(page.getByTestId('unsupported-notice')).toBeVisible();
     await expect(page.getByTestId('connect-button')).toBeDisabled();
+    // The single aria-live region must carry the same message (T5).
+    await expect(page.getByTestId('status-region')).toContainText('does not support Web MIDI');
   });
 
   test('"Connect devices" triggers both the MIDI and microphone permission prompts', async ({

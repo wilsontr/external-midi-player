@@ -5,7 +5,8 @@
  * future Web Audio timestamp, not from JavaScript timers:
  *
  * - On play, `t0 = performance.now() + initialDelayMs − resumeOffset`.
- * - Every tick (25 ms) sends every not-yet-sent event whose time falls
+ * - Every tick (25 ms, driven by a dedicated Worker timer with a
+ *   `setInterval` fallback) sends every not-yet-sent event whose time falls
  *   before `now + lookaheadMs` via `output.send(bytes, t0 + eventTimeMs)` —
  *   always a future timestamp.
  * - Sounding notes are tracked per channel so pause, stop and panic can
@@ -16,11 +17,14 @@
  *   delivered, `onEnded` fires — the song ends within a tick of its computed
  *   duration.
  *
- * Background tabs throttle `setInterval` to 1 s; the 200 ms look-ahead covers
- * short stalls, and moving the tick into a Worker is T5.
+ * Background tabs throttle page timers; the Worker keeps the tick running and
+ * the 200 ms look-ahead absorbs short stalls. Sends that throw (the output
+ * vanished mid-song) stop the scheduler and surface the failure instead of
+ * leaving an uncaught interval error.
  */
 
 import type { ParsedMidiEvent } from './parser';
+import { createSchedulerTimer, type SchedulerTimer } from './workerTimer';
 
 /** Injectable clock (tests use a fake one). */
 export interface SchedulerClock {
@@ -44,6 +48,10 @@ export interface SchedulerOptions {
   lookaheadMs?: number;
   /** Delay between play() and the first scheduled time. Default 100 ms. */
   initialDelayMs?: number;
+  /** Injectable tick timer. Defaults to a Worker timer with an interval fallback. */
+  createTimer?: () => SchedulerTimer;
+  /** Called when a `MIDIOutput.send` throws (the output vanished mid-song). */
+  onError?: (message: string) => void;
 }
 
 /** Encodes one parsed event as raw MIDI bytes for `MIDIOutput.send`. */
@@ -77,6 +85,8 @@ export class Scheduler {
   private readonly tickMs: number;
   private readonly lookaheadMs: number;
   private readonly initialDelayMs: number;
+  private readonly createTimer: () => SchedulerTimer;
+  private readonly onError?: (message: string) => void;
 
   /** Wall-clock time (ms) at which song time 0 occurs, while playing. */
   private t0: number | null = null;
@@ -88,7 +98,7 @@ export class Scheduler {
   private lastSentWall: number | null = null;
   /** Notes currently sounding, per channel. */
   private readonly sounding = new Map<number, Set<number>>();
-  private timer: ReturnType<typeof setInterval> | null = null;
+  private timer: SchedulerTimer | null = null;
 
   constructor(options: SchedulerOptions) {
     this.output = options.output;
@@ -99,6 +109,8 @@ export class Scheduler {
     this.tickMs = options.tickMs ?? 25;
     this.lookaheadMs = options.lookaheadMs ?? 200;
     this.initialDelayMs = options.initialDelayMs ?? 100;
+    this.createTimer = options.createTimer ?? createSchedulerTimer;
+    this.onError = options.onError;
   }
 
   /**
@@ -107,12 +119,12 @@ export class Scheduler {
    * re-sent and notes held across the pause are not re-struck.
    */
   play(): void {
-    if (this.timer !== null) {
+    if (this.t0 !== null) {
       return;
     }
     const now = this.clock.now();
     this.t0 = now + this.initialDelayMs - this.pausedPositionMs;
-    this.timer = setInterval(() => this.tick(), this.tickMs);
+    this.ensureTimer().start(this.tickMs, () => this.tick());
   }
 
   /**
@@ -127,6 +139,7 @@ export class Scheduler {
     const now = this.clock.now();
     this.pausedPositionMs = Math.max(0, now - t0);
     this.releaseSounding();
+    // Keep the timer for resume; only a full stop/end/dispose releases it.
     this.stopTimer();
     this.t0 = null;
     this.lastSentWall = null;
@@ -139,7 +152,7 @@ export class Scheduler {
    */
   stop(): void {
     this.releaseSounding();
-    this.stopTimer();
+    this.disposeTimer();
     this.t0 = null;
     this.pausedPositionMs = 0;
     this.nextIndex = 0;
@@ -168,7 +181,7 @@ export class Scheduler {
    * Send a release via stop() or panic() first if the hardware needs one.
    */
   dispose(): void {
-    this.stopTimer();
+    this.disposeTimer();
     this.t0 = null;
     this.pausedPositionMs = 0;
     this.nextIndex = 0;
@@ -197,17 +210,31 @@ export class Scheduler {
     }
     const now = this.clock.now();
     const horizon = now + this.lookaheadMs;
-    while (this.nextIndex < this.events.length) {
-      const e = this.events[this.nextIndex];
-      const wall = t0 + e.time * 1000;
-      if (wall >= horizon) {
-        break;
+    try {
+      while (this.nextIndex < this.events.length) {
+        const e = this.events[this.nextIndex];
+        const wall = t0 + e.time * 1000;
+        if (wall >= horizon) {
+          break;
+        }
+        // Web MIDI timestamps cannot be in the past; with a slow tick an event
+        // may already be late when it is sent — clamp to now so it fires
+        // immediately instead of with a past timestamp.
+        this.sendEvent(e, wall < now ? now : wall);
+        this.nextIndex += 1;
       }
-      // Web MIDI timestamps cannot be in the past; with a slow tick an event
-      // may already be late when it is sent — clamp to now so it fires
-      // immediately instead of with a past timestamp.
-      this.sendEvent(e, wall < now ? now : wall);
-      this.nextIndex += 1;
+    } catch (err) {
+      // The output disappeared mid-song (or the browser rejected the send).
+      // A release would likely throw too, so stop without sending, release the
+      // worker and report instead of leaving an uncaught interval error.
+      this.disposeTimer();
+      this.t0 = null;
+      this.pausedPositionMs = 0;
+      this.nextIndex = 0;
+      this.lastSentWall = null;
+      this.sounding.clear();
+      this.onError?.(err instanceof Error ? err.message : String(err));
+      return;
     }
     // The scheduled tail has finished once the last event's wall time has
     // passed — the song ends at its computed duration. Release anything still
@@ -215,7 +242,7 @@ export class Scheduler {
     // the map without a note-off would leave that note stuck on the hardware.
     if (this.nextIndex >= this.events.length && now >= t0 + this.duration * 1000) {
       this.releaseSounding();
-      this.stopTimer();
+      this.disposeTimer();
       this.t0 = null;
       this.pausedPositionMs = 0;
       this.nextIndex = 0;
@@ -265,20 +292,34 @@ export class Scheduler {
       return;
     }
     const wall = this.releaseWall();
-    for (const [channel, notes] of this.sounding) {
-      const ch = channel & 0x0f;
-      for (const note of notes) {
-        this.output.send(Uint8Array.from([0x80 | ch, note & 0x7f, 0]), wall);
+    try {
+      for (const [channel, notes] of this.sounding) {
+        const ch = channel & 0x0f;
+        for (const note of notes) {
+          this.output.send(Uint8Array.from([0x80 | ch, note & 0x7f, 0]), wall);
+        }
+        this.output.send(Uint8Array.from([0xb0 | ch, 0x40, 0]), wall);
       }
-      this.output.send(Uint8Array.from([0xb0 | ch, 0x40, 0]), wall);
+    } catch {
+      // The output vanished; there is nothing more to send. The caller still
+      // clears the sounding state so a later reconnect does not retry it.
     }
     this.lastSentWall = wall;
   }
 
+  private ensureTimer(): SchedulerTimer {
+    if (this.timer === null) this.timer = this.createTimer();
+    return this.timer;
+  }
+
+  /** Stops ticking but keeps the timer for a possible resume. */
   private stopTimer(): void {
-    if (this.timer !== null) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
+    this.timer?.stop();
+  }
+
+  /** Stops and releases the timer (full stop, end of song, dispose). */
+  private disposeTimer(): void {
+    this.timer?.dispose();
+    this.timer = null;
   }
 }

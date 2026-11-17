@@ -46,7 +46,7 @@ Rules:
 | T2 | [T2-parsing-and-scheduler.md](T2-parsing-and-scheduler.md) | Parsing and scheduler | 1 day | done |
 | T3 | [T3-transport-and-playlist.md](T3-transport-and-playlist.md) | Transport and playlist | 1 day | done |
 | T4 | [T4-audio-monitoring.md](T4-audio-monitoring.md) | Audio monitoring | 1 day | done |
-| T5 | [T5-hardening-and-deploy.md](T5-hardening-and-deploy.md) | Hardening and deploy | 1 day | pending |
+| T5 | [T5-hardening-and-deploy.md](T5-hardening-and-deploy.md) | Hardening and deploy | 1 day | in-progress |
 | T6 | [T6-github-pages-deploy.md](T6-github-pages-deploy.md) | Hardening and deploy | 0.5 day | pending |
 | T7 | [T7-software-synth-output.md](T7-software-synth-output.md) | After the MVP | 2–3 days | pending |
 
