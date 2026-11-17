@@ -149,10 +149,10 @@ navigator.mediaDevices.getUserMedia({ audio: {
 
 ### Graph
 
-`MediaStreamAudioSourceNode` → `GainNode` (volume and mute) → `AnalyserNode` (meter) → output.
+`MediaStreamAudioSourceNode` → `GainNode` (volume and mute) → output. The meter taps the source in parallel, through a `ChannelSplitterNode` and one `AnalyserNode` per channel, so both peak levels can be read separately and the meter keeps working while monitoring is muted (which is how it starts).
 
 - Create the `AudioContext` with `latencyHint: 'interactive'` and resume it from a user click.
-- The meter reads peak level from the analyser on `requestAnimationFrame` and shows it in dBFS with a clip indicator above −1 dBFS.
+- The meter reads peak level from the analysers on `requestAnimationFrame` and shows it in dBFS with a clip indicator above −1 dBFS.
 - Monitoring starts muted. The user unmutes after choosing devices, which avoids a feedback loop when the input is a microphone near speakers.
 
 ### Output device

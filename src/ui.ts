@@ -6,6 +6,7 @@
  * See the design doc, "UI" and "MIDI output > Device access".
  */
 
+import { AudioMonitor, CLIP_THRESHOLD_DB, DB_FLOOR } from './audioMonitor';
 import { MidiDevices } from './midiDevices';
 import { PlaylistPlayer, type PlaylistEntry } from './playlist';
 
@@ -80,7 +81,44 @@ export function createUi(root: HTMLElement): void {
     </section>
     <section class="panel" data-testid="monitor-panel" aria-labelledby="monitor-heading">
       <h2 id="monitor-heading">Audio monitor</h2>
-      <p>Device monitoring is not connected yet.</p>
+      <p class="notice" data-testid="monitor-unavailable" hidden>
+        This browser cannot capture audio, so monitoring is unavailable.
+      </p>
+      <div class="row">
+        <label for="audio-input">Input</label>
+        <select id="audio-input" data-testid="audio-input-picker" disabled>
+          <option value="">Select an input…</option>
+        </select>
+      </div>
+      <div class="row" data-testid="audio-output-row">
+        <label for="audio-output">Output</label>
+        <select id="audio-output" data-testid="audio-output-picker" disabled>
+          <option value="">System default</option>
+        </select>
+        <button type="button" data-testid="grant-output-button" hidden>Choose output device…</button>
+      </div>
+      <p class="hint" data-testid="audio-output-note" hidden>
+        This browser cannot choose a monitoring output, so audio plays to the system default output.
+      </p>
+      <div class="row">
+        <button type="button" data-testid="mute-button" aria-pressed="true">🔇 Muted</button>
+        <label for="monitor-volume">Volume</label>
+        <input type="range" id="monitor-volume" min="0" max="100" value="100" data-testid="volume-slider" />
+        <span data-testid="volume-text">100%</span>
+      </div>
+      <div class="meter" data-testid="meter" role="img" aria-label="Input level meter">
+        <div class="meter-bar"><div class="meter-fill" data-testid="meter-left"></div></div>
+        <div class="meter-bar"><div class="meter-fill" data-testid="meter-right"></div></div>
+      </div>
+      <p class="row">
+        <span data-testid="meter-text">L −∞ · R −∞ dBFS</span>
+        <span class="clip" data-testid="clip-indicator" hidden>CLIP</span>
+      </p>
+      <p data-testid="latency-readout">Browser latency: —</p>
+      <p class="notice" data-testid="feedback-warning" hidden>
+        The input and output are the same device. Unmute with care: a microphone near the
+        speakers can cause feedback.
+      </p>
     </section>
   `;
 
@@ -98,6 +136,21 @@ export function createUi(root: HTMLElement): void {
   const panicButton = root.querySelector<HTMLButtonElement>('[data-testid="panic-button"]')!;
   const progress = root.querySelector<HTMLProgressElement>('[data-testid="progress"]')!;
   const timeDisplay = root.querySelector<HTMLElement>('[data-testid="time-display"]')!;
+  const audioInputPicker = root.querySelector<HTMLSelectElement>('[data-testid="audio-input-picker"]')!;
+  const audioOutputPicker = root.querySelector<HTMLSelectElement>('[data-testid="audio-output-picker"]')!;
+  const audioOutputRow = root.querySelector<HTMLElement>('[data-testid="audio-output-row"]')!;
+  const audioOutputNote = root.querySelector<HTMLElement>('[data-testid="audio-output-note"]')!;
+  const grantOutputButton = root.querySelector<HTMLButtonElement>('[data-testid="grant-output-button"]')!;
+  const monitorUnavailable = root.querySelector<HTMLElement>('[data-testid="monitor-unavailable"]')!;
+  const muteButton = root.querySelector<HTMLButtonElement>('[data-testid="mute-button"]')!;
+  const volumeSlider = root.querySelector<HTMLInputElement>('[data-testid="volume-slider"]')!;
+  const volumeText = root.querySelector<HTMLElement>('[data-testid="volume-text"]')!;
+  const meterLeft = root.querySelector<HTMLElement>('[data-testid="meter-left"]')!;
+  const meterRight = root.querySelector<HTMLElement>('[data-testid="meter-right"]')!;
+  const meterText = root.querySelector<HTMLElement>('[data-testid="meter-text"]')!;
+  const clipIndicator = root.querySelector<HTMLElement>('[data-testid="clip-indicator"]')!;
+  const latencyReadout = root.querySelector<HTMLElement>('[data-testid="latency-readout"]')!;
+  const feedbackWarning = root.querySelector<HTMLElement>('[data-testid="feedback-warning"]')!;
   const playlistPanel = root.querySelector<HTMLElement>('[data-testid="playlist-panel"]')!;
   const dropZone = root.querySelector<HTMLElement>('[data-testid="drop-zone"]')!;
   const addFilesButton = root.querySelector<HTMLButtonElement>('[data-testid="add-files-button"]')!;
@@ -401,24 +454,104 @@ export function createUi(root: HTMLElement): void {
     outputPicker.value = midi.selectedId() ?? '';
   }
 
-  /**
-   * Request microphone permission so the permission prompt appears in the
-   * same gesture as the MIDI one. T4 owns the capture graph; the tracks are
-   * stopped immediately — this only warms up the permission.
-   */
-  async function requestMicrophonePermission(): Promise<boolean> {
-    const mediaDevices = navigator.mediaDevices;
-    if (!mediaDevices || typeof mediaDevices.getUserMedia !== 'function') {
-      return false;
-    }
-    try {
-      const stream = await mediaDevices.getUserMedia({ audio: true });
-      for (const track of stream.getTracks()) track.stop();
-      return true;
-    } catch {
-      return false;
-    }
+  const monitor = new AudioMonitor({
+    onStatus: setStatus,
+    onDevicesChanged: () => renderAudioDevices(),
+    onInputLost: () => renderAudioDevices(),
+  });
+  let audioReady = false;
+  let warningShown = false;
+
+  /** (Re)build both audio pickers from the monitor's device lists. */
+  function renderAudioDevices(): void {
+    audioInputPicker.replaceChildren(
+      new Option('Select an input…', ''),
+      ...monitor.inputs().map((d) => new Option(d.label, d.id)),
+    );
+    audioInputPicker.value = monitor.selectedInput ?? '';
+    audioInputPicker.disabled = !audioReady;
+
+    const hasOutputChoice = monitor.routing !== 'default';
+    audioOutputRow.hidden = !hasOutputChoice;
+    audioOutputNote.hidden = hasOutputChoice;
+    audioOutputPicker.replaceChildren(
+      new Option('System default', ''),
+      ...monitor.outputs().map((d) => new Option(d.label, d.id)),
+    );
+    audioOutputPicker.value = monitor.selectedOutput;
+    audioOutputPicker.disabled = !audioReady;
+    grantOutputButton.hidden = !monitor.canSelectAudioOutput;
+    grantOutputButton.disabled = !audioReady;
+    updateFeedbackWarning();
   }
+
+  function updateFeedbackWarning(): void {
+    const shared = monitor.sharesDevice();
+    feedbackWarning.hidden = !shared;
+    if (shared && !warningShown) {
+      setStatus('Warning: the monitoring input and output are the same device — feedback is possible.');
+    }
+    warningShown = shared;
+  }
+
+  const meterPercent = (db: number): string =>
+    `${Math.max(0, Math.min(100, ((db - -60) / 60) * 100))}%`;
+  const formatDb = (db: number): string => (db <= DB_FLOOR ? '−∞' : db.toFixed(1).replace('-', '−'));
+  let clipUntil = 0;
+
+  /** Meter and latency readout, driven by requestAnimationFrame. */
+  function meterFrame(now: number): void {
+    const { left, right } = monitor.peaks();
+    meterLeft.style.width = meterPercent(left);
+    meterRight.style.width = meterPercent(right);
+    const text = `L ${formatDb(left)} · R ${formatDb(right)} dBFS`;
+    if (meterText.textContent !== text) meterText.textContent = text;
+    if (Math.max(left, right) > CLIP_THRESHOLD_DB) clipUntil = now + 1000;
+    clipIndicator.hidden = now > clipUntil;
+    const latency = monitor.latencyMs();
+    const latencyText =
+      latency === null
+        ? 'Browser latency: —'
+        : `Browser latency: ${latency.toFixed(1)} ms (excludes interface and driver buffering)`;
+    if (latencyReadout.textContent !== latencyText) latencyReadout.textContent = latencyText;
+    requestAnimationFrame(meterFrame);
+  }
+
+  audioInputPicker.addEventListener('change', () => {
+    const requested = audioInputPicker.value || null;
+    void monitor.selectInput(requested).then((selected) => {
+      // A failed open leaves the picker showing a device that is not monitored;
+      // put it back on whatever is actually captured. Skip this if the user has
+      // already picked another device while this one was opening.
+      if (!selected && audioInputPicker.value === (requested ?? '')) {
+        audioInputPicker.value = monitor.selectedInput ?? '';
+      }
+      updateFeedbackWarning();
+    });
+  });
+  audioOutputPicker.addEventListener('change', () => {
+    void monitor.selectOutput(audioOutputPicker.value).then(() => {
+      audioOutputPicker.value = monitor.selectedOutput;
+      updateFeedbackWarning();
+    });
+  });
+  grantOutputButton.addEventListener('click', () => {
+    void monitor.grantOutput().then(() => renderAudioDevices());
+  });
+  muteButton.addEventListener('click', () => {
+    const muted = !monitor.muted;
+    monitor.setMuted(muted);
+    muteButton.setAttribute('aria-pressed', String(muted));
+    muteButton.textContent = muted ? '🔇 Muted' : '🔊 Monitoring';
+  });
+  volumeSlider.addEventListener('input', () => {
+    monitor.setVolume(Number(volumeSlider.value) / 100);
+    volumeText.textContent = `${volumeSlider.value}%`;
+  });
+
+  if (!monitor.supported) monitorUnavailable.hidden = false;
+  renderAudioDevices();
+  requestAnimationFrame(meterFrame);
 
   async function connectDevices(): Promise<void> {
     connectButton.disabled = true;
@@ -427,8 +560,10 @@ export function createUi(root: HTMLElement): void {
       // Both prompts must be triggered from this user gesture.
       const [midiGranted, micGranted] = await Promise.all([
         midi.connect(),
-        requestMicrophonePermission(),
+        monitor.unlock(),
       ]);
+      audioReady = micGranted;
+      renderAudioDevices();
 
       const parts: string[] = [];
       if (midiGranted) {

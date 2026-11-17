@@ -6,8 +6,8 @@ Vite + TypeScript app, no backend.
 
 - Design (source of truth):
   [`Browser MIDI Playlist Player — MVP Design.md`](Browser%20MIDI%20Playlist%20Player%20%E2%80%94%20MVP%20Design.md)
-- Milestones: [`tasks/`](tasks/README.md) — T1 (scaffold + device access) is
-  complete; T2–T5 are pending.
+- Milestones: [`tasks/`](tasks/README.md) — T1–T4 are complete; T5 (hardening
+  and deploy) is pending.
 
 ## Quickstart
 
@@ -33,11 +33,12 @@ npx tsc --noEmit        # typecheck
 | File | Responsibility |
 | --- | --- |
 | `src/midiDevices.ts` | Web MIDI access, output listing, hot-plug, remembering the selected output by name |
+| `src/parser.ts` | Parse `.mid` files into flat, time-sorted event lists (tempo map, channels preserved) |
+| `src/scheduler.ts` | Look-ahead scheduler with future-timestamped `MIDIOutput.send()`, note tracking and Panic |
+| `src/playlist.ts` | Playlist entries, transport state, background duration parse, auto-advance |
+| `src/audioMonitor.ts` | Audio input capture, gain/mute, stereo dBFS meter, output routing, latency |
 | `src/ui.ts` | Single-screen layout, Connect devices flow (MIDI + mic prompts), single aria-live status region |
 | `src/main.ts` | Entry point |
-
-T2–T4 will add `src/parser.ts`, `src/scheduler.ts`, `src/playlist.ts`, and
-`src/audioMonitor.ts` — one module per architecture box.
 
 ## Browser support
 
