@@ -30,14 +30,38 @@ describe('playlistReducer', () => {
     expect(names(more)).toEqual(['a', 'b', 'c.final', 'd']);
   });
 
-  it('removes an entry and clears the current id when it was current', () => {
-    let s = stateWith('a.mid', 'b.mid');
-    const [a, b] = s.entries;
-    s = playlistReducer(s, { type: 'setCurrent', id: a.id });
-    expect(playlistReducer(s, { type: 'remove', id: b.id }).currentId).toBe(a.id);
-    const removed = playlistReducer(s, { type: 'remove', id: a.id });
-    expect(names(removed)).toEqual(['b']);
-    expect(removed.currentId).toBeNull();
+  it('highlights the entry that plays next as entries are added and removed', () => {
+    let s = stateWith('a.mid', 'b.mid', 'c.mid');
+    const [a, b, c] = s.entries;
+    // A list that had nothing current highlights its first playable entry.
+    expect(s.currentId).toBe(a.id);
+
+    // Removing a non-current entry leaves the highlight alone.
+    expect(playlistReducer(s, { type: 'remove', id: c.id }).currentId).toBe(a.id);
+
+    // Removing the current entry moves the highlight to the next ready one.
+    s = playlistReducer(s, { type: 'setCurrent', id: b.id });
+    const afterB = playlistReducer(s, { type: 'remove', id: b.id });
+    expect(names(afterB)).toEqual(['a', 'c']);
+    expect(afterB.currentId).toBe(c.id);
+
+    // ... and to the nearest previous ready one when the current entry was last.
+    s = playlistReducer(s, { type: 'setCurrent', id: c.id });
+    expect(playlistReducer(s, { type: 'remove', id: c.id }).currentId).toBe(b.id);
+  });
+
+  it('skips error entries when re-selecting after a removal', () => {
+    let s = stateWith('a.mid', 'bad.mid', 'c.mid');
+    const [a, bad, c] = s.entries;
+    s = playlistReducer(s, { type: 'failed', id: bad.id, error: 'x' });
+    expect(s.currentId).toBe(a.id);
+    expect(playlistReducer(s, { type: 'remove', id: a.id }).currentId).toBe(c.id);
+
+    // Nothing playable left: no highlight.
+    let onlyBad = playlistReducer(s, { type: 'remove', id: a.id });
+    onlyBad = playlistReducer(onlyBad, { type: 'remove', id: c.id });
+    expect(names(onlyBad)).toEqual(['bad']);
+    expect(onlyBad.currentId).toBeNull();
   });
 
   it('moves an entry to the target index and keeps the current entry by id', () => {
@@ -87,6 +111,8 @@ describe('PlaylistPlayer', () => {
   let statuses: string[];
   const output = { id: 'o', send: vi.fn() } as unknown as MIDIOutput;
   let outputAvailable: boolean;
+  /** Swapped by tests that need a failing parse. */
+  let parseFile: (f: File) => Promise<ParseResult>;
 
   const parse = async (f: File): Promise<ParseResult> =>
     f.name.startsWith('bad')
@@ -100,11 +126,12 @@ describe('PlaylistPlayer', () => {
     schedulers = [];
     statuses = [];
     outputAvailable = true;
+    parseFile = parse;
     player = new PlaylistPlayer({
       getOutput: () => (outputAvailable ? output : null),
       onChange: () => {},
       onStatus: (m) => statuses.push(m),
-      parse,
+      parse: (f) => parseFile(f),
       createScheduler: (options) => {
         const calls: string[] = [];
         const fake: FakeScheduler = {
@@ -166,6 +193,48 @@ describe('PlaylistPlayer', () => {
     await flush();
     expect(player.state).toBe('stopped');
     expect(last(statuses)).toContain('output');
+  });
+
+  it('highlights the entry that plays next as entries are added and removed', () => {
+    player.add([file('a.mid'), file('b.mid')]);
+    expect(currentName()).toBe('a');
+    const [a, b] = player.playlist.entries;
+    player.remove(a.id);
+    expect(currentName()).toBe('b');
+    player.remove(b.id);
+    expect(player.currentEntry()).toBeNull();
+  });
+
+  it('turns a parse rejection into an error row instead of wedging the queue', async () => {
+    parseFile = async () => {
+      throw new Error('disk gone');
+    };
+    player.add([file('a.mid'), file('b.mid')]);
+    await flush();
+    // Both files rejected by the background parse; the queue kept draining.
+    expect(player.playlist.entries.map((e) => e.status)).toEqual(['error', 'error']);
+    expect(player.playlist.entries[0].error).toBe('disk gone');
+
+    player.play();
+    await flush();
+    expect(player.state).toBe('stopped');
+    expect(schedulers).toHaveLength(0);
+    expect(last(statuses)).toContain('No playable songs');
+  });
+
+  it('stops cleanly when the parse rejects as the song starts', async () => {
+    player.add([file('a.mid')]);
+    await flush();
+    expect(player.playlist.entries[0].status).toBe('ready');
+
+    parseFile = async () => {
+      throw new Error('stream closed');
+    };
+    player.play();
+    await flush();
+    expect(player.playlist.entries[0]).toMatchObject({ status: 'error', error: 'stream closed' });
+    expect(player.state).toBe('stopped');
+    expect(schedulers).toHaveLength(0);
   });
 
   it('auto-advances after a 1 s gap, skipping error entries, and stops after the last song', async () => {

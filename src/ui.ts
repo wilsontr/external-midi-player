@@ -152,7 +152,8 @@ export function createUi(root: HTMLElement): void {
   function updateProgress(): void {
     const total = player.currentEntry()?.durationSec ?? 0;
     const position = total > 0 ? Math.min(player.position(), total) : player.position();
-    progress.value = total > 0 ? position / total : 0;
+    const value = total > 0 ? position / total : 0;
+    if (progress.value !== value) progress.value = value;
     const text = `${formatTime(position, true)} / ${formatTime(total)}`;
     if (timeDisplay.textContent !== text) timeDisplay.textContent = text;
   }
@@ -232,13 +233,14 @@ export function createUi(root: HTMLElement): void {
   function addFiles(files: File[]): void {
     if (files.length === 0) return;
     const { added, rejected } = player.add(files);
+    const parts: string[] = [];
+    if (added > 0) parts.push(`Added ${added} file${added === 1 ? '' : 's'}.`);
     if (rejected.length > 0) {
-      setStatus(
+      parts.push(
         `Rejected ${rejected.length} file${rejected.length === 1 ? '' : 's'} (not .mid or .midi): ${rejected.join(', ')}`,
       );
-    } else {
-      setStatus(`Added ${added} file${added === 1 ? '' : 's'}.`);
     }
+    setStatus(parts.join(' '));
   }
 
   playlistList.addEventListener('click', (event) => {

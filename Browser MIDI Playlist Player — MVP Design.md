@@ -82,7 +82,8 @@ Timing accuracy comes from handing every message to the browser with a future ti
 - Parse with `parseMidi` from `midi-file` (the parser `@tonejs/midi` wraps). It handles format 0 and 1 files, running status and the tempo map, and yields note and controller events with times in seconds, keeping each event's channel. The high-level `@tonejs/midi` `Midi`/`Track` API is not used: it collapses a track to a single channel, drops channel pressure and program-change history, and pairs notes in O(n²), which stalls on large files.
 - Build one flat, time-sorted event list per song: note-on, note-off, control change, program change, pitch bend and channel pressure. Meta events other than tempo are dropped.
 - Keep the original channel numbers. Song duration = time of the last event.
-- Parse when a song is about to play, not when it is added, so large playlists load quickly. Cache the last parsed song.
+- Parse each added file once in the background, one at a time, to fill in its duration; the parsed events are then discarded so a large playlist stays small in memory.
+- Parse again when a song is about to play, and cache the last parsed song so replaying the same file skips the parse.
 
 ### Scheduler
 

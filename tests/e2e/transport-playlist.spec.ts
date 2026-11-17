@@ -58,6 +58,8 @@ test.describe('T3 — transport and playlist', () => {
 
     await expect(page.getByTestId('playlist-row')).toHaveCount(10);
     expect(await rowNames(page)).toEqual(files.map((f) => f.name.replace('.mid', '')));
+    // The entry that plays next is highlighted as soon as files are added.
+    await expect(page.getByTestId('playlist-row').first()).toHaveAttribute('aria-current', 'true');
     await expect(page.getByTestId('entry-duration').first()).toHaveText('0:01');
     await expect(page.getByTestId('entry-duration').last()).toHaveText('0:10');
   });
@@ -67,6 +69,7 @@ test.describe('T3 — transport and playlist', () => {
     await dropFiles(page, [{ name: 'notes.txt', bytes: [1, 2, 3] }, song('ok.mid')]);
 
     await expect(page.getByTestId('playlist-row')).toHaveCount(1);
+    await expect(page.getByTestId('status-region')).toContainText('Added 1 file.');
     await expect(page.getByTestId('status-region')).toContainText('notes.txt');
   });
 
