@@ -107,22 +107,55 @@ test.describe('T4 — audio monitoring', () => {
     await expect.poll(() => audioMock<string[]>(page, 'm.contextSinks')).toContain('out2');
   });
 
-  test('Firefox path: the output is chosen with <audio>.setSinkId after selectAudioOutput()', async ({
+  test('Firefox path: only granted outputs are listed and picked with <audio>.setSinkId', async ({
     page,
   }) => {
     await setup(page, {
       contextSinkId: false,
-      outputs: [],
       selectAudioOutput: { id: 'usb-dac', label: 'USB DAC' },
     });
     await page.getByTestId('audio-input-picker').selectOption('in1');
-    await expect(page.getByTestId('audio-output-picker').locator('option')).toHaveCount(1);
 
+    // Enumerated outputs cannot be used with setSinkId until granted.
+    await expect(page.getByTestId('audio-output-picker').locator('option')).toHaveCount(1);
     await page.getByTestId('grant-output-button').click();
 
+    await expect(page.getByTestId('audio-output-picker').locator('option')).toHaveCount(2);
     await expect(page.getByTestId('audio-output-picker')).toHaveValue('usb-dac');
     await expect.poll(() => audioMock<string[]>(page, 'm.elementSinks')).toContain('usb-dac');
     expect(await audioMock<string[]>(page, 'm.contextSinks')).toEqual([]);
+  });
+
+  test('a failed input selection resets the picker and stops monitoring', async ({ page }) => {
+    await setup(page, { failInputs: ['in2'] });
+    const picker = page.getByTestId('audio-input-picker');
+    await page.evaluate(() => ((window as any).__mockAudio.level = [0.5, 0.5]));
+
+    await picker.selectOption('in1');
+    await expect(page.getByTestId('meter-text')).toHaveText('L −6.0 · R −6.0 dBFS');
+
+    await picker.selectOption('in2');
+
+    await expect(page.getByTestId('status-region')).toContainText('Could not open the selected audio input');
+    await expect(picker).toHaveValue('');
+    await expect(page.getByTestId('meter-text')).toHaveText('L −∞ · R −∞ dBFS');
+
+    // The next working device starts monitoring again.
+    await picker.selectOption('in1');
+    await expect(page.getByTestId('meter-text')).toHaveText('L −6.0 · R −6.0 dBFS');
+  });
+
+  test('falls back to the system default when the chosen output is rejected', async ({ page }) => {
+    await setup(page, { failSinkIds: ['out2'] });
+    await page.getByTestId('audio-input-picker').selectOption('in1');
+    await expect.poll(() => audioMock<number>(page, 'm.constraints.length')).toBe(1);
+
+    await page.getByTestId('audio-output-picker').selectOption('out2');
+
+    await expect(page.getByTestId('status-region')).toContainText('system default');
+    await expect(page.getByTestId('audio-output-picker')).toHaveValue('');
+    const sinks = await audioMock<string[]>(page, 'm.contextSinks');
+    expect(sinks[sinks.length - 1]).toBe('');
   });
 
   test('falls back to the system default with a note when no output can be chosen', async ({

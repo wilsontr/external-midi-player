@@ -40,7 +40,7 @@ export const CLIP_THRESHOLD_DB = -1;
 /** The `setSinkId` / `selectAudioOutput` additions missing from some DOM typings. */
 type SinkCapable = { setSinkId?: (sinkId: string) => Promise<void> };
 type OutputSelectingDevices = MediaDevices & {
-  selectAudioOutput?: () => Promise<{ deviceId: string; label: string }>;
+  selectAudioOutput?: () => Promise<{ deviceId: string; label: string; groupId?: string }>;
 };
 
 export interface AudioMonitorOptions {
@@ -115,6 +115,7 @@ export class AudioMonitor {
   private context: AudioContext | null = null;
   private gain: GainNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
+  private splitter: ChannelSplitterNode | null = null;
   private analysers: AnalyserNode[] = [];
   private audioElement: HTMLAudioElement | null = null;
   private buffer: Float32Array<ArrayBuffer> | null = null;
@@ -161,9 +162,18 @@ export class AudioMonitor {
     return this.inputList.slice();
   }
 
-  /** Selectable output devices (empty when routing is `default`). */
+  /**
+   * Selectable output devices (empty when routing is `default`).
+   *
+   * On the `<audio>` path the browser only lets `setSinkId` use a non-default
+   * device after the user picked it in `selectAudioOutput()`, so offering the
+   * enumerated-but-ungranted devices would only produce failed selections.
+   * "System default" stays available as its own picker entry.
+   */
   outputs(): AudioDeviceInfo[] {
-    return this.routing === 'default' ? [] : this.outputList.slice();
+    if (this.routing === 'default') return [];
+    if (this.canSelectAudioOutput) return this.grantedOutputs.slice();
+    return this.outputList.slice();
   }
 
   /**
@@ -211,17 +221,26 @@ export class AudioMonitor {
       ...this.grantedOutputs.filter((g) => !listed.some((d) => d.id === g.id)),
     ];
 
-    if (this.inputId !== null && !this.inputList.some((d) => d.id === this.inputId)) {
-      this.stopCapture();
+    const inputLost = this.inputId !== null && !this.inputList.some((d) => d.id === this.inputId);
+    if (inputLost) this.stopCapture();
+    const outputLost = this.outputId !== '' && !this.outputList.some((d) => d.id === this.outputId);
+    if (outputLost) this.outputId = '';
+    const outputFallbackApplied = outputLost ? await this.applySink() : true;
+
+    // Re-render before reporting, so a feedback warning cannot overwrite the
+    // "disconnected" message the user needs to see.
+    this.options.onDevicesChanged();
+    if (inputLost) {
       this.options.onStatus('Audio input disconnected — monitoring stopped.');
       this.options.onInputLost();
     }
-    if (this.outputId !== '' && !this.outputList.some((d) => d.id === this.outputId)) {
-      this.outputId = '';
-      await this.applySink();
-      this.options.onStatus('Monitoring output disconnected — using the system default output.');
+    if (outputLost) {
+      this.options.onStatus(
+        outputFallbackApplied
+          ? 'Monitoring output disconnected — using the system default output.'
+          : 'Monitoring output disconnected — could not switch to the system default output.',
+      );
     }
-    this.options.onDevicesChanged();
   }
 
   /**
@@ -247,11 +266,27 @@ export class AudioMonitor {
       for (const track of stream.getTracks()) track.stop();
       return false;
     }
-    const context = this.ensureContext();
+    let source: MediaStreamAudioSourceNode | null = null;
+    let splitter: ChannelSplitterNode | null = null;
+    try {
+      const context = this.ensureContext();
+      source = context.createMediaStreamSource(stream);
+      source.connect(this.gain!);
+      splitter = context.createChannelSplitter(2);
+      source.connect(splitter);
+      this.analysers.forEach((analyser, channel) => splitter!.connect(analyser, channel));
+    } catch {
+      // The browser refused to build the graph (no output device, too many
+      // contexts, …): release the capture we just opened rather than leaking it.
+      source?.disconnect();
+      for (const track of stream.getTracks()) track.stop();
+      this.options.onStatus('Could not start audio monitoring on this device.');
+      return false;
+    }
     this.stream = stream;
     this.inputId = id;
+    this.channels = stream.getAudioTracks()[0]?.getSettings?.().channelCount ?? 2;
     const track = stream.getAudioTracks()[0];
-    this.channels = track?.getSettings?.().channelCount ?? 2;
     track?.addEventListener?.('ended', () => {
       if (this.stream === stream) {
         this.stopCapture();
@@ -259,13 +294,8 @@ export class AudioMonitor {
         this.options.onInputLost();
       }
     });
-
-    const source = context.createMediaStreamSource(stream);
-    source.connect(this.gain!);
-    const splitter = context.createChannelSplitter(2);
-    source.connect(splitter);
-    this.analysers.forEach((analyser, channel) => splitter.connect(analyser, channel));
-    this.source = source;
+    this.source = source!;
+    this.splitter = splitter!;
     this.resume();
     return true;
   }
@@ -289,13 +319,15 @@ export class AudioMonitor {
       const info: AudioDeviceInfo = {
         id: granted.deviceId,
         label: granted.label || 'Selected output',
-        groupId: '',
+        // Keep the group so the same-device (feedback) warning still works.
+        groupId: granted.groupId ?? '',
       };
       if (!this.grantedOutputs.some((d) => d.id === info.id)) this.grantedOutputs.push(info);
       await this.refreshDevices();
       await this.selectOutput(info.id);
       return info;
     } catch {
+      this.options.onStatus('No output device selected — using the system default output.');
       return null;
     }
   }
@@ -310,6 +342,8 @@ export class AudioMonitor {
   setVolume(volume: number): void {
     this.level = Math.min(1, Math.max(0, volume));
     this.applyGain();
+    // The slider is a user gesture, so it can also unblock a suspended context.
+    this.resume();
   }
 
   /** Peak level per channel, in dBFS, read from the analysers. */
@@ -361,8 +395,11 @@ export class AudioMonitor {
     this.context = null;
     this.gain = null;
     this.analysers = [];
-    this.audioElement?.pause();
-    this.audioElement = null;
+    if (this.audioElement !== null) {
+      this.audioElement.pause();
+      this.audioElement.srcObject = null;
+      this.audioElement = null;
+    }
   }
 
   private stopCapture(): void {
@@ -370,6 +407,10 @@ export class AudioMonitor {
     this.stream = null;
     this.source?.disconnect();
     this.source = null;
+    // Disconnect the per-channel meter tap too, so repeated input changes do
+    // not leave old splitters wired into the analysers.
+    this.splitter?.disconnect();
+    this.splitter = null;
     this.inputId = null;
   }
 
@@ -405,17 +446,40 @@ export class AudioMonitor {
     return context;
   }
 
-  private async applySink(): Promise<void> {
+  /**
+   * Applies `outputId` to whichever node owns the sink. If the browser rejects
+   * it (an output that is no longer granted, or has disappeared), switches to
+   * the system default and says so, so the picker and the actual routing agree.
+   * Returns whether the requested sink is in use.
+   */
+  private async applySink(): Promise<boolean> {
     try {
-      if (this.routing === 'context' && this.context !== null) {
-        await (this.context as unknown as SinkCapable).setSinkId!(this.outputId);
-      } else if (this.routing === 'element' && this.audioElement !== null) {
-        await (this.audioElement as unknown as SinkCapable).setSinkId!(this.outputId);
-      }
+      await this.setSink(this.outputId);
+      return true;
     } catch {
-      this.outputId = '';
-      this.options.onStatus('Could not use that output — using the system default output.');
+      if (this.outputId !== '') {
+        this.outputId = '';
+        try {
+          await this.setSink('');
+          this.options.onStatus('Could not use that output — using the system default output.');
+        } catch {
+          this.options.onStatus('Could not use that output or the system default output.');
+        }
+      } else {
+        this.options.onStatus('Could not use the system default output.');
+      }
+      return false;
     }
+  }
+
+  private setSink(sinkId: string): Promise<void> {
+    if (this.routing === 'context' && this.context !== null) {
+      return (this.context as unknown as SinkCapable).setSinkId!(sinkId);
+    }
+    if (this.routing === 'element' && this.audioElement !== null) {
+      return (this.audioElement as unknown as SinkCapable).setSinkId!(sinkId);
+    }
+    return Promise.resolve();
   }
 
   private applyGain(): void {

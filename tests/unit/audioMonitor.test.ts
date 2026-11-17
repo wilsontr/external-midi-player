@@ -28,6 +28,7 @@ function setup(routing: OutputRouting = 'context') {
     device('audiooutput', 'out1', 'Interface', 'g1'),
   ];
   const streams: Array<ReturnType<typeof makeStream>> = [];
+  const splitters: Array<{ connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }> = [];
   let nextChannels = 2;
   const mediaDevices = {
     getUserMedia: vi.fn(async () => {
@@ -37,6 +38,7 @@ function setup(routing: OutputRouting = 'context') {
     }),
     enumerateDevices: vi.fn(async () => devices),
     ondevicechange: null as null | (() => void),
+    selectAudioOutput: undefined as undefined | (() => Promise<{ deviceId: string; label: string; groupId?: string }>),
   };
 
   const gain = { gain: { value: -1 }, connect: vi.fn() };
@@ -53,17 +55,21 @@ function setup(routing: OutputRouting = 'context') {
     baseLatency: 0.01,
     outputLatency: 0.02,
     destination: {},
-    setSinkId: vi.fn(async () => {}),
+    setSinkId: vi.fn(async (_id: string) => {}),
     resume: vi.fn(async () => {}),
     close: vi.fn(async () => {}),
     createGain: () => gain,
     createAnalyser: () => analysers[analyserIndex++],
-    createChannelSplitter: () => ({ connect: vi.fn() }),
+    createChannelSplitter: () => {
+      const splitter = { connect: vi.fn(), disconnect: vi.fn() };
+      splitters.push(splitter);
+      return splitter;
+    },
     createMediaStreamSource: vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn() })),
     createMediaStreamDestination: () => ({ stream: {}, connect: vi.fn() }),
   };
   const createContext = vi.fn(() => context as unknown as AudioContext);
-  const audio = { srcObject: null, play: vi.fn(async () => {}), pause: vi.fn(), setSinkId: vi.fn(async () => {}) };
+  const audio = { srcObject: null, play: vi.fn(async () => {}), pause: vi.fn(), setSinkId: vi.fn(async (_id: string) => {}) };
 
   const statuses: string[] = [];
   const onDevicesChanged = vi.fn();
@@ -78,7 +84,7 @@ function setup(routing: OutputRouting = 'context') {
     routing,
   });
   return {
-    monitor, mediaDevices, context, gain, samples, streams, statuses, audio, createContext,
+    monitor, mediaDevices, context, gain, samples, streams, splitters, statuses, audio, createContext,
     onDevicesChanged, onInputLost,
     setDevices: (d: MediaDeviceInfo[]) => (devices = d),
     setChannels: (n: number) => (nextChannels = n),
@@ -240,5 +246,76 @@ describe('AudioMonitor', () => {
     t.mediaDevices.getUserMedia.mockRejectedValueOnce(new Error('NotAllowedError'));
     expect(await t.monitor.unlock()).toBe(false);
     expect(t.monitor.inputs()).toEqual([]);
+  });
+
+  it('falls back to the system default output when the chosen one is rejected', async () => {
+    await t.monitor.unlock();
+    await t.monitor.selectInput('in1');
+    t.context.setSinkId.mockClear();
+    t.context.setSinkId.mockRejectedValueOnce(new Error('NotAllowedError'));
+
+    await t.monitor.selectOutput('out1');
+
+    expect(t.monitor.selectedOutput).toBe('');
+    expect(t.context.setSinkId.mock.calls.map((call) => call[0])).toEqual(['out1', '']);
+    expect(t.statuses[t.statuses.length - 1]).toContain('system default');
+  });
+
+  it('releases a newly opened capture when the audio graph cannot be built', async () => {
+    await t.monitor.unlock();
+    t.createContext.mockImplementationOnce(() => {
+      throw new Error('no audio device');
+    });
+
+    expect(await t.monitor.selectInput('in1')).toBe(false);
+
+    expect(t.streams[t.streams.length - 1]!.track.stop).toHaveBeenCalled();
+    expect(t.monitor.selectedInput).toBeNull();
+    expect(t.statuses[t.statuses.length - 1]).toContain('Could not start audio monitoring');
+  });
+
+  it('disconnects the previous meter splitter when the input changes', async () => {
+    await t.monitor.unlock();
+    await t.monitor.selectInput('in1');
+    const first = t.splitters[0];
+
+    await t.monitor.selectInput('in2');
+
+    expect(first.disconnect).toHaveBeenCalled();
+    expect(t.splitters).toHaveLength(2);
+  });
+
+  it('offers only granted outputs and keeps their group on the <audio> path', async () => {
+    const e = setup('element');
+    await e.monitor.unlock();
+    expect(e.monitor.canSelectAudioOutput).toBe(false);
+    e.mediaDevices.selectAudioOutput = vi.fn(async () => ({
+      deviceId: 'out1',
+      label: 'Interface',
+      groupId: 'g1',
+    }));
+    expect(e.monitor.canSelectAudioOutput).toBe(true);
+    // Enumerated-but-ungranted devices cannot be used with setSinkId.
+    expect(e.monitor.outputs()).toEqual([]);
+
+    await e.monitor.selectInput('in1');
+    const granted = await e.monitor.grantOutput();
+
+    expect(granted?.id).toBe('out1');
+    expect(e.monitor.outputs().map((d) => d.id)).toEqual(['out1']);
+    expect(e.monitor.selectedOutput).toBe('out1');
+    expect(e.audio.setSinkId).toHaveBeenLastCalledWith('out1');
+    expect(e.monitor.sharesDevice()).toBe(true);
+  });
+
+  it('says so when the output picker is dismissed without a device', async () => {
+    const e = setup('element');
+    await e.monitor.unlock();
+    e.mediaDevices.selectAudioOutput = vi.fn(async () => {
+      throw new DOMException('cancelled', 'AbortError');
+    });
+
+    expect(await e.monitor.grantOutput()).toBeNull();
+    expect(e.statuses[e.statuses.length - 1]).toContain('No output device selected');
   });
 });

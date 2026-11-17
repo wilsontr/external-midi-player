@@ -26,6 +26,10 @@ export interface AudioMockOptions {
   elementSinkId?: boolean;
   /** `mediaDevices.selectAudioOutput` resolves to this device (Firefox). */
   selectAudioOutput?: { id: string; label: string };
+  /** Capture rejects for these input ids (a device that vanished). */
+  failInputs?: string[];
+  /** `setSinkId` rejects for these output ids (an output that is not granted). */
+  failSinkIds?: string[];
 }
 
 export const DEFAULT_AUDIO_INPUTS: AudioDeviceMock[] = [
@@ -57,6 +61,8 @@ export async function mockDevices(
     contextSinkId: true,
     elementSinkId: true,
     selectAudioOutput: undefined,
+    failInputs: [],
+    failSinkIds: [],
     ...options.audio,
   } as Required<Omit<AudioMockOptions, 'selectAudioOutput'>> &
     Pick<AudioMockOptions, 'selectAudioOutput'>;
@@ -144,6 +150,10 @@ export async function mockDevices(
             (window as any).__mockMidi.calls.mic += 1;
           } else {
             mock.constraints.push(constraints);
+            const wanted = constraints?.audio?.deviceId?.exact;
+            if (audio.failInputs.includes(wanted)) {
+              return Promise.reject(new DOMException('device vanished', 'NotAllowedError'));
+            }
           }
           const track = {
             stop: () => {
@@ -197,7 +207,7 @@ export async function mockDevices(
           };
         }
         createChannelSplitter() {
-          return { connect() {} };
+          return { connect() {}, disconnect() {} };
         }
         createMediaStreamSource() {
           return { connect() {}, disconnect() {} };
@@ -209,6 +219,9 @@ export async function mockDevices(
       if (audio.contextSinkId) {
         (FakeAudioContext.prototype as any).setSinkId = (id: string) => {
           mock.contextSinks.push(id);
+          if (audio.failSinkIds.includes(id)) {
+            return Promise.reject(new DOMException('sink not granted', 'NotAllowedError'));
+          }
           return Promise.resolve();
         };
       }
@@ -219,6 +232,9 @@ export async function mockDevices(
         value: audio.elementSinkId
           ? (id: string) => {
               mock.elementSinks.push(id);
+              if (audio.failSinkIds.includes(id)) {
+                return Promise.reject(new DOMException('sink not granted', 'NotAllowedError'));
+              }
               return Promise.resolve();
             }
           : undefined,

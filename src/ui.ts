@@ -518,7 +518,16 @@ export function createUi(root: HTMLElement): void {
   }
 
   audioInputPicker.addEventListener('change', () => {
-    void monitor.selectInput(audioInputPicker.value || null).then(updateFeedbackWarning);
+    const requested = audioInputPicker.value || null;
+    void monitor.selectInput(requested).then((selected) => {
+      // A failed open leaves the picker showing a device that is not monitored;
+      // put it back on whatever is actually captured. Skip this if the user has
+      // already picked another device while this one was opening.
+      if (!selected && audioInputPicker.value === (requested ?? '')) {
+        audioInputPicker.value = monitor.selectedInput ?? '';
+      }
+      updateFeedbackWarning();
+    });
   });
   audioOutputPicker.addEventListener('change', () => {
     void monitor.selectOutput(audioOutputPicker.value).then(() => {
