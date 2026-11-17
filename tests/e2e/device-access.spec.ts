@@ -136,7 +136,7 @@ test.describe('T1 — scaffold and device access', () => {
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(360);
 
-    const testIds = ['playback-panel', 'playlist-panel', 'monitor-panel'];
+    const testIds = ['playback-panel', 'monitor-panel', 'playlist-panel'];
     const boxes = await Promise.all(
       testIds.map((id) => page.getByTestId(id).boundingBox()),
     );

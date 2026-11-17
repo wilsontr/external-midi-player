@@ -92,6 +92,8 @@ test.describe('T3 — transport and playlist', () => {
 
     await page.getByRole('button', { name: 'Move down a', exact: true }).click();
     expect(await rowNames(page)).toEqual(['b', 'a', 'c']);
+    // The row action buttons must not fall through to the row's click-to-play.
+    await expect(page.getByTestId('playback-state')).toHaveText('Nothing playing.');
 
     const rows = page.getByTestId('playlist-row');
     // HTML5 drag simulation needs both rows on screen; other actions auto-scroll,
@@ -99,9 +101,11 @@ test.describe('T3 — transport and playlist', () => {
     await page.getByTestId('playlist-panel').scrollIntoViewIfNeeded();
     await rows.nth(0).dragTo(rows.nth(2), { targetPosition: { x: 20, y: 25 } });
     expect(await rowNames(page)).toEqual(['a', 'c', 'b']);
+    await expect(page.getByTestId('playback-state')).toHaveText('Nothing playing.');
 
     await page.getByRole('button', { name: 'Remove c', exact: true }).click();
     expect(await rowNames(page)).toEqual(['a', 'b']);
+    await expect(page.getByTestId('playback-state')).toHaveText('Nothing playing.');
   });
 
   test('Add files button accepts files from the picker', async ({ page }) => {
@@ -172,7 +176,7 @@ test.describe('T3 — transport and playlist', () => {
     expect(strikes).toHaveLength(2);
   });
 
-  test('double-click plays an entry from the start; next/previous move the highlight', async ({
+  test('a single click on a row plays it from the start; next/previous move the highlight', async ({
     page,
   }) => {
     await setup(page);
@@ -180,7 +184,7 @@ test.describe('T3 — transport and playlist', () => {
     const rows = page.getByTestId('playlist-row');
     await expect(rows).toHaveCount(3);
 
-    await rows.nth(1).dblclick();
+    await page.getByTestId('entry-name').nth(1).click();
     await expect(rows.nth(1)).toHaveAttribute('aria-current', 'true');
     await expect(page.getByTestId('current-title')).toHaveText('b');
     await expect(page.getByTestId('playback-state')).toHaveText('Playing');
@@ -250,5 +254,31 @@ test.describe('T3 — transport and playlist', () => {
 
     await expect(page.getByTestId('playback-state')).toHaveText('Nothing playing.');
     await expect(page.getByTestId('status-region')).toContainText('disconnected');
+  });
+
+  test('the playlist and current entry survive a reload', async ({ page }) => {
+    await setup(page);
+    await dropFiles(page, [song('a.mid', 5), song('b.mid', 7), song('c.mid', 9)]);
+    await expect(page.getByTestId('entry-duration')).toHaveText(['0:05', '0:07', '0:09']);
+
+    await page.getByTestId('entry-name').nth(1).click();
+    await expect(page.getByTestId('playlist-row').nth(1)).toHaveAttribute('aria-current', 'true');
+    await page.getByTestId('stop-button').click();
+
+    // Saves are debounced and encode the file bytes; wait for the stored state.
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem('external-midi-player.playlist') ?? ''))
+      .toContain('"durationSec":7');
+
+    await page.reload();
+    await page.getByTestId('connect-button').click();
+
+    const rows = page.getByTestId('playlist-row');
+    await expect(rows).toHaveCount(3);
+    await expect(page.getByTestId('entry-name')).toHaveText(['a', 'b', 'c']);
+    await expect(page.getByTestId('entry-duration')).toHaveText(['0:05', '0:07', '0:09']);
+    await expect(rows.nth(1)).toHaveAttribute('aria-current', 'true');
+    await expect(page.getByTestId('current-title')).toHaveText('b');
+    await expect(page.getByTestId('playback-state')).toHaveText('Nothing playing.');
   });
 });

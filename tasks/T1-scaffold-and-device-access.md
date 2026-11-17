@@ -6,7 +6,7 @@
 - **Estimate**: 0.5 day
 - **Depends on**: none
 - **Modules**: `midiDevices.ts`, app scaffold (Vite + TypeScript config, entry point, `ui.ts` header wiring)
-- **Requirements**: R4
+- **Requirements**: R4, R13
 
 ## Objective
 
@@ -14,8 +14,8 @@ Stand up the static Vite + TypeScript app (no backend, one runtime dependency: `
 
 ## Scope
 
-- Vite + TypeScript project scaffold; one screen: a header plus three stacked panels (playback, playlist, audio monitor) as placeholders, at least 360 px wide, keyboard-accessible.
-- Header panel: app name, unsupported-browser notice when `navigator.requestMIDIAccess` is missing, and a "Connect devices" button that triggers the MIDI and microphone permission prompts.
+- Vite + TypeScript project scaffold; one screen: a header plus three stacked panels (playback, audio monitor, playlist), at least 360 px wide, keyboard-accessible.
+- Header panel: app name, a short getting-started list (connect hardware → "Connect devices" → allow MIDI + microphone → choose devices → load files), unsupported-browser notice when `navigator.requestMIDIAccess` is missing, and a "Connect devices" button that triggers the MIDI and microphone permission prompts.
 - `midiDevices.ts`:
   - Call `navigator.requestMIDIAccess({ sysex: false })` on a user click (required for the Firefox permission flow).
   - Populate the MIDI output picker from `access.outputs`; label each entry with `name` and `manufacturer`.
@@ -28,7 +28,7 @@ Stand up the static Vite + TypeScript app (no backend, one runtime dependency: `
 
 - [x] Dropping a new USB synth into the machine makes it appear in the output picker; unplugging removes it within 1 s (R4).
 - [x] The output picker labels show both name and manufacturer.
-- [x] Reloading the page reselects the previously chosen output (by name) when still connected.
+- [x] Reloading the page reselects the previously chosen output (by name) when still connected (R13).
 - [x] In Firefox, the add-on permission prompt is explained before it fires and a retry is offered after cancellation.
 - [x] Browsers without `navigator.requestMIDIAccess` show the unsupported-browser notice instead of a broken UI.
 - [x] "Connect devices" triggers both the MIDI and microphone permission prompts.

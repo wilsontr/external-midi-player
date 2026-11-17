@@ -80,16 +80,6 @@ export function createUi(root: HTMLElement): void {
       <p class="hint">Shortcuts: Space play/pause · Esc panic · ← previous · → next</p>
       <p data-testid="playback-state" data-state="stopped">Nothing playing.</p>
     </section>
-    <section class="panel" data-testid="playlist-panel" aria-labelledby="playlist-heading">
-      <h2 id="playlist-heading">Playlist</h2>
-      <div class="drop-zone" data-testid="drop-zone">
-        <span>Drop .mid files here, or</span>
-        <button type="button" data-testid="add-files-button">Add files</button>
-        <input type="file" multiple accept=".mid,.midi" hidden data-testid="file-input" />
-      </div>
-      <p data-testid="playlist-empty">No songs yet.</p>
-      <ol class="playlist" aria-label="Playlist" data-testid="playlist"></ol>
-    </section>
     <section class="panel" data-testid="monitor-panel" aria-labelledby="monitor-heading">
       <h2 id="monitor-heading">Audio monitor</h2>
       <p class="notice" data-testid="monitor-unavailable" hidden>
@@ -130,6 +120,16 @@ export function createUi(root: HTMLElement): void {
         The input and output are the same device. Unmute with care: a microphone near the
         speakers can cause feedback.
       </p>
+    </section>
+    <section class="panel" data-testid="playlist-panel" aria-labelledby="playlist-heading">
+      <h2 id="playlist-heading">Playlist</h2>
+      <div class="drop-zone" data-testid="drop-zone">
+        <span>Drop .mid files here, or</span>
+        <button type="button" data-testid="add-files-button">Add files</button>
+        <input type="file" multiple accept=".mid,.midi" hidden data-testid="file-input" />
+      </div>
+      <p data-testid="playlist-empty">No songs yet.</p>
+      <ol class="playlist" aria-label="Playlist" data-testid="playlist"></ol>
     </section>
   `;
 
@@ -308,10 +308,16 @@ export function createUi(root: HTMLElement): void {
   }
 
   playlistList.addEventListener('click', (event) => {
-    const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]');
-    const li = button?.closest<HTMLLIElement>('li');
-    if (!button || !li) return;
+    const target = event.target as HTMLElement;
+    const button = target.closest<HTMLButtonElement>('button[data-action]');
+    const li = target.closest<HTMLLIElement>('li');
+    if (!li) return;
     const id = li.dataset.id!;
+    if (!button) {
+      // Clicking anywhere else in the row plays that entry from the start.
+      player.playEntry(id);
+      return;
+    }
     const index = entryIndex(id);
     switch (button.dataset.action) {
       case 'play':
@@ -330,10 +336,6 @@ export function createUi(root: HTMLElement): void {
         break;
       }
     }
-  });
-  playlistList.addEventListener('dblclick', (event) => {
-    const li = (event.target as HTMLElement).closest<HTMLLIElement>('li');
-    if (li && !(event.target as HTMLElement).closest('button')) player.playEntry(li.dataset.id!);
   });
 
   // Drag to reorder (internal rows only; external files are handled below).
@@ -505,6 +507,16 @@ export function createUi(root: HTMLElement): void {
     warningShown = shared;
   }
 
+  /** Mirrors the monitor's mute/volume (restored from storage) into the controls. */
+  function renderMonitorControls(): void {
+    const muted = monitor.muted;
+    muteButton.setAttribute('aria-pressed', String(muted));
+    muteButton.textContent = muted ? '🔇 Muted' : '🔊 Monitoring';
+    const percent = Math.round(monitor.volume * 100);
+    volumeSlider.value = String(percent);
+    volumeText.textContent = `${percent}%`;
+  }
+
   const meterPercent = (db: number): string =>
     `${Math.max(0, Math.min(100, ((db - -60) / 60) * 100))}%`;
   const formatDb = (db: number): string => (db <= DB_FLOOR ? '−∞' : db.toFixed(1).replace('-', '−'));
@@ -550,18 +562,17 @@ export function createUi(root: HTMLElement): void {
     void monitor.grantOutput().then(() => renderAudioDevices());
   });
   muteButton.addEventListener('click', () => {
-    const muted = !monitor.muted;
-    monitor.setMuted(muted);
-    muteButton.setAttribute('aria-pressed', String(muted));
-    muteButton.textContent = muted ? '🔇 Muted' : '🔊 Monitoring';
+    monitor.setMuted(!monitor.muted);
+    renderMonitorControls();
   });
   volumeSlider.addEventListener('input', () => {
     monitor.setVolume(Number(volumeSlider.value) / 100);
-    volumeText.textContent = `${volumeSlider.value}%`;
+    renderMonitorControls();
   });
 
   if (!monitor.supported) monitorUnavailable.hidden = false;
   renderAudioDevices();
+  renderMonitorControls();
   requestAnimationFrame(meterFrame);
 
   async function connectDevices(): Promise<void> {
@@ -631,4 +642,7 @@ export function createUi(root: HTMLElement): void {
     // Explain the add-on permission prompt *before* the first click.
     firefoxOnboarding.hidden = false;
   }
+
+  // The player restores a saved playlist without emitting a change; show it.
+  renderPlaylist();
 }

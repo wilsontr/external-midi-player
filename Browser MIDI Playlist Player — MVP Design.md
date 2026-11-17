@@ -15,6 +15,7 @@ The intended setup: the browser drives an external synth or sound module over US
 - Play, pause, stop, next, previous, and a Panic button that silences stuck notes.
 - Pick an audio input device and monitor it locally with a volume control, mute and level meter.
 - Pick the audio output device for monitoring where the browser allows it.
+- Remember the playlist, the current entry, the chosen devices and the monitor settings between visits.
 
 **Non-goals for the MVP**
 
@@ -22,7 +23,6 @@ The intended setup: the browser drives an external synth or sound module over US
 - A built-in software synth; playback always goes to a MIDI port.
 - Seeking within a song, tempo change, looping, or channel remapping.
 - Recording the monitored audio.
-- Saving playlists between visits.
 - MIDI input, SysEx, or editing MIDI files.
 
 ## Target platforms
@@ -57,6 +57,7 @@ Each requirement below is in scope for the MVP and has an acceptance check.
 | R10 | Monitor volume, mute, and a live level meter | Mute is on by default |
 | R11 | Choose the monitoring output device where supported | Falls back to the system default with a note |
 | R12 | Show playback position and elapsed / total time | Updates at least 10 times per second |
+| R13 | Persist the playlist, current entry, chosen devices and monitor settings | Reload restores the playlist, highlight, device choices, mute and volume |
 
 ## Architecture
 
@@ -101,7 +102,7 @@ Timing accuracy comes from handing every message to the browser with a future ti
 
 ## Playlist
 
-The playlist is an in-memory ordered list of `File` objects; nothing is uploaded or saved in the MVP. Reloading the page clears it.
+The playlist is an ordered list of `File` objects, kept in memory while the app runs and mirrored to `localStorage` so a reload restores it. Nothing is uploaded.
 
 **Entry model**
 
@@ -120,11 +121,18 @@ PlaylistEntry {
 
 - Files are accepted by extension (.mid, .midi) and by the `MThd` header check during parsing.
 - After adding, entries are parsed one at a time in the background to fill in durations; parsed data is then discarded to save memory.
-- The current entry is highlighted. Double-click plays an entry from the start.
+- The current entry is highlighted. Clicking a row (or its Play button) plays that entry from the start.
 - Auto-advance moves to the next `ready` entry, skipping `error` entries, with a fixed 1 s gap so external synths finish their release tails.
 - Removing the playing entry stops playback. Reordering during playback keeps the current song playing.
 
 **Player state** is one of `stopped`, `playing` or `paused`. Play and resume go to `playing`; pause goes to `paused`; stop, end of list and output disconnect go to `stopped`.
+
+**Persistence**
+
+- The playlist (file bytes, names, durations, order and the current entry) lives in `localStorage`; the current entry is the "position in the playlist" that is restored.
+- The selected MIDI output is remembered by name (T1). The audio input and output are remembered by device id, falling back to a unique device label when an id has rotated; mute and volume are stored too.
+- Playlist writes are debounced; the small audio settings are written immediately. Stored data is versioned, corrupt data is ignored, and storage failures (quota, private mode) leave the session working without persistence.
+- On reload the playlist and current entry are shown immediately; the MIDI output is reselected on "Connect devices" and the audio devices after the microphone permission is granted. Playback always returns stopped, never mid-song.
 
 ## Audio input routing
 
@@ -171,8 +179,8 @@ One screen, three stacked panels, keyboard-accessible, at least 360 px wide:
 
 1. **Header:** app name, a short getting-started list (connect hardware → "Connect devices" → allow MIDI + microphone → choose MIDI output, audio input and output → load files), browser-support warning when needed, and a "Connect devices" button that triggers the MIDI and microphone permission prompts.
 2. **Playback panel:** MIDI output picker; transport buttons (previous, play/pause, stop, next); Panic; progress bar with elapsed and total time; the current song title.
-3. **Playlist panel:** drop zone and "Add files" button; rows with name, duration, status and a remove button; drag handles to reorder.
-4. **Audio monitor panel:** input picker, output picker (or "System default"), mute toggle (on by default), volume slider, stereo level meter, and the latency readout.
+3. **Audio monitor panel:** input picker, output picker (or "System default"), mute toggle (on by default), volume slider, stereo level meter, and the latency readout.
+4. **Playlist panel:** drop zone and "Add files" button; clickable rows with name, duration, status and a remove button; drag handles to reorder.
 
 Keyboard shortcuts: Space = play/pause, Esc = Panic, ←/→ = previous/next. Status messages (device lost, file rejected) appear in a single `aria-live` region.
 
@@ -201,10 +209,12 @@ Automated tests cover parsing and scheduling logic; device behaviour is checked 
 - Event-list builder: format 0 and 1 fixtures, tempo changes, overlapping notes on one channel.
 - Scheduler with a fake clock and a mock `MIDIOutput`: every event sent once, timestamps correct, release messages sent on pause and stop.
 - Playlist reducer: add, remove, reorder, auto-advance skipping error entries.
+- Persistence: playlist and audio settings save/restore, corrupt data ignored, storage failures handled.
 
 **Automated (Playwright, Chromium and Firefox)**
 
 - UI flows with mocked `requestMIDIAccess` and `getUserMedia`: add files, play, pause, next, Panic, device disconnect.
+- Reload restores the playlist, current entry and audio settings.
 
 **Manual matrix**
 
@@ -226,7 +236,7 @@ The MVP is about 4.5 developer-days for one experienced front-end developer, bui
 ### After the MVP
 
 - Seek within a song, restoring program changes and controllers at the new position (1–2 days).
-- Save playlists using IndexedDB or the File System Access API on Chrome (1 day).
+- Upgrade playlist persistence from `localStorage` to IndexedDB for very large playlists (0.5 day).
 - Tempo change, A–B looping, per-channel mute and remapping (2–4 days).
 - Record the monitored input to WAV (1 day).
 - A built-in SoundFont synth as an alternative output (2–3 days).

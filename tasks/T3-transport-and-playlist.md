@@ -6,7 +6,7 @@
 - **Estimate**: 1 day
 - **Depends on**: T2
 - **Modules**: `playlist.ts`, `ui.ts` (transport and playlist panels)
-- **Requirements**: R1, R2, R3, R6, R7, R12
+- **Requirements**: R1, R2, R3, R6, R7, R12, R13
 
 ## Objective
 
@@ -15,13 +15,14 @@ Add the full transport (play/pause/stop/next/previous, auto-advance, progress di
 ## Scope
 
 - `playlist.ts`:
-  - In-memory ordered list of `File` objects; nothing uploaded or saved; reloading clears it.
+  - Ordered list of `File` objects mirrored to `localStorage` (bytes, names, durations, order and current entry); nothing uploaded. A reload restores the list.
   - Entry model: `{ id (crypto.randomUUID()), file, name (file.name without extension), durationSec?, status: 'ready' | 'error', error? }`.
   - Accept files by extension (.mid, .midi) and the `MThd` header check during parsing.
   - After adding, parse entries one at a time in the background to fill durations; discard parsed data to save memory.
-  - Current entry highlighted; double-click plays an entry from the start.
+  - Current entry highlighted; clicking a row (or its Play button) plays that entry from the start.
   - Auto-advance to the next `ready` entry, skipping `error` entries, with a fixed 1 s gap so external synths finish their release tails.
   - Removing the playing entry stops playback; reordering during playback keeps the current song playing.
+  - Persist the playlist and current entry; restore them on load in the `stopped` state. Storage failures must not break the session.
   - Player state machine: play and resume go to `playing`; pause goes to `paused`; stop, end of list, and output disconnect go to `stopped`.
 - Transport (wraps `scheduler.ts`):
   - Play/pause/resume/stop/next/previous.
@@ -31,8 +32,8 @@ Add the full transport (play/pause/stop/next/previous, auto-advance, progress di
   - MIDI output picker (populated by T1); transport buttons (previous, play/pause, stop, next); Panic; progress bar with elapsed and total time; current song title.
   - Keyboard shortcuts: Space = play/pause, Esc = Panic, ←/→ = previous/next.
   - Status messages (device lost, file rejected) in a single `aria-live` region.
-- Playlist panel: drop zone and "Add files" button; rows with name, duration, status, remove button; drag handles to reorder.
-- Unit tests (Vitest) — playlist reducer: add, remove, reorder, auto-advance skipping error entries.
+- Playlist panel: drop zone and "Add files" button; clickable rows with name, duration, status, remove button; drag handles to reorder.
+- Unit tests (Vitest) — playlist reducer: add, remove, reorder, auto-advance skipping error entries; persistence save/restore and failure handling.
 
 ## Acceptance criteria
 
@@ -43,9 +44,12 @@ Add the full transport (play/pause/stop/next/previous, auto-advance, progress di
 - [x] Auto-advance moves to the next entry; the last song ends and transport returns to stopped (R7).
 - [x] Position and elapsed/total time update at least 10 times per second (R12).
 - [x] Player state is always one of `stopped`, `playing`, `paused`.
+- [x] Clicking a playlist row plays that entry from the start.
+- [x] The playlist and current entry are restored after a reload (R13).
 
 ## Notes
 
 - The 200 ms look-ahead bounds overhang on stop/pause (see T2).
 - Open question: should playback send a GM reset or program changes before each song so external synths start from a known state? If yes, hook into the `ended`/next boundary here.
-- Double-click vs single-click play semantics are fixed above; keep the current-entry highlight distinct from the double-click action.
+- Single click plays a row; the per-row action buttons (play, up, down, remove) keep their own behaviour and never trigger the row click.
+- Persistence uses `localStorage`; very large playlists are a post-MVP IndexedDB upgrade.

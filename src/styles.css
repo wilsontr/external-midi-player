@@ -185,6 +185,7 @@ progress {
   padding: 6px 8px;
   border: 1px solid transparent;
   border-bottom-color: var(--panel-border);
+  cursor: pointer;
 }
 
 .playlist-row.current {

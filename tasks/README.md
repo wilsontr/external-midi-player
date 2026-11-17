@@ -48,14 +48,14 @@ Rules:
 | T4 | [T4-audio-monitoring.md](T4-audio-monitoring.md) | Audio monitoring | 1 day | done |
 | T5 | [T5-hardening-and-deploy.md](T5-hardening-and-deploy.md) | Hardening and deploy | 1 day | pending |
 
-Requirement coverage (per task `Requirements` field): R1, R2 → T3; R3 → T2, T3; R4 → T1; R5 → T2, T5; R6, R7 → T3, T5; R8 → T2; R9, R10 → T4; R11 → T4, T5; R12 → T3.
+Requirement coverage (per task `Requirements` field): R1, R2 → T3; R3 → T2, T3; R4 → T1; R5 → T2, T5; R6, R7 → T3, T5; R8 → T2; R9, R10 → T4; R11 → T4, T5; R12 → T3; R13 → T1, T3, T4.
 
 ## Backlog (post-MVP, from "After the MVP")
 
 Not tracked as tasks yet; each would become its own task file if scheduled.
 
 - Seek within a song, restoring program changes and controllers (1–2 days)
-- Save playlists via IndexedDB / File System Access API on Chrome (1 day)
+- Upgrade playlist persistence from localStorage to IndexedDB for very large playlists (0.5 day)
 - Tempo change, A–B looping, per-channel mute and remapping (2–4 days)
 - Record the monitored input to WAV (1 day)
 - Built-in SoundFont synth as an alternative output (2–3 days)

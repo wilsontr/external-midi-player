@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
+  PLAYLIST_STORAGE_KEY,
   PlaylistPlayer,
   createEntry,
   emptyPlaylist,
@@ -7,12 +8,23 @@ import {
   playlistReducer,
   previousReadyId,
   type PlaylistState,
+  type PlaylistStorage,
   type TransportScheduler,
 } from '../../src/playlist';
 import type { ParseResult } from '../../src/parser';
 import type { SchedulerOptions } from '../../src/scheduler';
 
 const file = (name: string) => new File([new Uint8Array([0])], name);
+
+function memoryStorage(initial: Record<string, string> = {}): PlaylistStorage {
+  const map = new Map(Object.entries(initial));
+  return {
+    getItem: (key: string) => map.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      map.set(key, value);
+    },
+  };
+}
 
 function stateWith(...names: string[]): PlaylistState {
   return playlistReducer(emptyPlaylist, { type: 'add', entries: names.map((n) => createEntry(file(n))) });
@@ -113,6 +125,7 @@ describe('PlaylistPlayer', () => {
   let outputAvailable: boolean;
   /** Swapped by tests that need a failing parse. */
   let parseFile: (f: File) => Promise<ParseResult>;
+  let storage: PlaylistStorage;
 
   const parse = async (f: File): Promise<ParseResult> =>
     f.name.startsWith('bad')
@@ -121,13 +134,8 @@ describe('PlaylistPlayer', () => {
 
   const flush = () => vi.advanceTimersByTimeAsync(0);
 
-  beforeEach(() => {
-    vi.useFakeTimers();
-    schedulers = [];
-    statuses = [];
-    outputAvailable = true;
-    parseFile = parse;
-    player = new PlaylistPlayer({
+  const makePlayer = (store: PlaylistStorage = storage): PlaylistPlayer =>
+    new PlaylistPlayer({
       getOutput: () => (outputAvailable ? output : null),
       onChange: () => {},
       onStatus: (m) => statuses.push(m),
@@ -147,7 +155,17 @@ describe('PlaylistPlayer', () => {
         schedulers.push(fake);
         return fake;
       },
+      storage: store,
     });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    schedulers = [];
+    statuses = [];
+    outputAvailable = true;
+    parseFile = parse;
+    storage = memoryStorage();
+    player = makePlayer();
   });
 
   afterEach(() => {
@@ -324,5 +342,54 @@ describe('PlaylistPlayer', () => {
     expect(player.state).toBe('stopped');
     player.panic();
     expect(last(schedulers)!.calls).toEqual(['panic']);
+  });
+
+  it('saves the playlist and current entry and restores them on the next visit', async () => {
+    player.add([file('a.mid'), file('b.mid')]);
+    await flush();
+    player.play();
+    await flush();
+    player.next();
+    await flush();
+    expect(currentName()).toBe('b');
+    await player.flushPersistence();
+
+    const restored = makePlayer();
+    expect(restored.playlist.entries.map((e) => e.name)).toEqual(['a', 'b']);
+    expect(restored.playlist.entries.map((e) => e.durationSec)).toEqual([10, 10]);
+    expect(restored.currentEntry()?.name).toBe('b');
+    expect(restored.state).toBe('stopped');
+  });
+
+  it('restores entries whose duration was saved, without re-parsing them', async () => {
+    player.add([file('a.mid')]);
+    await flush();
+    await player.flushPersistence();
+
+    parseFile = async () => {
+      throw new Error('should not parse a restored duration');
+    };
+    const restored = makePlayer();
+    await flush();
+    expect(restored.playlist.entries[0]).toMatchObject({ name: 'a', durationSec: 10 });
+    expect(restored.playlist.entries[0].status).toBe('ready');
+  });
+
+  it('ignores corrupt stored data and keeps working when storage rejects writes', async () => {
+    storage = memoryStorage({ [PLAYLIST_STORAGE_KEY]: '{not json' });
+    const corrupt = makePlayer();
+    expect(corrupt.playlist.entries).toEqual([]);
+
+    const failing = makePlayer({
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('quota exceeded');
+      },
+    });
+    failing.add([file('a.mid')]);
+    await flush();
+    await failing.flushPersistence();
+    expect(failing.playlist.entries).toHaveLength(1);
+    expect(last(statuses)).toContain('Could not save the playlist');
   });
 });

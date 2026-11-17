@@ -211,4 +211,28 @@ test.describe('T4 — audio monitoring', () => {
     await expect(page.getByTestId('feedback-warning')).toBeVisible();
     await expect(page.getByTestId('status-region')).toContainText('same device');
   });
+
+  test('audio devices, mute and volume survive a reload', async ({ page }) => {
+    await setup(page);
+    await page.getByTestId('audio-input-picker').selectOption('in1');
+    await page.getByTestId('audio-output-picker').selectOption('out2');
+    await page.getByTestId('mute-button').click();
+    await page.getByTestId('volume-slider').fill('40');
+    await expect(page.getByTestId('volume-text')).toHaveText('40%');
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem('external-midi-player.audio') ?? ''))
+      .toContain('"inputId":"in1"');
+
+    await page.reload();
+    await page.getByTestId('connect-button').click();
+    await expect(page.getByTestId('status-region')).toContainText('Microphone access granted');
+
+    await expect(page.getByTestId('audio-input-picker')).toHaveValue('in1');
+    await expect(page.getByTestId('audio-output-picker')).toHaveValue('out2');
+    await expect(page.getByTestId('mute-button')).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByTestId('volume-text')).toHaveText('40%');
+    // The saved input is actually captured again (one capture request after reload).
+    await expect.poll(() => audioMock<number>(page, 'm.constraints.length')).toBe(1);
+    expect(await audioMock<number>(page, 'm.gain.gain.value')).toBe(0.4);
+  });
 });

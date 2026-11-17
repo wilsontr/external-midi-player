@@ -37,6 +37,18 @@ export const DB_FLOOR = -100;
 /** Peaks above this level are shown as clipping. */
 export const CLIP_THRESHOLD_DB = -1;
 
+export const AUDIO_SETTINGS_STORAGE_KEY = 'external-midi-player.audio';
+
+interface StoredAudioSettings {
+  version: 1;
+  inputId: string | null;
+  inputLabel: string;
+  outputId: string;
+  outputLabel: string;
+  muted: boolean;
+  volume: number;
+}
+
 /** The `setSinkId` / `selectAudioOutput` additions missing from some DOM typings. */
 type SinkCapable = { setSinkId?: (sinkId: string) => Promise<void> };
 type OutputSelectingDevices = MediaDevices & {
@@ -58,6 +70,8 @@ export interface AudioMonitorOptions {
   createAudioElement?: () => HTMLAudioElement;
   /** Injectable for tests. Defaults to feature detection. */
   routing?: OutputRouting;
+  /** Storage for the device/mute/volume settings. Defaults to `localStorage`. */
+  storage?: Pick<Storage, 'getItem' | 'setItem'>;
 }
 
 /** Picks the best available way to choose the monitoring output device. */
@@ -93,11 +107,52 @@ function toDb(peak: number): number {
   return peak <= 0 ? DB_FLOOR : Math.max(DB_FLOOR, 20 * Math.log10(peak));
 }
 
+function resolveStorage(): Pick<Storage, 'getItem' | 'setItem'> | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    // Sandboxed iframe / storage disabled: persistence is best-effort.
+    return null;
+  }
+}
+
+function parseStoredSettings(raw: string | null): StoredAudioSettings | null {
+  if (raw === null) return null;
+  try {
+    const value = JSON.parse(raw) as Record<string, unknown>;
+    if (value.version !== 1) return null;
+    const volume =
+      typeof value.volume === 'number' && Number.isFinite(value.volume)
+        ? Math.min(1, Math.max(0, value.volume))
+        : 1;
+    return {
+      version: 1,
+      inputId: typeof value.inputId === 'string' ? value.inputId : null,
+      inputLabel: typeof value.inputLabel === 'string' ? value.inputLabel : '',
+      outputId: typeof value.outputId === 'string' ? value.outputId : '',
+      outputLabel: typeof value.outputLabel === 'string' ? value.outputLabel : '',
+      muted: typeof value.muted === 'boolean' ? value.muted : true,
+      volume,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export class AudioMonitor {
   readonly routing: OutputRouting;
 
   private readonly options: AudioMonitorOptions;
   private readonly mediaDevices: OutputSelectingDevices | undefined;
+  private readonly storage: Pick<Storage, 'getItem' | 'setItem'> | null;
+  /** True while replaying saved settings; suppresses intermediate writes. */
+  private restoring = false;
+  // Remembered choices survive a device loss, so an unrelated settings change
+  // does not forget a device that is merely unplugged for now.
+  private rememberedInputId: string | null = null;
+  private rememberedInputLabel = '';
+  private rememberedOutputId = '';
+  private rememberedOutputLabel = '';
 
   private inputList: AudioDeviceInfo[] = [];
   private outputList: AudioDeviceInfo[] = [];
@@ -126,6 +181,16 @@ export class AudioMonitor {
       options.mediaDevices ??
       (typeof navigator !== 'undefined' ? (navigator.mediaDevices as OutputSelectingDevices | undefined) : undefined);
     this.routing = options.routing ?? detectOutputRouting();
+    this.storage = options.storage ?? resolveStorage();
+    const saved = this.loadSettings();
+    if (saved !== null) {
+      this.isMuted = saved.muted;
+      this.level = saved.volume;
+      this.rememberedInputId = saved.inputId;
+      this.rememberedInputLabel = saved.inputLabel;
+      this.rememberedOutputId = saved.outputId;
+      this.rememberedOutputLabel = saved.outputLabel;
+    }
   }
 
   /** True when the browser can capture audio at all. */
@@ -193,6 +258,8 @@ export class AudioMonitor {
     this.unlocked = true;
     devices.ondevicechange = () => void this.refreshDevices();
     await this.refreshDevices();
+    // Labels are available now; reinstate the settings from the last visit.
+    await this.restoreSelection();
     return true;
   }
 
@@ -251,7 +318,13 @@ export class AudioMonitor {
   async selectInput(id: string | null): Promise<boolean> {
     const token = ++this.selectToken;
     this.stopCapture();
-    if (id === null || !this.mediaDevices) return true;
+    if (id === null || !this.mediaDevices) {
+      // An explicit "Select an input…" clears the remembered device too.
+      this.rememberedInputId = null;
+      this.rememberedInputLabel = '';
+      this.saveSettings();
+      return true;
+    }
     let stream: MediaStream;
     try {
       stream = await this.mediaDevices.getUserMedia(captureConstraints(id));
@@ -296,7 +369,10 @@ export class AudioMonitor {
     });
     this.source = source!;
     this.splitter = splitter!;
+    this.rememberedInputId = id;
+    this.rememberedInputLabel = this.inputList.find((d) => d.id === id)?.label ?? '';
     this.resume();
+    this.saveSettings();
     return true;
   }
 
@@ -304,7 +380,10 @@ export class AudioMonitor {
   async selectOutput(id: string): Promise<void> {
     this.outputId = id;
     await this.applySink();
+    this.rememberedOutputId = this.outputId;
+    this.rememberedOutputLabel = this.outputList.find((d) => d.id === this.outputId)?.label ?? '';
     this.resume();
+    this.saveSettings();
   }
 
   /**
@@ -336,6 +415,7 @@ export class AudioMonitor {
     this.isMuted = muted;
     this.applyGain();
     this.resume();
+    this.saveSettings();
   }
 
   /** Volume from 0 to 1. */
@@ -344,6 +424,7 @@ export class AudioMonitor {
     this.applyGain();
     // The slider is a user gesture, so it can also unblock a suspended context.
     this.resume();
+    this.saveSettings();
   }
 
   /** Peak level per channel, in dBFS, read from the analysers. */
@@ -412,6 +493,73 @@ export class AudioMonitor {
     this.splitter?.disconnect();
     this.splitter = null;
     this.inputId = null;
+  }
+
+  private loadSettings(): StoredAudioSettings | null {
+    if (this.storage === null) return null;
+    try {
+      return parseStoredSettings(this.storage.getItem(AUDIO_SETTINGS_STORAGE_KEY));
+    } catch {
+      return null;
+    }
+  }
+
+  /** Writes the current device/mute/volume choices (no-op without storage). */
+  private saveSettings(): void {
+    const storage = this.storage;
+    if (storage === null || this.restoring) return;
+    const settings: StoredAudioSettings = {
+      version: 1,
+      inputId: this.rememberedInputId,
+      inputLabel: this.rememberedInputLabel,
+      outputId: this.rememberedOutputId,
+      outputLabel: this.rememberedOutputLabel,
+      muted: this.isMuted,
+      volume: this.level,
+    };
+    try {
+      storage.setItem(AUDIO_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    } catch {
+      // Storage full/unavailable: the session still works, just not remembered.
+    }
+  }
+
+  /** Re-selects the remembered input/output once device names are known. */
+  private async restoreSelection(): Promise<void> {
+    this.restoring = true;
+    try {
+      if (this.outputId === '' && this.rememberedOutputId !== '') {
+        const output = this.findOutput(this.rememberedOutputId, this.rememberedOutputLabel);
+        if (output !== undefined) await this.selectOutput(output.id);
+      }
+      if (this.inputId === null && this.rememberedInputId !== null) {
+        const input = this.findInput(this.rememberedInputId, this.rememberedInputLabel);
+        if (input !== undefined) await this.selectInput(input.id);
+      }
+    } finally {
+      this.restoring = false;
+    }
+    // The remembered choices survive a failed reopen; it may come back later.
+    this.saveSettings();
+  }
+
+  /** Matches a stored input id, falling back to a unique label (ids can rotate). */
+  private findInput(id: string, label: string): AudioDeviceInfo | undefined {
+    const byId = this.inputList.find((d) => d.id === id);
+    if (byId !== undefined) return byId;
+    if (label === '') return undefined;
+    const byLabel = this.inputList.filter((d) => d.label === label);
+    return byLabel.length === 1 ? byLabel[0] : undefined;
+  }
+
+  /** Matches a stored output among the devices that are actually selectable. */
+  private findOutput(id: string, label: string): AudioDeviceInfo | undefined {
+    const selectable = this.outputs();
+    const byId = selectable.find((d) => d.id === id);
+    if (byId !== undefined) return byId;
+    if (label === '') return undefined;
+    const byLabel = selectable.filter((d) => d.label === label);
+    return byLabel.length === 1 ? byLabel[0] : undefined;
   }
 
   /** Builds the context and the gain → output half of the graph on first use. */

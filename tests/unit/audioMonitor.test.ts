@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { AudioMonitor, DB_FLOOR, type OutputRouting } from '../../src/audioMonitor';
+import {
+  AUDIO_SETTINGS_STORAGE_KEY,
+  AudioMonitor,
+  DB_FLOOR,
+  type OutputRouting,
+} from '../../src/audioMonitor';
 
 interface FakeTrack {
   stop: ReturnType<typeof vi.fn>;
@@ -20,7 +25,17 @@ function makeStream(channelCount = 2) {
 const device = (kind: string, id: string, label: string, groupId: string) =>
   ({ kind, deviceId: id, label, groupId }) as MediaDeviceInfo;
 
-function setup(routing: OutputRouting = 'context') {
+function memoryStorage(initial: Record<string, string> = {}) {
+  const map = new Map(Object.entries(initial));
+  return {
+    getItem: (key: string) => map.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      map.set(key, value);
+    },
+  };
+}
+
+function setup(routing: OutputRouting = 'context', storage = memoryStorage()) {
   let devices: MediaDeviceInfo[] = [
     device('audioinput', 'in1', 'Interface', 'g1'),
     device('audioinput', 'in2', 'Built-in Mic', 'g2'),
@@ -82,9 +97,10 @@ function setup(routing: OutputRouting = 'context') {
     createContext,
     createAudioElement: () => audio as unknown as HTMLAudioElement,
     routing,
+    storage,
   });
   return {
-    monitor, mediaDevices, context, gain, samples, streams, splitters, statuses, audio, createContext,
+    monitor, mediaDevices, context, gain, samples, streams, splitters, statuses, audio, createContext, storage,
     onDevicesChanged, onInputLost,
     setDevices: (d: MediaDeviceInfo[]) => (devices = d),
     setChannels: (n: number) => (nextChannels = n),
@@ -317,5 +333,125 @@ describe('AudioMonitor', () => {
 
     expect(await e.monitor.grantOutput()).toBeNull();
     expect(e.statuses[e.statuses.length - 1]).toContain('No output device selected');
+  });
+
+  it('restores the saved input, output, mute and volume after unlock', async () => {
+    const store = memoryStorage({
+      [AUDIO_SETTINGS_STORAGE_KEY]: JSON.stringify({
+        version: 1,
+        inputId: 'in1',
+        inputLabel: 'Interface',
+        outputId: 'out1',
+        outputLabel: 'Interface',
+        muted: false,
+        volume: 0.4,
+      }),
+    });
+    const r = setup('context', store);
+    expect(r.monitor.muted).toBe(false);
+    expect(r.monitor.volume).toBe(0.4);
+
+    await r.monitor.unlock();
+
+    expect(r.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
+    expect(r.monitor.selectedInput).toBe('in1');
+    expect(r.monitor.selectedOutput).toBe('out1');
+    expect(r.gain.gain.value).toBe(0.4);
+    expect(r.context.setSinkId).toHaveBeenLastCalledWith('out1');
+  });
+
+  it('matches a saved input by label when its device id has rotated', async () => {
+    const store = memoryStorage({
+      [AUDIO_SETTINGS_STORAGE_KEY]: JSON.stringify({
+        version: 1,
+        inputId: 'stale-id',
+        inputLabel: 'Interface',
+        outputId: '',
+        outputLabel: '',
+        muted: true,
+        volume: 1,
+      }),
+    });
+    const r = setup('context', store);
+
+    await r.monitor.unlock();
+
+    expect(r.monitor.selectedInput).toBe('in1');
+  });
+
+  it('saves device, mute and volume changes', async () => {
+    await t.monitor.unlock();
+    await t.monitor.selectInput('in1');
+    await t.monitor.selectOutput('out1');
+    t.monitor.setMuted(false);
+    t.monitor.setVolume(0.6);
+
+    const saved = JSON.parse(t.storage.getItem(AUDIO_SETTINGS_STORAGE_KEY)!);
+    expect(saved).toMatchObject({ inputId: 'in1', outputId: 'out1', muted: false, volume: 0.6 });
+  });
+
+  it('keeps the remembered input when a new selection fails', async () => {
+    await t.monitor.unlock();
+    await t.monitor.selectInput('in1');
+    t.mediaDevices.getUserMedia.mockRejectedValueOnce(new Error('gone'));
+
+    expect(await t.monitor.selectInput('in2')).toBe(false);
+
+    const saved = JSON.parse(t.storage.getItem(AUDIO_SETTINGS_STORAGE_KEY)!);
+    expect(saved.inputId).toBe('in1');
+  });
+
+  it('keeps the stored input when it cannot be reopened on restore', async () => {
+    const store = memoryStorage({
+      [AUDIO_SETTINGS_STORAGE_KEY]: JSON.stringify({
+        version: 1,
+        inputId: 'in1',
+        inputLabel: 'Interface',
+        outputId: '',
+        outputLabel: '',
+        muted: true,
+        volume: 1,
+      }),
+    });
+    const r = setup('context', store);
+
+    const unlocking = r.monitor.unlock();
+    // The unlock stream opens; the capture attempt in restoreSelection fails.
+    r.mediaDevices.getUserMedia.mockRejectedValueOnce(new Error('device busy'));
+
+    expect(await unlocking).toBe(true);
+    expect(r.monitor.selectedInput).toBeNull();
+    expect(JSON.parse(store.getItem(AUDIO_SETTINGS_STORAGE_KEY)!).inputId).toBe('in1');
+  });
+
+  it('keeps monitoring when settings storage rejects writes', async () => {
+    const r = setup('context', {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('quota exceeded');
+      },
+    });
+    await r.monitor.unlock();
+
+    expect(await r.monitor.selectInput('in1')).toBe(true);
+    expect(r.monitor.selectedInput).toBe('in1');
+  });
+
+  it('keeps the remembered input after the device is unplugged', async () => {
+    await t.monitor.unlock();
+    await t.monitor.selectInput('in1');
+
+    t.setDevices([
+      device('audioinput', 'in2', 'Built-in Mic', 'g2'),
+      device('audiooutput', 'default', 'Default', 'g2'),
+    ]);
+    await t.monitor.refreshDevices();
+    expect(t.monitor.selectedInput).toBeNull();
+
+    t.monitor.setVolume(0.5);
+
+    const saved = JSON.parse(t.storage.getItem(AUDIO_SETTINGS_STORAGE_KEY)!);
+    expect(saved.inputId).toBe('in1');
+    expect(saved.volume).toBe(0.5);
   });
 });

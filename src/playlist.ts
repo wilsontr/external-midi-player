@@ -26,6 +26,28 @@ export interface PlaylistEntry {
   error?: string;
 }
 
+/** The slice of `localStorage` the playlist needs (injectable for tests). */
+export type PlaylistStorage = Pick<Storage, 'getItem' | 'setItem'>;
+
+export const PLAYLIST_STORAGE_KEY = 'external-midi-player.playlist';
+
+interface StoredEntry {
+  id: string;
+  /** Original file name, extension included. */
+  fileName: string;
+  /** File bytes, base64-encoded. */
+  data: string;
+  durationSec?: number;
+  status: 'ready' | 'error';
+  error?: string;
+}
+
+interface StoredPlaylist {
+  version: 1;
+  currentId: string | null;
+  entries: StoredEntry[];
+}
+
 export interface PlaylistState {
   entries: PlaylistEntry[];
   /** The highlighted entry: the one playing, or the one that plays next. */
@@ -43,12 +65,76 @@ export type PlaylistAction =
 
 export const emptyPlaylist: PlaylistState = { entries: [], currentId: null };
 
+function resolveStorage(): PlaylistStorage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    // Sandboxed iframe / storage disabled: persistence is best-effort.
+    return null;
+  }
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(data: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function entryName(fileName: string): string {
+  return fileName.replace(/\.[^./\\]*$/, '');
+}
+
+/** Rebuilds a playlist entry from its stored form; null when it is malformed. */
+function storedToEntry(value: unknown): PlaylistEntry | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const stored = value as Partial<StoredEntry>;
+  if (
+    typeof stored.id !== 'string' ||
+    typeof stored.fileName !== 'string' ||
+    typeof stored.data !== 'string' ||
+    (stored.status !== 'ready' && stored.status !== 'error')
+  ) {
+    return null;
+  }
+  let bytes: Uint8Array<ArrayBuffer>;
+  try {
+    bytes = base64ToBytes(stored.data);
+  } catch {
+    return null;
+  }
+  const file = new File([bytes], stored.fileName, { type: 'audio/midi' });
+  return {
+    id: stored.id,
+    file,
+    name: entryName(stored.fileName),
+    durationSec: typeof stored.durationSec === 'number' ? stored.durationSec : undefined,
+    status: stored.status,
+    error: typeof stored.error === 'string' ? stored.error : undefined,
+  };
+}
+
+function isStoredPlaylist(value: unknown): value is StoredPlaylist {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return candidate.version === 1 && Array.isArray(candidate.entries);
+}
+
 /** Creates an entry for a file; the status is `ready` until a parse fails. */
 export function createEntry(file: File): PlaylistEntry {
   return {
     id: crypto.randomUUID(),
     file,
-    name: file.name.replace(/\.[^./\\]*$/, ''),
+    name: entryName(file.name),
     status: 'ready',
   };
 }
@@ -171,6 +257,8 @@ export interface PlaylistPlayerOptions {
   createScheduler?: (options: SchedulerOptions) => TransportScheduler;
   /** Gap between songs so external synths finish their release tails. Default 1000 ms. */
   gapMs?: number;
+  /** Storage for the playlist + current entry. Defaults to `localStorage`. */
+  storage?: PlaylistStorage;
 }
 
 /** Transport state machine over the playlist; see the file header. */
@@ -183,6 +271,13 @@ export class PlaylistPlayer {
   private gapTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly parseQueue: string[] = [];
   private parsing = false;
+  private readonly storage: PlaylistStorage | null;
+  /** Base64 of each entry's bytes, so repeated saves do not re-read the files. */
+  private readonly fileData = new Map<string, string>();
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private persistRevision = 0;
+  private persistPromise: Promise<void> = Promise.resolve();
+  private persistFailed = false;
 
   private readonly options: PlaylistPlayerOptions;
   private readonly parse: (file: File) => Promise<ParseResult>;
@@ -194,6 +289,8 @@ export class PlaylistPlayer {
     this.parse = options.parse ?? parseSongForPlayback;
     this.createScheduler = options.createScheduler ?? ((o) => new Scheduler(o));
     this.gapMs = options.gapMs ?? 1000;
+    this.storage = options.storage ?? resolveStorage();
+    this.restore();
   }
 
   get state(): PlayerState {
@@ -211,6 +308,16 @@ export class PlaylistPlayer {
   /** Song position in seconds (0 while loading or in the gap between songs). */
   position(): number {
     return this.scheduler?.position() ?? 0;
+  }
+
+  /** Waits for any pending playlist write (tests, and a best-effort pagehide flush). */
+  async flushPersistence(): Promise<void> {
+    if (this.persistTimer !== null) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+      this.persistPromise = this.persistNow();
+    }
+    await this.persistPromise;
   }
 
   /**
@@ -459,8 +566,107 @@ export class PlaylistPlayer {
     const next = playlistReducer(this.list, action);
     if (next !== this.list) {
       this.list = next;
+      this.schedulePersist();
       this.options.onChange();
     }
+  }
+
+  /** Reads the stored playlist into `this.list`; never fires `onChange`. */
+  private restore(): void {
+    if (this.storage === null) return;
+    let raw: string | null;
+    try {
+      raw = this.storage.getItem(PLAYLIST_STORAGE_KEY);
+    } catch {
+      return;
+    }
+    if (raw === null) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (!isStoredPlaylist(parsed)) return;
+
+    const entries: PlaylistEntry[] = [];
+    for (const stored of parsed.entries) {
+      const entry = storedToEntry(stored);
+      if (entry === null) continue;
+      entries.push(entry);
+      this.fileData.set(entry.id, stored.data);
+    }
+    if (entries.length === 0) return;
+
+    const savedCurrent = typeof parsed.currentId === 'string' ? parsed.currentId : null;
+    const current = entries.find((e) => e.id === savedCurrent && e.status === 'ready');
+    this.list = {
+      entries,
+      currentId: current?.id ?? firstReadyId({ entries, currentId: null }),
+    };
+    for (const entry of entries) {
+      if (entry.status === 'ready' && entry.durationSec === undefined) this.parseQueue.push(entry.id);
+    }
+    void this.pumpParseQueue();
+  }
+
+  private schedulePersist(): void {
+    if (this.storage === null) return;
+    this.persistRevision += 1;
+    if (this.persistTimer !== null) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.persistPromise = this.persistNow();
+    }, 0);
+  }
+
+  private async persistNow(): Promise<void> {
+    const storage = this.storage;
+    if (storage === null) return;
+    const revision = this.persistRevision;
+    const entries = this.list.entries;
+    const stored: StoredEntry[] = [];
+    try {
+      for (const entry of entries) {
+        let data = this.fileData.get(entry.id);
+        if (data === undefined) {
+          data = bytesToBase64(new Uint8Array(await entry.file.arrayBuffer()));
+          this.fileData.set(entry.id, data);
+        }
+        stored.push({
+          id: entry.id,
+          fileName: entry.file.name,
+          data,
+          durationSec: entry.durationSec,
+          status: entry.status,
+          error: entry.error,
+        });
+      }
+    } catch {
+      this.reportPersistFailure();
+      return;
+    }
+    if (revision !== this.persistRevision) {
+      // The playlist changed while the files were being read; save the newer state.
+      this.schedulePersist();
+      return;
+    }
+    try {
+      const payload: StoredPlaylist = { version: 1, currentId: this.list.currentId, entries: stored };
+      storage.setItem(PLAYLIST_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      this.reportPersistFailure();
+    }
+    const live = new Set(entries.map((e) => e.id));
+    for (const id of this.fileData.keys()) {
+      if (!live.has(id)) this.fileData.delete(id);
+    }
+  }
+
+  private reportPersistFailure(): void {
+    if (this.persistFailed) return;
+    this.persistFailed = true;
+    this.options.onStatus('Could not save the playlist in this browser (storage full or unavailable).');
   }
 
   private setState(state: PlayerState): void {
