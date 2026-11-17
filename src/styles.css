@@ -59,6 +59,21 @@ p {
   margin: 8px 0;
 }
 
+.how-to-intro {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.how-to {
+  margin: 4px 0 8px;
+  padding-left: 1.4em;
+  font-size: 0.9rem;
+}
+
+.how-to li {
+  margin: 2px 0;
+}
+
 .notice {
   border: 1px solid var(--panel-border);
   border-radius: 6px;

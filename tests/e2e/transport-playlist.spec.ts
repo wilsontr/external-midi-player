@@ -94,6 +94,9 @@ test.describe('T3 — transport and playlist', () => {
     expect(await rowNames(page)).toEqual(['b', 'a', 'c']);
 
     const rows = page.getByTestId('playlist-row');
+    // HTML5 drag simulation needs both rows on screen; other actions auto-scroll,
+    // dragTo does not, and the page is taller than the viewport.
+    await page.getByTestId('playlist-panel').scrollIntoViewIfNeeded();
     await rows.nth(0).dragTo(rows.nth(2), { targetPosition: { x: 20, y: 25 } });
     expect(await rowNames(page)).toEqual(['a', 'c', 'b']);
 

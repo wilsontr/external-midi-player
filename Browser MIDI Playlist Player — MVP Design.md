@@ -169,7 +169,7 @@ Expected round trip from input jack to speakers is roughly 10–40 ms on Chrome,
 
 One screen, three stacked panels, keyboard-accessible, at least 360 px wide:
 
-1. **Header:** app name, browser-support warning when needed, and a "Connect devices" button that triggers the MIDI and microphone permission prompts.
+1. **Header:** app name, a short getting-started list (connect hardware → "Connect devices" → allow MIDI + microphone → choose MIDI output, audio input and output → load files), browser-support warning when needed, and a "Connect devices" button that triggers the MIDI and microphone permission prompts.
 2. **Playback panel:** MIDI output picker; transport buttons (previous, play/pause, stop, next); Panic; progress bar with elapsed and total time; the current song title.
 3. **Playlist panel:** drop zone and "Add files" button; rows with name, duration, status and a remove button; drag handles to reorder.
 4. **Audio monitor panel:** input picker, output picker (or "System default"), mute toggle (on by default), volume slider, stereo level meter, and the latency readout.

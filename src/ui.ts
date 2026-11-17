@@ -30,6 +30,17 @@ export function createUi(root: HTMLElement): void {
   root.innerHTML = `
     <header class="panel" data-testid="header" aria-label="App header">
       <h1>External MIDI Player</h1>
+      <p class="how-to-intro">
+        MIDI player catered to playback on external MIDI synths. How to use:
+      </p>
+      <ol class="how-to" data-testid="how-to">
+        <li>Connect your hardware.</li>
+        <li>Click <strong>Connect devices</strong>.</li>
+        <li>Allow MIDI and microphone access when the browser asks.</li>
+        <li>Select your MIDI output.</li>
+        <li>Select your audio input and output.</li>
+        <li>Load your MIDI files and listen.</li>
+      </ol>
       <p class="notice" data-testid="unsupported-notice" hidden>
         This browser does not support Web MIDI. Use a current desktop version
         of Chrome, Edge, or Firefox to connect MIDI devices.

@@ -110,6 +110,24 @@ test.describe('T1 — scaffold and device access', () => {
     await expect(page.getByTestId('firefox-onboarding')).toBeVisible();
   });
 
+  test('shows the getting-started steps between the title and Connect devices', async ({ page }) => {
+    await mockDevices(page, { outputs: [JUNO] });
+    await page.goto('/');
+
+    const howTo = page.getByTestId('how-to');
+    await expect(howTo).toBeVisible();
+    await expect(howTo.locator('li')).toHaveCount(6);
+    await expect(howTo).toContainText('Allow MIDI and microphone access');
+
+    const [titleBox, howToBox, buttonBox] = await Promise.all([
+      page.getByRole('heading', { level: 1 }).boundingBox(),
+      howTo.boundingBox(),
+      page.getByTestId('connect-button').boundingBox(),
+    ]);
+    expect(howToBox!.y).toBeGreaterThan(titleBox!.y);
+    expect(buttonBox!.y).toBeGreaterThan(howToBox!.y);
+  });
+
   test('layout fits a 360 px viewport with the panels stacked', async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 800 });
     await mockDevices(page, { outputs: [JUNO] });
