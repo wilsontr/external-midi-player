@@ -45,7 +45,7 @@ Rules:
 | T1 | [T1-scaffold-and-device-access.md](T1-scaffold-and-device-access.md) | Scaffold and device access | 0.5 day | done |
 | T2 | [T2-parsing-and-scheduler.md](T2-parsing-and-scheduler.md) | Parsing and scheduler | 1 day | done |
 | T3 | [T3-transport-and-playlist.md](T3-transport-and-playlist.md) | Transport and playlist | 1 day | done |
-| T4 | [T4-audio-monitoring.md](T4-audio-monitoring.md) | Audio monitoring | 1 day | pending |
+| T4 | [T4-audio-monitoring.md](T4-audio-monitoring.md) | Audio monitoring | 1 day | done |
 | T5 | [T5-hardening-and-deploy.md](T5-hardening-and-deploy.md) | Hardening and deploy | 1 day | pending |
 
 Requirement coverage (per task `Requirements` field): R1, R2 → T3; R3 → T2, T3; R4 → T1; R5 → T2, T5; R6, R7 → T3, T5; R8 → T2; R9, R10 → T4; R11 → T4, T5; R12 → T3.

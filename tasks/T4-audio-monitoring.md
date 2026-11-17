@@ -2,7 +2,7 @@
 
 - **ID**: T4
 - **Milestone**: Audio monitoring
-- **Status**: pending
+- **Status**: done
 - **Estimate**: 1 day
 - **Depends on**: T1
 - **Modules**: `audioMonitor.ts`, `ui.ts` (audio monitor panel)
@@ -31,14 +31,14 @@ Capture a chosen audio input, route it through a Web Audio graph to the chosen o
 
 ## Acceptance criteria
 
-- [ ] The chosen input is audible through the chosen output (R9).
-- [ ] Mute is on by default; volume and a live level meter work (R10).
-- [ ] Monitoring output device is selectable where supported; otherwise it falls back to the system default with a note (R11).
-- [ ] Device names appear in the pickers after mic permission is granted.
-- [ ] Unplugging / re-plugging an audio device refreshes both pickers via `ondevicechange`.
-- [ ] Meter shows dBFS peak with a clip indicator above −1 dBFS.
-- [ ] Latency readout shows `baseLatency + outputLatency`.
-- [ ] Monitoring starts muted; a warning appears when input and output share a device.
+- [x] The chosen input is audible through the chosen output (R9).
+- [x] Mute is on by default; volume and a live level meter work (R10).
+- [x] Monitoring output device is selectable where supported; otherwise it falls back to the system default with a note (R11).
+- [x] Device names appear in the pickers after mic permission is granted.
+- [x] Unplugging / re-plugging an audio device refreshes both pickers via `ondevicechange`.
+- [x] Meter shows dBFS peak with a clip indicator above −1 dBFS.
+- [x] Latency readout shows `baseLatency + outputLatency`.
+- [x] Monitoring starts muted; a warning appears when input and output share a device.
 
 ## Notes
 

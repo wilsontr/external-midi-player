@@ -1,0 +1,433 @@
+/**
+ * Audio monitoring (ticket T4): captures a chosen audio input, routes it
+ * through a Web Audio graph and plays it to the chosen output. Independent of
+ * the MIDI path. See the design doc, "Audio input routing".
+ *
+ * Graph: `MediaStreamAudioSourceNode` → `GainNode` (volume / mute) → output.
+ * The level meter taps the source *before* the gain stage (through a channel
+ * splitter and one `AnalyserNode` per channel), so the signal is visible
+ * while monitoring is muted — which is how it starts, to avoid a feedback
+ * loop when the input is a microphone near the speakers.
+ *
+ * Output device routing:
+ * - `context`: `AudioContext.setSinkId` (Chrome) — lowest latency.
+ * - `element`: the graph ends in a `MediaStreamAudioDestinationNode` played by
+ *   an `<audio>` element whose `setSinkId` picks the device (Firefox; the
+ *   user grants a device with `selectAudioOutput()`).
+ * - `default`: neither is available; audio goes to the system default output.
+ *
+ * DOM-independent apart from the factories below, which tests inject.
+ */
+
+export type OutputRouting = 'context' | 'element' | 'default';
+
+export interface AudioDeviceInfo {
+  id: string;
+  label: string;
+  groupId: string;
+}
+
+/** Peak level of the two channels, in dBFS (floored at `DB_FLOOR`). */
+export interface StereoLevel {
+  left: number;
+  right: number;
+}
+
+export const DB_FLOOR = -100;
+/** Peaks above this level are shown as clipping. */
+export const CLIP_THRESHOLD_DB = -1;
+
+/** The `setSinkId` / `selectAudioOutput` additions missing from some DOM typings. */
+type SinkCapable = { setSinkId?: (sinkId: string) => Promise<void> };
+type OutputSelectingDevices = MediaDevices & {
+  selectAudioOutput?: () => Promise<{ deviceId: string; label: string }>;
+};
+
+export interface AudioMonitorOptions {
+  /** User-visible status (funnels into the single aria-live region). */
+  onStatus: (message: string) => void;
+  /** Fired whenever the device lists (or the selection after a hot-plug) change. */
+  onDevicesChanged: () => void;
+  /** Fired when capture stopped by itself because the input went away. */
+  onInputLost: () => void;
+  /** Injectable for tests. Defaults to `navigator.mediaDevices`. */
+  mediaDevices?: MediaDevices;
+  /** Injectable for tests. Defaults to `new AudioContext(...)`. */
+  createContext?: (options: AudioContextOptions) => AudioContext;
+  /** Injectable for tests. Defaults to `document.createElement('audio')`. */
+  createAudioElement?: () => HTMLAudioElement;
+  /** Injectable for tests. Defaults to feature detection. */
+  routing?: OutputRouting;
+}
+
+/** Picks the best available way to choose the monitoring output device. */
+export function detectOutputRouting(): OutputRouting {
+  if (typeof AudioContext !== 'undefined') {
+    if (typeof (AudioContext.prototype as SinkCapable).setSinkId === 'function') return 'context';
+    if (
+      typeof HTMLMediaElement !== 'undefined' &&
+      typeof (HTMLMediaElement.prototype as SinkCapable).setSinkId === 'function' &&
+      typeof AudioContext.prototype.createMediaStreamDestination === 'function'
+    ) {
+      return 'element';
+    }
+  }
+  return 'default';
+}
+
+/** Constraints that keep instrument audio unaltered. */
+function captureConstraints(inputId: string): MediaStreamConstraints {
+  return {
+    audio: {
+      deviceId: { exact: inputId },
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+      channelCount: { ideal: 2 },
+      sampleRate: { ideal: 48000 },
+    },
+  };
+}
+
+function toDb(peak: number): number {
+  return peak <= 0 ? DB_FLOOR : Math.max(DB_FLOOR, 20 * Math.log10(peak));
+}
+
+export class AudioMonitor {
+  readonly routing: OutputRouting;
+
+  private readonly options: AudioMonitorOptions;
+  private readonly mediaDevices: OutputSelectingDevices | undefined;
+
+  private inputList: AudioDeviceInfo[] = [];
+  private outputList: AudioDeviceInfo[] = [];
+  /** Outputs granted through `selectAudioOutput()` (Firefox lists none by itself). */
+  private grantedOutputs: AudioDeviceInfo[] = [];
+  private inputId: string | null = null;
+  private outputId = '';
+  private isMuted = true;
+  private level = 1;
+  private unlocked = false;
+  private selectToken = 0;
+
+  private stream: MediaStream | null = null;
+  private channels = 2;
+  private context: AudioContext | null = null;
+  private gain: GainNode | null = null;
+  private source: MediaStreamAudioSourceNode | null = null;
+  private analysers: AnalyserNode[] = [];
+  private audioElement: HTMLAudioElement | null = null;
+  private buffer: Float32Array<ArrayBuffer> | null = null;
+
+  constructor(options: AudioMonitorOptions) {
+    this.options = options;
+    this.mediaDevices =
+      options.mediaDevices ??
+      (typeof navigator !== 'undefined' ? (navigator.mediaDevices as OutputSelectingDevices | undefined) : undefined);
+    this.routing = options.routing ?? detectOutputRouting();
+  }
+
+  /** True when the browser can capture audio at all. */
+  get supported(): boolean {
+    return (
+      this.mediaDevices !== undefined &&
+      typeof this.mediaDevices.getUserMedia === 'function' &&
+      (this.options.createContext !== undefined || typeof AudioContext !== 'undefined')
+    );
+  }
+
+  /** True when the user must grant output devices one at a time (Firefox). */
+  get canSelectAudioOutput(): boolean {
+    return this.routing === 'element' && typeof this.mediaDevices?.selectAudioOutput === 'function';
+  }
+
+  get muted(): boolean {
+    return this.isMuted;
+  }
+
+  get volume(): number {
+    return this.level;
+  }
+
+  get selectedInput(): string | null {
+    return this.inputId;
+  }
+
+  get selectedOutput(): string {
+    return this.outputId;
+  }
+
+  inputs(): AudioDeviceInfo[] {
+    return this.inputList.slice();
+  }
+
+  /** Selectable output devices (empty when routing is `default`). */
+  outputs(): AudioDeviceInfo[] {
+    return this.routing === 'default' ? [] : this.outputList.slice();
+  }
+
+  /**
+   * Asks for microphone permission once (so device labels become available),
+   * then lists the devices and starts listening for hot-plug changes. Must
+   * run inside the user's click.
+   */
+  async unlock(): Promise<boolean> {
+    const devices = this.mediaDevices;
+    if (!devices || typeof devices.getUserMedia !== 'function') return false;
+    try {
+      const stream = await devices.getUserMedia({ audio: true });
+      for (const track of stream.getTracks()) track.stop();
+    } catch {
+      return false;
+    }
+    this.unlocked = true;
+    devices.ondevicechange = () => void this.refreshDevices();
+    await this.refreshDevices();
+    return true;
+  }
+
+  /** Re-reads `enumerateDevices()` and reacts to a vanished input or output. */
+  async refreshDevices(): Promise<void> {
+    const devices = this.mediaDevices;
+    if (!devices || !this.unlocked) return;
+    let all: MediaDeviceInfo[];
+    try {
+      all = await devices.enumerateDevices();
+    } catch {
+      return;
+    }
+    const describe = (kind: MediaDeviceKind) =>
+      all
+        .filter((d) => d.kind === kind)
+        .map((d, i) => ({
+          id: d.deviceId,
+          label: d.label || `${kind === 'audioinput' ? 'Input' : 'Output'} ${i + 1}`,
+          groupId: d.groupId,
+        }));
+    this.inputList = describe('audioinput');
+    const listed = describe('audiooutput');
+    this.outputList = [
+      ...listed,
+      ...this.grantedOutputs.filter((g) => !listed.some((d) => d.id === g.id)),
+    ];
+
+    if (this.inputId !== null && !this.inputList.some((d) => d.id === this.inputId)) {
+      this.stopCapture();
+      this.options.onStatus('Audio input disconnected — monitoring stopped.');
+      this.options.onInputLost();
+    }
+    if (this.outputId !== '' && !this.outputList.some((d) => d.id === this.outputId)) {
+      this.outputId = '';
+      await this.applySink();
+      this.options.onStatus('Monitoring output disconnected — using the system default output.');
+    }
+    this.options.onDevicesChanged();
+  }
+
+  /**
+   * Opens `id` (stopping the previous capture first) and starts monitoring it.
+   * `null` stops monitoring. Must run inside a user gesture so the context
+   * can resume.
+   */
+  async selectInput(id: string | null): Promise<boolean> {
+    const token = ++this.selectToken;
+    this.stopCapture();
+    if (id === null || !this.mediaDevices) return true;
+    let stream: MediaStream;
+    try {
+      stream = await this.mediaDevices.getUserMedia(captureConstraints(id));
+    } catch {
+      if (token === this.selectToken) {
+        this.options.onStatus('Could not open the selected audio input.');
+      }
+      return false;
+    }
+    // A newer selection started while this one was opening: drop this stream.
+    if (token !== this.selectToken) {
+      for (const track of stream.getTracks()) track.stop();
+      return false;
+    }
+    const context = this.ensureContext();
+    this.stream = stream;
+    this.inputId = id;
+    const track = stream.getAudioTracks()[0];
+    this.channels = track?.getSettings?.().channelCount ?? 2;
+    track?.addEventListener?.('ended', () => {
+      if (this.stream === stream) {
+        this.stopCapture();
+        this.options.onStatus('Audio input disconnected — monitoring stopped.');
+        this.options.onInputLost();
+      }
+    });
+
+    const source = context.createMediaStreamSource(stream);
+    source.connect(this.gain!);
+    const splitter = context.createChannelSplitter(2);
+    source.connect(splitter);
+    this.analysers.forEach((analyser, channel) => splitter.connect(analyser, channel));
+    this.source = source;
+    this.resume();
+    return true;
+  }
+
+  /** Selects the monitoring output; '' is the system default. */
+  async selectOutput(id: string): Promise<void> {
+    this.outputId = id;
+    await this.applySink();
+    this.resume();
+  }
+
+  /**
+   * Firefox: asks the user to grant an output device with the browser's own
+   * picker, then selects it. Returns the granted device, or null if cancelled.
+   */
+  async grantOutput(): Promise<AudioDeviceInfo | null> {
+    const select = this.mediaDevices?.selectAudioOutput;
+    if (typeof select !== 'function') return null;
+    try {
+      const granted = await select.call(this.mediaDevices);
+      const info: AudioDeviceInfo = {
+        id: granted.deviceId,
+        label: granted.label || 'Selected output',
+        groupId: '',
+      };
+      if (!this.grantedOutputs.some((d) => d.id === info.id)) this.grantedOutputs.push(info);
+      await this.refreshDevices();
+      await this.selectOutput(info.id);
+      return info;
+    } catch {
+      return null;
+    }
+  }
+
+  setMuted(muted: boolean): void {
+    this.isMuted = muted;
+    this.applyGain();
+    this.resume();
+  }
+
+  /** Volume from 0 to 1. */
+  setVolume(volume: number): void {
+    this.level = Math.min(1, Math.max(0, volume));
+    this.applyGain();
+  }
+
+  /** Peak level per channel, in dBFS, read from the analysers. */
+  peaks(): StereoLevel {
+    if (this.analysers.length < 2 || this.source === null) {
+      return { left: DB_FLOOR, right: DB_FLOOR };
+    }
+    const [left, right] = this.analysers.map((analyser) => {
+      const size = analyser.fftSize;
+      if (this.buffer === null || this.buffer.length !== size) {
+        this.buffer = new Float32Array(size);
+      }
+      analyser.getFloatTimeDomainData(this.buffer);
+      let peak = 0;
+      for (let i = 0; i < size; i++) {
+        const v = Math.abs(this.buffer[i]);
+        if (v > peak) peak = v;
+      }
+      return toDb(peak);
+    });
+    // A mono input only feeds the left channel of the splitter.
+    return { left, right: this.channels < 2 ? left : right };
+  }
+
+  /** The browser's share of the round trip: `baseLatency + outputLatency`, in ms. */
+  latencyMs(): number | null {
+    const context = this.context;
+    if (context === null) return null;
+    return (context.baseLatency + (context.outputLatency || 0)) * 1000;
+  }
+
+  /** True when the selected input and output look like the same device. */
+  sharesDevice(): boolean {
+    if (this.inputId === null) return false;
+    const input = this.inputList.find((d) => d.id === this.inputId);
+    if (!input || !input.groupId) return false;
+    const output =
+      this.outputId === ''
+        ? this.outputList.find((d) => d.id === 'default')
+        : this.outputList.find((d) => d.id === this.outputId);
+    return output !== undefined && output.groupId === input.groupId;
+  }
+
+  /** Stops capture and closes the graph. */
+  dispose(): void {
+    this.stopCapture();
+    if (this.mediaDevices) this.mediaDevices.ondevicechange = null;
+    void this.context?.close();
+    this.context = null;
+    this.gain = null;
+    this.analysers = [];
+    this.audioElement?.pause();
+    this.audioElement = null;
+  }
+
+  private stopCapture(): void {
+    for (const track of this.stream?.getTracks() ?? []) track.stop();
+    this.stream = null;
+    this.source?.disconnect();
+    this.source = null;
+    this.inputId = null;
+  }
+
+  /** Builds the context and the gain → output half of the graph on first use. */
+  private ensureContext(): AudioContext {
+    if (this.context !== null) return this.context;
+    const options: AudioContextOptions = { latencyHint: 'interactive' };
+    const context = this.options.createContext
+      ? this.options.createContext(options)
+      : new AudioContext(options);
+    const gain = context.createGain();
+    gain.gain.value = this.isMuted ? 0 : this.level;
+    this.analysers = [0, 1].map(() => {
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 2048;
+      return analyser;
+    });
+
+    if (this.routing === 'element') {
+      const destination = context.createMediaStreamDestination();
+      gain.connect(destination);
+      const element = this.options.createAudioElement
+        ? this.options.createAudioElement()
+        : document.createElement('audio');
+      element.srcObject = destination.stream;
+      this.audioElement = element;
+    } else {
+      gain.connect(context.destination);
+    }
+    this.context = context;
+    this.gain = gain;
+    void this.applySink();
+    return context;
+  }
+
+  private async applySink(): Promise<void> {
+    try {
+      if (this.routing === 'context' && this.context !== null) {
+        await (this.context as unknown as SinkCapable).setSinkId!(this.outputId);
+      } else if (this.routing === 'element' && this.audioElement !== null) {
+        await (this.audioElement as unknown as SinkCapable).setSinkId!(this.outputId);
+      }
+    } catch {
+      this.outputId = '';
+      this.options.onStatus('Could not use that output — using the system default output.');
+    }
+  }
+
+  private applyGain(): void {
+    if (this.gain !== null) this.gain.gain.value = this.isMuted ? 0 : this.level;
+  }
+
+  /**
+   * Resumes the context (and the `<audio>` element) from a user gesture.
+   * Not awaited: both promises stay pending while autoplay is blocked.
+   */
+  private resume(): void {
+    this.context?.resume().catch(() => {});
+    this.audioElement?.play().catch(() => {});
+  }
+}
