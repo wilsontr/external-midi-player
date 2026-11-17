@@ -208,6 +208,7 @@ Automated tests cover parsing and scheduling logic; device behaviour is checked 
 
 - Event-list builder: format 0 and 1 fixtures, tempo changes, overlapping notes on one channel.
 - Scheduler with a fake clock and a mock `MIDIOutput`: every event sent once, timestamps correct, release messages sent on pause and stop.
+- Scheduler timing stress: a dense five-minute event list driven by a jittered tick loop — exact timestamps inside the look-ahead, bounded lateness after a 500 ms stall, no past timestamps and no drift.
 - Playlist reducer: add, remove, reorder, auto-advance skipping error entries.
 - Persistence: playlist and audio settings save/restore, corrupt data ignored, storage failures handled.
 

@@ -17,6 +17,7 @@ Harden the working app against the known risks (timer throttling, stuck notes, d
 - Scheduler tick in a Worker so background tabs are not throttled to 1 s; keep the 200 ms look-ahead.
 - Error states: device lost, file rejected, unsupported browser — all surfaced in the single `aria-live` region.
 - Playwright tests (Chromium and Firefox) with mocked `requestMIDIAccess` and `getUserMedia`: add files, play, pause, next, Panic, device disconnect.
+- Scheduler timing stress (Vitest): drive the tick loop with jittered and deliberately stalled ticks over a dense five-minute event list; assert exact timestamps inside the look-ahead, bounded lateness after a stall beyond it, and no drift (`tests/unit/schedulerTimingStress.test.ts`).
 - Manual matrix on real hardware:
   - Browsers: Chrome and Firefox, current release, on Windows and macOS.
   - MIDI: one USB-MIDI synth, one DIN interface, one virtual port (IAC on macOS, loopMIDI on Windows).
@@ -39,4 +40,5 @@ Harden the working app against the known risks (timer throttling, stuck notes, d
 - Risks covered here: background-tab timer throttling, scheduled messages that cannot be cancelled in Chrome (200 ms overhang bound), malformed or huge MIDI files (parse in try/catch, mark entry as error, skip on auto-advance).
 - Virtual MIDI port looping back into the same synth (doubled notes) is out of scope; document it in help text.
 - Deployment automation is split into T6; run the manual matrix against the Pages URL once T6 lands, or against `npm run preview` before then.
+- The timing stress test covers scheduler tick jitter deterministically; moving the tick into a Worker (this ticket) is what addresses real background-tab throttling.
 - Keep the look-ahead at 200 ms — it is the bound on post-pause overhang.
