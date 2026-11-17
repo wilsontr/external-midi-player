@@ -112,3 +112,107 @@ select {
 .status-region {
   min-height: 1.25em;
 }
+
+.current-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+button.danger {
+  background: #c0392b;
+}
+
+.progress-row {
+  margin-top: 12px;
+  flex-wrap: nowrap;
+}
+
+progress {
+  flex: 1;
+  min-width: 0;
+}
+
+.progress-row span {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.drop-zone {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  border: 2px dashed var(--panel-border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.drop-zone.drag-over {
+  border-color: #4a90d9;
+}
+
+.playlist {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.playlist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-bottom-color: var(--panel-border);
+}
+
+.playlist-row.current {
+  border-color: #4a90d9;
+  background: rgba(74, 144, 217, 0.18);
+}
+
+.playlist-row.drop-before {
+  box-shadow: 0 -3px 0 #4a90d9;
+}
+
+.playlist-row.drop-after {
+  box-shadow: 0 3px 0 #4a90d9;
+}
+
+.playlist-row[data-status='error'] .entry-status {
+  color: #c0392b;
+}
+
+.drag-handle {
+  cursor: grab;
+  user-select: none;
+}
+
+.entry-name {
+  flex: 1;
+  min-width: 8em;
+  overflow-wrap: anywhere;
+}
+
+.entry-duration {
+  font-variant-numeric: tabular-nums;
+}
+
+.entry-status {
+  font-size: 0.85rem;
+}
+
+.entry-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.entry-buttons button {
+  padding: 2px 8px;
+}

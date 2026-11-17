@@ -6,7 +6,7 @@ Browser-based MIDI playlist player: plays .mid files out to external MIDI hardwa
 - Tasks: `tasks/` — one file per milestone T1–T5, fixed schema. Read `tasks/README.md` first; build in order T1 → T5.
 
 ## Project
-- Stack: TypeScript, Vite (static build), `@tonejs/midi` (only runtime dependency), Web MIDI + Web Audio.
+- Stack: TypeScript, Vite (static build), `@tonejs/midi` + `midi-file` (the two runtime dependencies), Web MIDI + Web Audio.
 - Modules (one per architecture box, created in T1–T4): `src/midiDevices.ts`, `src/parser.ts`, `src/scheduler.ts`, `src/playlist.ts`, `src/audioMonitor.ts`, `src/ui.ts`.
 - Tests: Vitest (unit), Playwright (e2e, Chromium + Firefox, mocked `requestMIDIAccess`/`getUserMedia`).
 - Browsers: desktop Chrome/Edge and Firefox, current + previous releases. Must be served over HTTPS or `localhost` (secure context).
@@ -28,7 +28,7 @@ A task is complete when ALL pass:
 ## When Writing Code
 - Scheduler: every `MIDIOutput.send()` gets a future timestamp; 25 ms tick, 200 ms look-ahead. No JS timers for note timing.
 - Pause/stop: note-off every sounding note per channel plus CC64 = 0; send release messages just after the last queued event.
-- Parsing: `@tonejs/midi`, drop meta events other than tempo, keep original channels, duration = last event time.
+- Parsing: `parseMidi` from `midi-file` (the parser `@tonejs/midi` wraps — the high-level `Midi`/`Track` API loses per-event channels and channel pressure, and pairs notes in O(n²)), drop meta events other than tempo, keep original channels, duration = last event time.
 - Audio monitor: starts muted; `echoCancellation`/`noiseSuppression`/`autoGainControl` all off.
 - All user-visible status (device lost, file rejected) goes to the single `aria-live` region.
 
@@ -41,6 +41,6 @@ A task is complete when ALL pass:
 - Always run subagents serially — never in parallel. The coding model host bogs down under concurrent model requests; run one subagent at a time.
 
 ## Boundaries
-- ✅ Always: serve over HTTPS/localhost; verify against the task's acceptance criteria; keep runtime deps to `@tonejs/midi` only
+- ✅ Always: serve over HTTPS/localhost; verify against the task's acceptance criteria; keep runtime dependencies to `@tonejs/midi` + `midi-file`
 - ⚠️ Ask first: adding a runtime dependency, changing the module split, adding UI panels
 - 🚫 Never: add a backend, schedule notes with JS timers, commit secrets
