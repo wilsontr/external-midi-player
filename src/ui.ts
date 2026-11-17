@@ -121,37 +121,44 @@ export function createUi(root: HTMLElement): void {
   async function connectDevices(): Promise<void> {
     connectButton.disabled = true;
     retryButton.hidden = true;
-    // Both prompts must be triggered from this user gesture.
-    const [midiGranted, micGranted] = await Promise.all([
-      midi.connect(),
-      requestMicrophonePermission(),
-    ]);
-    connectButton.disabled = false;
+    try {
+      // Both prompts must be triggered from this user gesture.
+      const [midiGranted, micGranted] = await Promise.all([
+        midi.connect(),
+        requestMicrophonePermission(),
+      ]);
 
-    const parts: string[] = [];
-    if (midiGranted) {
-      const count = midi.listOutputs().length;
-      parts.push(
-        count > 0
-          ? `Connected — ${count} MIDI output${count === 1 ? '' : 's'} found.`
-          : 'Connected — no MIDI outputs found yet.',
-      );
-    } else {
-      parts.push('MIDI access denied or cancelled.');
-    }
-    parts.push(micGranted ? 'Microphone access granted.' : 'Microphone permission not granted.');
-    setStatus(parts.join(' '));
-
-    if (midiGranted) {
-      firefoxOnboarding.hidden = true;
-      if (midi.listOutputs().length === 0) {
-        retryButton.hidden = false;
-        retryButton.textContent = 'Refresh';
+      const parts: string[] = [];
+      if (midiGranted) {
+        const count = midi.listOutputs().length;
+        parts.push(
+          count > 0
+            ? `Connected — ${count} MIDI output${count === 1 ? '' : 's'} found.`
+            : 'Connected — no MIDI outputs found yet.',
+        );
+      } else {
+        parts.push('MIDI access denied or cancelled.');
       }
-    } else {
-      // Denied/cancelled (or unsupported): offer the retry path.
+      parts.push(micGranted ? 'Microphone access granted.' : 'Microphone permission not granted.');
+      setStatus(parts.join(' '));
+
+      if (midiGranted) {
+        firefoxOnboarding.hidden = true;
+        if (midi.listOutputs().length === 0) {
+          retryButton.hidden = false;
+          retryButton.textContent = 'Refresh';
+        }
+      } else {
+        // Denied/cancelled (or unsupported): offer the retry path.
+        retryButton.hidden = false;
+        retryButton.textContent = 'Retry';
+      }
+    } catch {
+      setStatus('Connecting devices failed — click "Connect devices" to retry.');
       retryButton.hidden = false;
       retryButton.textContent = 'Retry';
+    } finally {
+      connectButton.disabled = false;
     }
   }
 

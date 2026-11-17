@@ -112,6 +112,23 @@ describe('MidiDevices', () => {
     ]);
   });
 
+  it('reports zero outputs when access is granted with no devices', async () => {
+    const fake = makeAccess([]);
+    vi.stubGlobal('navigator', mockNavigator(fake.access));
+    const { options } = makeOptions();
+    const devices = new MidiDevices(options);
+
+    expect(devices.connected).toBe(false);
+
+    const granted = await devices.connect();
+
+    expect(granted).toBe(true);
+    expect(devices.connected).toBe(true);
+    expect(options.onStatus).toHaveBeenCalledWith(
+      'MIDI access granted. No outputs available yet.',
+    );
+  });
+
   it('reports denial when the permission prompt is cancelled', async () => {
     const fake = makeAccess([]);
     vi.stubGlobal('navigator', mockNavigator(fake.access, { reject: true }));

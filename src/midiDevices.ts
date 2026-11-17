@@ -40,8 +40,15 @@ export class MidiDevices {
   private access: MIDIAccess | null = null;
   private outputs: MidiOutputInfo[] = [];
   private currentSelection: string | null = null;
+  private readonly options: MidiDevicesOptions;
+  private readonly storage: Pick<Storage, 'getItem' | 'setItem'>;
 
-  constructor(private readonly options: MidiDevicesOptions) {}
+  constructor(options: MidiDevicesOptions) {
+    this.options = options;
+    // Resolve once: a per-call in-memory fallback would setItem into one
+    // throwaway map and getItem from another, never round-tripping.
+    this.storage = options.storage ?? resolveStorage();
+  }
 
   /** True once access has been granted (even with zero outputs). */
   get connected(): boolean {
@@ -108,18 +115,16 @@ export class MidiDevices {
   }
 
   private saveSelectedName(name: string): void {
-    const storage = this.options.storage ?? safeLocalStorage();
     try {
-      storage.setItem(SELECTED_OUTPUT_STORAGE_KEY, name);
+      this.storage.setItem(SELECTED_OUTPUT_STORAGE_KEY, name);
     } catch {
       // Storage unavailable (e.g. private mode) — selection is not remembered.
     }
   }
 
   private savedSelectedName(): string | null {
-    const storage = this.options.storage ?? safeLocalStorage();
     try {
-      return storage.getItem(SELECTED_OUTPUT_STORAGE_KEY);
+      return this.storage.getItem(SELECTED_OUTPUT_STORAGE_KEY);
     } catch {
       return null;
     }
@@ -132,8 +137,10 @@ export class MidiDevices {
       name: o.name ?? 'Unknown device',
       manufacturer: o.manufacturer ?? 'Unknown',
     }));
-    this.reselectKnownOutput();
+    // Render the new list first, then report any selection change: the UI
+    // must never be asked to select an option that is not in the DOM yet.
     this.options.onOutputsChanged();
+    this.reselectKnownOutput();
   }
 
   /**
@@ -165,7 +172,7 @@ export class MidiDevices {
   }
 }
 
-function safeLocalStorage(): Pick<Storage, 'getItem' | 'setItem'> {
+function resolveStorage(): Pick<Storage, 'getItem' | 'setItem'> {
   try {
     return localStorage;
   } catch {
