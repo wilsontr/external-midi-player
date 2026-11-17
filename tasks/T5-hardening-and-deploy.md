@@ -22,7 +22,7 @@ Harden the working app against the known risks (timer throttling, stuck notes, d
   - MIDI: one USB-MIDI synth, one DIN interface, one virtual port (IAC on macOS, loopMIDI on Windows).
   - Audio: one USB audio interface with the synth's output connected.
   - Checks: timing over a 5-minute file, no hanging notes after each transport action, hot-plug of MIDI and audio devices, monitoring latency readout, feedback-safe default.
-- Static deploy to any HTTPS host (Web MIDI and `getUserMedia` require a secure context).
+- Static deploy to any HTTPS host — the concrete GitHub Pages + CI implementation is T6 (Web MIDI and `getUserMedia` require a secure context).
 
 ## Acceptance criteria
 
@@ -31,11 +31,12 @@ Harden the working app against the known risks (timer throttling, stuck notes, d
 - [ ] Monitoring falls back to the system default with a note where output selection is unavailable (R11).
 - [ ] All Playwright UI flows pass on Chromium and Firefox.
 - [ ] The full manual matrix (browsers × MIDI devices × audio) passes.
-- [ ] The app is deployed and reachable over HTTPS and works there.
+- [ ] The app is deployed and reachable over HTTPS and works there (delivered by T6).
 
 ## Notes
 
 - Add a baseline content-security-policy (`default-src 'self'`) to the static deploy — deferred from T1 review because dev-mode HMR (websockets + inline module sources) fights a strict meta CSP.
 - Risks covered here: background-tab timer throttling, scheduled messages that cannot be cancelled in Chrome (200 ms overhang bound), malformed or huge MIDI files (parse in try/catch, mark entry as error, skip on auto-advance).
 - Virtual MIDI port looping back into the same synth (doubled notes) is out of scope; document it in help text.
+- Deployment automation is split into T6; run the manual matrix against the Pages URL once T6 lands, or against `npm run preview` before then.
 - Keep the look-ahead at 200 ms — it is the bound on post-pause overhang.
