@@ -32,7 +32,7 @@ Harden the working app against the known risks (timer throttling, stuck notes, d
 - [x] Playback timing stays accurate in a background tab (Worker tick, R5). Manual check passed; the Worker creation is also asserted by Playwright.
 - [x] No hanging notes after pause, stop, next, previous, or output disconnect (R6, R7).
 - [x] Monitoring falls back to the system default with a note where output selection is unavailable (R11).
-- [ ] All Playwright UI flows pass on Chromium and Firefox. Chromium passes locally; the Firefox run is blocked by the development sandbox and is exercised by T6's CI.
+- [x] All Playwright UI flows pass on Chromium and Firefox.
 - [x] The full manual matrix (browsers × MIDI devices × audio) passes. Confirmed by the project owner on 2026-11-17 with Chrome and Firefox, the external MIDI synth and the Scarlett input.
 - [ ] The app is deployed and reachable over HTTPS and works there (delivered by T6).
 - [x] The tick timer starts/stops/disposes with playback, survives pause/resume and falls back to `setInterval` if the Worker fails (`tests/unit/workerTimer.test.ts`, `tests/unit/scheduler.test.ts`).
@@ -47,4 +47,4 @@ Harden the working app against the known risks (timer throttling, stuck notes, d
 - Deployment automation is split into T6; run the manual matrix against the Pages URL once T6 lands, or against `npm run preview` before then.
 - The timing stress test covers scheduler tick jitter deterministically; the Worker tick addresses real background-tab throttling, with the 200 ms look-ahead absorbing short stalls.
 - Keep the look-ahead at 200 ms — it is the bound on post-pause overhang.
-- Manual matrix confirmed by the project owner on 2026-11-17 (Chrome and Firefox, external synth + Scarlett); the remaining T5 gates are the Firefox Playwright leg and the T6 deployment.
+- Manual matrix confirmed by the project owner on 2026-11-17 (Chrome and Firefox, external synth + Scarlett). The Firefox Playwright leg passed on the same date; only the T6 deployment remains for the deploy acceptance.
