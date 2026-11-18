@@ -30,6 +30,15 @@ const contentSecurityPolicy: Plugin = {
 };
 
 export default defineConfig({
+  /**
+   * Relative asset URLs (ticket T6): the build must run from a GitHub Pages
+   * project subpath (`/external-midi-player/`), from a user page and from a
+   * custom domain without hard-coding the repository name. There are no
+   * client-side routes, so nothing needs an absolute base. `dev` and the
+   * Playwright suite are unaffected; the public font URLs in `styles.css`
+   * resolve to `../fonts/…` in the built stylesheet.
+   */
+  base: './',
   plugins: [contentSecurityPolicy],
   server: {
     host: 'localhost',

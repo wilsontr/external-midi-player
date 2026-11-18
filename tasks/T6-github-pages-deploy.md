@@ -2,7 +2,7 @@
 
 - **ID**: T6
 - **Milestone**: Hardening and deploy
-- **Status**: pending
+- **Status**: in-progress
 - **Estimate**: 0.5 day
 - **Depends on**: T5
 - **Modules**: `.github/workflows/deploy.yml`, `vite.config.ts`, `README.md`
