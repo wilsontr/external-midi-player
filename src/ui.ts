@@ -1,7 +1,7 @@
 /**
  * Single-screen UI, styled as a 90s half-rack tone module: a front unit (audio
  * monitor strip, amber playback LCD, transport keypad) and an expansion unit
- * (song-list LCD, part map, audio routing), with the printed Quick start label
+ * (song-list LCD, part map), with the printed Quick start label
  * between them. Both units span the app width and their internals stack below
  * the wide breakpoint. All user-visible status is written to the one aria-live
  * region on the playback LCD's bottom line. The layout is a plain DOM build
@@ -23,6 +23,7 @@ import {
 import {
   gmInstrumentName,
   isMidiFileName,
+  programAt,
   type ChannelInstrument,
   type ChannelProgram,
 } from "./parser";
@@ -56,8 +57,6 @@ const ICON = {
   pause: '<path d="M8 4h4v16H8zM16 4h4v16h-4z"/>',
   stop: '<path d="M5 5h14v14H5z"/>',
   next: '<path d="M15 5h3v14h-3zM4 5v14l11-7z"/>',
-  up: '<path d="M12 4l7 8h-4v8h-6v-8H5z"/>',
-  down: '<path d="M12 20l-7-8h4V4h6v8h4z"/>',
   remove:
     '<path d="M8.5 6L12 9.5 15.5 6 18 8.5 14.5 12 18 15.5 15.5 18 12 14.5 8.5 18 6 15.5 9.5 12 6 8.5z"/>',
 } as const;
@@ -153,6 +152,9 @@ export function createUi(root: HTMLElement): void {
             <li>Select your audio input and output.</li>
             <li>Load your MIDI files and listen.</li>
           </ol>
+          <p class="silk-hint quickstart-shortcuts" data-testid="quickstart-shortcuts">
+            Shortcuts: Space play/pause · Esc panic · ← previous · → next
+          </p>
           <p class="notice silk-notice" data-testid="unsupported-notice" hidden>
             This browser does not support Web MIDI. Use a current desktop version
             of Chrome, Edge, or Firefox to connect MIDI devices.
@@ -273,6 +275,33 @@ export function createUi(root: HTMLElement): void {
                 </select>
               </span>
             </div>
+            <div class="output-row">
+              <label class="silk-label" for="audio-input">Audio input</label>
+              <span class="select-wrap">
+                <select id="audio-input" class="lcd-select" data-testid="audio-input-picker" disabled>
+                  <option value="">Select an input…</option>
+                </select>
+              </span>
+            </div>
+            <div class="output-row" data-testid="audio-output-row">
+              <label class="silk-label" for="audio-output">Audio output</label>
+              <span class="select-wrap">
+                <select id="audio-output" class="lcd-select" data-testid="audio-output-picker" disabled>
+                  <option value="">System default</option>
+                </select>
+              </span>
+              <button type="button" class="rubber-key key-small" data-testid="grant-output-button" hidden>Choose output device…</button>
+            </div>
+            <p class="notice silk-notice" data-testid="monitor-unavailable" hidden>
+              This browser cannot capture audio, so monitoring is unavailable.
+            </p>
+            <p class="notice silk-notice" data-testid="audio-output-note" hidden>
+              This browser cannot choose a monitoring output, so audio plays to the system default output.
+            </p>
+            <p class="notice silk-notice" data-testid="feedback-warning" hidden>
+              The input and output are the same device. Unmute with care: a microphone near the
+              speakers can cause feedback.
+            </p>
             <div class="keypad" data-testid="keypad" role="group" aria-label="Transport">
               <div class="key-cell">
                 <button type="button" class="rubber-key key-transport" data-testid="previous-button" aria-label="⏮ Previous">${icon("previous")}</button>
@@ -296,7 +325,6 @@ export function createUi(root: HTMLElement): void {
                 <span class="silk-caption key-caption-spacer" aria-hidden="true">&nbsp;</span>
               </div>
             </div>
-            <p class="silk-hint">Shortcuts: Space play/pause · Esc panic · ← previous · → next</p>
             <div class="connect-row">
               <span class="led led-connect" data-testid="connect-led" data-state="disconnected" aria-hidden="true"></span>
               <button type="button" class="rubber-key connect-key" data-testid="connect-button">Connect devices</button>
@@ -343,37 +371,6 @@ export function createUi(root: HTMLElement): void {
               <p class="instruments-caption" data-testid="instruments-caption" hidden></p>
               <p class="lcd-hint" data-testid="instruments-empty">Play a song to see its MIDI channels and instruments.</p>
               <ul class="instrument-list" data-testid="instrument-list" hidden></ul>
-            </section>
-            <section class="routing" data-testid="routing-panel" aria-labelledby="routing-heading">
-              <h2 class="silk-label" id="routing-heading">Audio routing</h2>
-              <p class="notice silk-notice" data-testid="monitor-unavailable" hidden>
-                This browser cannot capture audio, so monitoring is unavailable.
-              </p>
-              <div class="route-row">
-                <label class="silk-label" for="audio-input">Input</label>
-                <span class="select-wrap">
-                  <select id="audio-input" class="lcd-select" data-testid="audio-input-picker" disabled>
-                    <option value="">Select an input…</option>
-                  </select>
-                </span>
-              </div>
-              <div class="route-row" data-testid="audio-output-row">
-                <label class="silk-label" for="audio-output">Output</label>
-                <span class="select-wrap">
-                  <select id="audio-output" class="lcd-select" data-testid="audio-output-picker" disabled>
-                    <option value="">System default</option>
-                  </select>
-                </span>
-                <button type="button" class="rubber-key key-small" data-testid="grant-output-button" hidden>Choose output device…</button>
-              </div>
-              <p class="notice silk-notice" data-testid="audio-output-note" hidden>
-                This browser cannot choose a monitoring output, so audio plays to the system default output.
-              </p>
-              <p class="silk-readout" data-testid="latency-readout">Browser latency: —</p>
-              <p class="notice silk-notice" data-testid="feedback-warning" hidden>
-                The input and output are the same device. Unmute with care: a microphone near the
-                speakers can cause feedback.
-              </p>
             </section>
           </aside>
         </div>
@@ -491,9 +488,6 @@ export function createUi(root: HTMLElement): void {
   const partCells = [
     ...root.querySelectorAll<HTMLElement>('[data-testid="part-cell"]'),
   ];
-  const latencyReadout = root.querySelector<HTMLElement>(
-    '[data-testid="latency-readout"]',
-  )!;
   const feedbackWarning = root.querySelector<HTMLElement>(
     '[data-testid="feedback-warning"]',
   )!;
@@ -586,6 +580,8 @@ export function createUi(root: HTMLElement): void {
     playing: "Playing",
     paused: "Paused",
   };
+  /** Cleared as soon as the next song starts (see renderTransport). */
+  const PANIC_STATUS = "Panic: all notes off sent on all 16 channels.";
   const STATE_LCD = { stopped: "STOP", playing: "PLAY", paused: "PAUSE" };
 
   function renderTransport(): void {
@@ -610,6 +606,11 @@ export function createUi(root: HTMLElement): void {
     currentTitle.textContent =
       player.currentEntry()?.name ?? "No song selected.";
     updateProgress();
+    // A new song starting clears a stale Panic line; other status messages
+    // (errors, device loss, file rejections) are left alone.
+    if (state === "playing" && statusRegion.textContent === PANIC_STATUS) {
+      setStatus("");
+    }
   }
 
   /** One instrument entry: GM name, 1-based program, bank when selected. */
@@ -623,7 +624,27 @@ export function createUi(root: HTMLElement): void {
     return `${gmInstrumentName(program.program)} · program ${program.program + 1}${suffix}`;
   }
 
-  function createInstrumentRow(item: ChannelInstrument): HTMLLIElement {
+  /** Stable key for one channel's live program, used to skip no-op re-renders. */
+  function programKey(item: ChannelInstrument, program: ChannelProgram): string {
+    return `${item.channel}:${program.program}:${program.bankMsb ?? ""}:${
+      program.bankLsb ?? ""
+    }:${program.fromFile ? 1 : 0}`;
+  }
+
+  /** The live programs of the ready card at the current position, as a key. */
+  function liveInstrumentsSignature(): string {
+    const state = player.instrumentsState();
+    if (state.status !== "ready") return "";
+    const positionSec = player.position();
+    return state.channels
+      .map((item) => programKey(item, programAt(item, positionSec)))
+      .join("|");
+  }
+
+  /** Last key renderInstruments wrote; ticks only re-render when it changes. */
+  let lastInstrumentsSignature = "";
+
+  function createInstrumentRow(item: ChannelInstrument, program: ChannelProgram): HTMLLIElement {
     const li = document.createElement("li");
     li.className = "instrument-row";
     li.setAttribute("data-testid", "instrument-row");
@@ -633,18 +654,19 @@ export function createUi(root: HTMLElement): void {
     channel.textContent = `Channel ${item.channel + 1}`;
     const detail = document.createElement("span");
     detail.className = "instrument-detail";
-    detail.textContent = item.programs
-      .map((program) => describeProgram(item.channel, program))
-      .join(" > ");
+    // The program in effect at the current playback position, so the card
+    // follows the file's program changes as they play (and when seeking back).
+    detail.textContent = describeProgram(item.channel, program);
     li.append(channel, detail);
     return li;
   }
 
   /**
    * The instruments of the song currently playing, plus the part strip that
-   * marks its channels. Deliberately not driven by transport progress: both
-   * change only when the playing song changes, so the LCD never becomes a
-   * playback visualization.
+   * marks its channels. The card follows the playback position: each channel
+   * shows the program in effect now, so a mid-song program change updates the
+   * row as it plays (and a seek back restores the earlier one). The part strip
+   * stays a static view of the channels the song uses.
    */
   function renderInstruments(): void {
     const state = player.instrumentsState();
@@ -670,7 +692,12 @@ export function createUi(root: HTMLElement): void {
       instrumentsEmpty.textContent = empty;
 
     instrumentList.hidden = channels.length === 0;
-    const rows = channels.map(createInstrumentRow);
+    const positionSec = player.position();
+    const live = channels.map((item) => programAt(item, positionSec));
+    lastInstrumentsSignature = channels
+      .map((item, index) => programKey(item, live[index]))
+      .join("|");
+    const rows = channels.map((item, index) => createInstrumentRow(item, live[index]));
     const current = instrumentList.children;
     const unchanged =
       current.length === rows.length &&
@@ -734,6 +761,15 @@ export function createUi(root: HTMLElement): void {
 
   /** Refreshes the timeline and elapsed / total readout (runs 20×/s). */
   function updateProgress(): void {
+    // The instrument card follows the playhead while playing; re-rendering is
+    // a no-op unless a row's text actually changed (program changes are sparse).
+    if (
+      player.state === "playing" &&
+      player.instrumentsState().status === "ready" &&
+      liveInstrumentsSignature() !== lastInstrumentsSignature
+    ) {
+      renderInstruments();
+    }
     const total = currentDuration();
     const seekable = seekableNow();
     if (seekable !== timelineSeekable) {
@@ -760,6 +796,8 @@ export function createUi(root: HTMLElement): void {
     player.seek(position);
     renderTimeline(position, total);
     renderElapsed(position, total);
+    // A paused seek changes the card's instruments without a tick to drive it.
+    renderInstruments();
   }
 
   /** Shows a pending seek while the pointer is still down (not committed yet). */
@@ -845,6 +883,10 @@ export function createUi(root: HTMLElement): void {
   });
 
   const rows = new Map<string, HTMLLIElement>();
+  /** Row picked by a single click, when it is not the playing/next entry. */
+  let selectedId: string | null = null;
+  /** Last `currentId` renderPlaylist saw, to notice playback moving. */
+  let renderedCurrentId: string | null = null;
 
   function createRow(id: string): HTMLLIElement {
     const li = document.createElement("li");
@@ -860,8 +902,6 @@ export function createUi(root: HTMLElement): void {
       <span class="entry-status" data-testid="entry-status"></span>
       <span class="entry-buttons">
         <button type="button" class="row-key" data-action="play">${icon("play")}</button>
-        <button type="button" class="row-key" data-action="up">${icon("up")}</button>
-        <button type="button" class="row-key" data-action="down">${icon("down")}</button>
         <button type="button" class="row-key" data-action="remove">${icon("remove")}</button>
       </span>`;
     return li;
@@ -871,6 +911,7 @@ export function createUi(root: HTMLElement): void {
     li: HTMLLIElement,
     entry: PlaylistEntry,
     isCurrent: boolean,
+    isSelected: boolean,
     index: number,
   ): void {
     const set = (testId: string, text: string): void => {
@@ -889,16 +930,20 @@ export function createUi(root: HTMLElement): void {
           : "…"
         : formatTime(entry.durationSec),
     );
-    set(
-      "entry-status",
-      entry.status === "error"
-        ? `Error: ${entry.error ?? "unreadable"}`
-        : "Ready",
-    );
+    const status = li.querySelector<HTMLElement>('[data-testid="entry-status"]')!;
+    const error = entry.status === "error";
+    status.hidden = !error;
+    set("entry-status", error ? "ERR" : "");
+    if (error) status.title = `Error: ${entry.error ?? "unreadable"}`;
+    else status.removeAttribute("title");
     li.dataset.status = entry.status;
     li.classList.toggle("current", isCurrent);
     if (isCurrent) li.setAttribute("aria-current", "true");
     else li.removeAttribute("aria-current");
+    // Selected and playing are independent markers that can combine on one
+    // row: a dotted outline for the selection, the inverted row for playing.
+    if (isSelected) li.setAttribute("data-selected", "true");
+    else li.removeAttribute("data-selected");
     const label = (action: string, text: string): void => {
       li.querySelector(`[data-action="${action}"]`)!.setAttribute(
         "aria-label",
@@ -906,8 +951,6 @@ export function createUi(root: HTMLElement): void {
       );
     };
     label("play", "Play");
-    label("up", "Move up");
-    label("down", "Move down");
     label("remove", "Remove");
     li.querySelector<HTMLButtonElement>('[data-action="play"]')!.disabled =
       entry.status === "error";
@@ -916,6 +959,15 @@ export function createUi(root: HTMLElement): void {
   /** Keyed reconcile: rows are reused so focus and drag state survive updates. */
   function renderPlaylist(): void {
     const { entries, currentId } = player.playlist;
+    if (currentId !== renderedCurrentId) {
+      // Playback moved (start, auto-advance, next/previous, remove): the
+      // selection follows the entry that is now playing or queued to play.
+      renderedCurrentId = currentId;
+      selectedId = currentId;
+    }
+    if (selectedId !== null && !entries.some((entry) => entry.id === selectedId)) {
+      selectedId = currentId;
+    }
     playlistEmpty.hidden = entries.length > 0;
     savePlaylistButton.disabled = entries.length === 0;
     const count = `${entries.length} ${entries.length === 1 ? "song" : "songs"}`;
@@ -933,7 +985,7 @@ export function createUi(root: HTMLElement): void {
         li = createRow(entry.id);
         rows.set(entry.id, li);
       }
-      updateRow(li, entry, entry.id === currentId, index);
+      updateRow(li, entry, entry.id === currentId, entry.id === selectedId, index);
       if (playlistList.children[index] !== li) {
         playlistList.insertBefore(li, playlistList.children[index] ?? null);
       }
@@ -964,11 +1016,17 @@ export function createUi(root: HTMLElement): void {
     if (!li) return;
     const id = li.dataset.id!;
     if (!button) {
-      // Clicking anywhere else in the row plays that entry from the start.
-      player.playEntry(id);
+      // A single click only selects the row; double-click starts playback.
+      // While stopped the selection also becomes the song Play will start;
+      // while playing/paused it is just the row the outline sits on.
+      const entry = player.playlist.entries.find((e) => e.id === id);
+      if (entry && entry.status !== "error") {
+        selectedId = id;
+        player.selectEntry(id);
+        renderPlaylist();
+      }
       return;
     }
-    const index = entryIndex(id);
     switch (button.dataset.action) {
       case "play":
         player.playEntry(id);
@@ -976,16 +1034,18 @@ export function createUi(root: HTMLElement): void {
       case "remove":
         player.remove(id);
         break;
-      case "up":
-      case "down": {
-        const toIndex = button.dataset.action === "up" ? index - 1 : index + 1;
-        if (toIndex < 0 || toIndex >= player.playlist.entries.length) break;
-        player.move(id, toIndex);
-        // Moving the row in the DOM drops focus; put it back on the same button.
-        button.focus();
-        break;
-      }
     }
+  });
+
+  playlistList.addEventListener("dblclick", (event) => {
+    const target = event.target as HTMLElement;
+    // The row keys keep their own click behaviour; a double-click there is
+    // not a second way to play.
+    if (target.closest("button[data-action]")) return;
+    const li = target.closest<HTMLLIElement>("li");
+    if (!li) return;
+    selectedId = li.dataset.id!;
+    player.playEntry(li.dataset.id!);
   });
 
   // Drag to reorder (internal rows only; external files are handled below).
@@ -1260,7 +1320,7 @@ export function createUi(root: HTMLElement): void {
       return;
     }
     player.panic();
-    setStatus("Panic: all notes off sent on all 16 channels.");
+    setStatus(PANIC_STATUS);
   }
 
   playButton.addEventListener("click", () => player.togglePlay());
@@ -1413,7 +1473,7 @@ export function createUi(root: HTMLElement): void {
     }
   }
 
-  /** Meter, clip LED and latency readout, driven by requestAnimationFrame. */
+  /** Meter and clip LED, driven by requestAnimationFrame. */
   function meterFrame(now: number): void {
     const { left, right } = monitor.peaks();
     renderLadder(levelLeds.left, left);
@@ -1424,13 +1484,6 @@ export function createUi(root: HTMLElement): void {
     for (const led of clipLeds) {
       if (led.hidden !== !clipping) led.hidden = !clipping;
     }
-    const latency = monitor.latencyMs();
-    const latencyText =
-      latency === null
-        ? "Browser latency: —"
-        : `Browser latency: ${latency.toFixed(1)} ms (excludes interface and driver buffering)`;
-    if (latencyReadout.textContent !== latencyText)
-      latencyReadout.textContent = latencyText;
     requestAnimationFrame(meterFrame);
   }
 

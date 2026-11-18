@@ -472,6 +472,40 @@ describe('PlaylistPlayer', () => {
     expect(player.currentEntry()).toBeNull();
   });
 
+  it('selects an entry without playing while stopped', async () => {
+    player.add([file('a.mid'), file('b.mid'), file('bad.mid')]);
+    await flush();
+    const [a, b, bad] = player.playlist.entries;
+
+    expect(player.selectEntry(b.id)).toBe(true);
+    expect(currentName()).toBe('b');
+    expect(player.state).toBe('stopped');
+    expect(schedulers).toHaveLength(0);
+
+    // Re-selecting the current entry is a no-op, and error rows are skipped.
+    expect(player.selectEntry(b.id)).toBe(false);
+    expect(player.selectEntry(bad.id)).toBe(false);
+    expect(player.selectEntry(a.id)).toBe(true);
+    expect(currentName()).toBe('a');
+  });
+
+  it('ignores a row selection while a song is playing or paused', async () => {
+    player.add([file('a.mid'), file('b.mid')]);
+    await flush();
+    player.play();
+    await flush();
+    const b = player.playlist.entries[1];
+
+    expect(player.selectEntry(b.id)).toBe(false);
+    expect(currentName()).toBe('a');
+    expect(player.state).toBe('playing');
+
+    player.pause();
+    expect(player.selectEntry(b.id)).toBe(false);
+    expect(currentName()).toBe('a');
+    expect(player.state).toBe('paused');
+  });
+
   it('turns a parse rejection into an error row instead of wedging the queue', async () => {
     parseFile = async () => {
       throw new Error('disk gone');

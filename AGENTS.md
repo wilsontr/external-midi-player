@@ -2,7 +2,7 @@
 
 Browser-based MIDI playlist player: plays .mid files out to external MIDI hardware, and monitors that hardware's audio back into the computer. Static Vite + TypeScript app, no backend.
 
-- Design (source of truth, requirements R1–R12): `Browser MIDI Playlist Player — MVP Design.md`
+- Design (source of truth, requirements R1–R12): `docs/Browser MIDI Playlist Player — MVP Design.md`
 - Tasks: `tasks/` — one file per milestone T1–T5, fixed schema. Read `tasks/README.md` first; build in order T1 → T5.
 
 ## Project

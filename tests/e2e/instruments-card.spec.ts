@@ -7,13 +7,34 @@ const JUNO = { id: 'o1', name: 'Juno-106', manufacturer: 'Roland' };
  * Format-0 SMF at 480 PPQ / 120 BPM (960 ticks per second): raw channel
  * setup bytes at tick 0, then one note held for `seconds`.
  */
+function vlq(n: number): number[] {
+  const out = [n & 0x7f];
+  let value = n;
+  while ((value >>= 7) > 0) out.unshift((value & 0x7f) | 0x80);
+  return out;
+}
+
+const u32 = (n: number) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+
+/** Wraps a format-0 track body in an MThd/MTrk file. */
+function smf(track: number[]): number[] {
+  return [
+    ...[0x4d, 0x54, 0x68, 0x64],
+    ...u32(6),
+    0,
+    0,
+    0,
+    1,
+    0x01,
+    0xe0,
+    ...[0x4d, 0x54, 0x72, 0x6b],
+    ...u32(track.length),
+    ...track,
+  ];
+}
+
 function midiFile(seconds: number, setup: number[] = []): number[] {
   const ticks = Math.round(seconds * 960);
-  const vlq = (n: number): number[] => {
-    const out = [n & 0x7f];
-    while ((n >>= 7) > 0) out.unshift((n & 0x7f) | 0x80);
-    return out;
-  };
   const track = [
     ...setup,
     0x00,
@@ -29,20 +50,35 @@ function midiFile(seconds: number, setup: number[] = []): number[] {
     0x2f,
     0x00,
   ];
-  const u32 = (n: number) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
-  return [
-    ...[0x4d, 0x54, 0x68, 0x64],
-    ...u32(6),
+  return smf(track);
+}
+
+/**
+ * A two-second format-0 file whose only channel starts on program 40 (Violin)
+ * and changes to program 50 (Synth Strings 1) halfway through.
+ */
+function changingMidiFile(): number[] {
+  const half = 960;
+  return smf([
+    0x00,
+    0xc0,
+    40,
+    0x00,
+    0x90,
+    60,
+    100,
+    ...vlq(half),
+    0xc0,
+    50,
+    ...vlq(half),
+    0x80,
+    60,
     0,
-    0,
-    0,
-    1,
-    0x01,
-    0xe0,
-    ...[0x4d, 0x54, 0x72, 0x6b],
-    ...u32(track.length),
-    ...track,
-  ];
+    0x00,
+    0xff,
+    0x2f,
+    0x00,
+  ]);
 }
 
 interface TestFile {
@@ -87,7 +123,7 @@ async function dropFiles(page: Page, files: TestFile[]): Promise<void> {
 const instrumentsPanel = (page: Page) => page.getByTestId('instruments-panel');
 const instrumentRows = (page: Page) => page.getByTestId('instrument-row');
 
-test.describe('T9 — instruments card', () => {
+test.describe('T9/T16 — instruments card', () => {
   test('shows the playing file’s channels and instruments, and clears on stop', async ({
     page,
   }) => {
@@ -143,20 +179,24 @@ test.describe('T9 — instruments card', () => {
     await expect(instrumentRows(page).nth(2)).toContainText('String Ensemble 1 · program 49');
   });
 
-  test('does not change while the song plays or pauses', async ({ page }) => {
+  test('updates the instrument when the file changes program mid-song', async ({ page }) => {
     await setup(page);
-    await dropFiles(page, [layered('static.mid')]);
+    await dropFiles(page, [{ name: 'changes.mid', bytes: changingMidiFile() }]);
     await page.getByTestId('play-button').click();
-    await expect(instrumentRows(page)).toHaveCount(3);
 
-    const panel = instrumentsPanel(page);
-    const before = await panel.innerHTML();
-    await page.waitForTimeout(500);
-    expect(await panel.innerHTML()).toBe(before);
+    const row = instrumentRows(page).first();
+    await expect(row).toContainText('Channel 1');
+    await expect(row).toContainText('Violin · program 41');
+    // Halfway through the two-second file the row switches to program 50.
+    await expect(row).toContainText('Synth Strings 1 · program 51', { timeout: 5000 });
 
+    // Pausing keeps the program that was in effect, and seeking back restores
+    // the earlier one.
     await page.getByTestId('play-button').click(); // pause
-    expect(await panel.innerHTML()).toBe(before);
-    expect(await panel.locator('[aria-current]').count()).toBe(0);
+    await expect(row).toContainText('Synth Strings 1 · program 51');
+    await page.getByTestId('timeline').focus();
+    await page.keyboard.press('Home');
+    await expect(row).toContainText('Violin · program 41');
   });
 
   test('the part map sits beside the song list in the expansion unit', async ({ page }) => {
@@ -169,17 +209,16 @@ test.describe('T9 — instruments card', () => {
     await page.getByTestId('play-button').click();
     await expect(instrumentRows(page)).toHaveCount(3);
 
-    const [songs, partMap, routing] = await Promise.all(
-      ['playlist-panel', 'instruments-panel', 'routing-panel'].map((id) =>
+    const [songs, partMap] = await Promise.all(
+      ['playlist-panel', 'instruments-panel'].map((id) =>
         page.getByTestId(id).boundingBox(),
       ),
     );
 
-    // Song list on the left, part map above audio routing on the right; a long
-    // playlist no longer stretches the part map across a shared grid row.
+    // Song list on the left, part map in the right column; a long playlist no
+    // longer stretches the part map across a shared grid row.
     expect(partMap!.x).toBeGreaterThan(songs!.x + songs!.width);
-    expect(Math.abs(routing!.x - partMap!.x)).toBeLessThan(1);
-    expect(routing!.y).toBeGreaterThan(partMap!.y + partMap!.height / 2);
+    expect(partMap!.width).toBeGreaterThan(0);
     await expect(instrumentsPanel(page)).toBeVisible();
 
     await page.setViewportSize({ width: 360, height: 800 });

@@ -5,6 +5,12 @@
  * future Web Audio timestamp, not from JavaScript timers:
  *
  * - On play, `t0 = performance.now() + initialDelayMs − resumeOffset`.
+ * - A fresh start pre-rolls the file's tick-0 setup (program/bank changes,
+ *   controllers, pitch bend and channel pressure) ahead of `t0`, spread across
+ *   a short start lead. Files often front-load a full multi-part state dump on
+ *   the first tick, and MIDI is a serial line: batching that with the first
+ *   chord makes the opening sound late, rolled and clipped, and old modules
+ *   stall while loading the patches (see `DEFAULT_START_LEAD_MS` below).
  * - Every tick (25 ms, driven by a dedicated Worker timer with a
  *   `setInterval` fallback) sends every not-yet-sent event whose time falls
  *   before `now + lookaheadMs` via `output.send(bytes, t0 + eventTimeMs)` —
@@ -50,6 +56,12 @@ export interface SchedulerOptions {
   initialDelayMs?: number;
   /** Delay after a seek's state messages before the first event plays. Default 20 ms. */
   seekLeadMs?: number;
+  /**
+   * Minimum time (ms) from the first tick-0 setup message to song time 0 on a
+   * fresh start. The setup is spread across it and its last 100 ms are left
+   * clear. Default 250 ms; 0 keeps only the serial floor and the settle.
+   */
+  startLeadMs?: number;
   /** Injectable tick timer. Defaults to a Worker timer with an interval fallback. */
   createTimer?: () => SchedulerTimer;
   /** Called when a `MIDIOutput.send` throws (the output vanished mid-song). */
@@ -78,6 +90,42 @@ function eventToBytes(e: ParsedMidiEvent): Uint8Array {
 /** CC123 all notes off, CC120 all sound off, CC121 reset all controllers, CC64 sustain off. */
 const PANIC_RESET_CONTROLLERS = [0x7b, 0x78, 0x79, 0x40];
 
+/**
+ * Start-of-song setup pre-roll.
+ *
+ * A file that opens with a 16-part setup often has dozens of program changes
+ * and controllers on tick 0. Sent at one timestamp they reach a DIN MIDI
+ * port as one burst, and the line is serial at 31.25 kbps (a 3-byte message
+ * takes 0.96 ms), so the first chord can take ~100 ms to come out — by which
+ * time the file's first note-offs are already due. Sending that state ahead
+ * of song time 0 lets the wire drain before the first note.
+ *
+ * Messages are never closer together than 1.25 ms (the 0.96 ms a 3-byte
+ * message needs, plus a little margin). A small setup is spread across the
+ * start lead below, which also gives a receiver that stalls on patch loads
+ * time to keep up.
+ */
+const PRE_ROLL_MESSAGE_MS = 1.25;
+/**
+ * Minimum time from the first pre-roll message to song time 0.
+ *
+ * A program change makes an older module load a patch (and its effect
+ * algorithm); nine of them at once can keep a 1990s sound module busy for
+ * tens of milliseconds, and while it is busy its MIDI receive handling
+ * stalls, so the first notes jitter. The setup is spread across this lead
+ * and the tail of it is left clear, which gives the receiver time per
+ * message and time to settle before the first note. Software synths do not
+ * care; a quarter of a second is a small price for a clean start on DIN.
+ */
+const DEFAULT_START_LEAD_MS = 250;
+/** Clear air after the last pre-roll message, inside the start lead. */
+const START_SETTLE_MS = 100;
+
+/** True for the channel events that configure a part rather than strike a note. */
+function isSetupEvent(e: ParsedMidiEvent): boolean {
+  return e.type !== 'note-on' && e.type !== 'note-off';
+}
+
 /** The MIDI state a channel has reached by the seek target. */
 interface ChannelState {
   program?: number;
@@ -96,6 +144,7 @@ export class Scheduler {
   private readonly lookaheadMs: number;
   private readonly initialDelayMs: number;
   private readonly seekLeadMs: number;
+  private readonly startLeadMs: number;
   private readonly createTimer: () => SchedulerTimer;
   private readonly onError?: (message: string) => void;
 
@@ -118,6 +167,11 @@ export class Scheduler {
   private lastSentWall: number | null = null;
   /** Notes currently sounding, per channel. */
   private readonly sounding = new Map<number, Set<number>>();
+  /**
+   * Indices of tick-0 setup events already handed over by the start pre-roll.
+   * The tick loop skips them; they are cleared as it passes them.
+   */
+  private readonly preRoll = new Set<number>();
   private timer: SchedulerTimer | null = null;
 
   constructor(options: SchedulerOptions) {
@@ -130,6 +184,7 @@ export class Scheduler {
     this.lookaheadMs = options.lookaheadMs ?? 200;
     this.initialDelayMs = options.initialDelayMs ?? 100;
     this.seekLeadMs = options.seekLeadMs ?? 20;
+    this.startLeadMs = Math.max(0, options.startLeadMs ?? DEFAULT_START_LEAD_MS);
     this.createTimer = options.createTimer ?? createSchedulerTimer;
     this.onError = options.onError;
   }
@@ -142,6 +197,10 @@ export class Scheduler {
    * `startAtMs` (an absolute wall-clock time) anchors song time 0 for a song
    * that must begin only after an earlier scheduler's panic has taken effect —
    * a track switch. Without it, playback starts after `initialDelayMs`.
+   *
+   * A fresh start first sends the file's tick-0 setup ahead of `t0` (see
+   * `PRE_ROLL_MESSAGE_MS`), so an opening full-part state dump cannot crowd
+   * the first chord off the serial MIDI line.
    */
   play(startAtMs?: number): void {
     if (this.t0 !== null) {
@@ -149,8 +208,15 @@ export class Scheduler {
     }
     this.started = true;
     const now = this.clock.now();
+    // Resuming (or resuming a paused seek) has no setup to re-send: the state
+    // was already delivered before the pause or by the seek.
+    const fresh =
+      this.resumeAnchorMs === null && this.pausedPositionMs === 0 && this.nextIndex === 0;
+    const setup = fresh ? this.tickZeroSetup() : [];
     if (startAtMs !== undefined) {
-      this.t0 = Math.max(startAtMs, now);
+      const anchor = this.anchorStart(Math.max(startAtMs, now), now, setup);
+      if (anchor === null) return; // the pre-roll's send threw; onError fired
+      this.t0 = anchor;
     } else if (this.resumeAnchorMs !== null) {
       // Resume from a paused seek: let the target state (program/controllers)
       // go out before the first note, unless that anchor has already passed.
@@ -158,10 +224,78 @@ export class Scheduler {
         this.resumeAnchorMs > now ? this.resumeAnchorMs : now + this.initialDelayMs;
       this.t0 = anchor - this.pausedPositionMs;
     } else {
-      this.t0 = now + this.initialDelayMs - this.pausedPositionMs;
+      const anchor = this.anchorStart(now + this.initialDelayMs, now, setup);
+      if (anchor === null) return; // the pre-roll's send threw; onError fired
+      this.t0 = anchor - this.pausedPositionMs;
     }
     this.resumeAnchorMs = null;
     this.ensureTimer().start(this.tickMs, () => this.tick());
+  }
+
+  /**
+   * Anchors song time 0 at `base`, after handing over the tick-0 setup if
+   * there is any. Returns `null` when that send threw (the scheduler is then
+   * reset and `onError` has fired, so no timer is started).
+   */
+  private anchorStart(base: number, now: number, setup: number[]): number | null {
+    if (this.preRoll.size > 0) {
+      // A previous start's pre-roll is still unconsumed (play() without a tick
+      // in between); never send it twice.
+      this.preRoll.clear();
+    }
+    const start = Math.max(base, now);
+    if (setup.length === 0) {
+      return start;
+    }
+    // Spread the setup across the lead, but never faster than the serial
+    // floor; if it does not fit, the lead grows and t0 moves with it. The
+    // last START_SETTLE_MS of the lead stays clear for the receiver to finish
+    // loading the patches.
+    const serialSpan = (setup.length - 1) * PRE_ROLL_MESSAGE_MS;
+    const lead = Math.max(this.startLeadMs, serialSpan + START_SETTLE_MS);
+    const step = setup.length > 1 ? (lead - START_SETTLE_MS) / (setup.length - 1) : 0;
+    let wall = start;
+    try {
+      for (const index of setup) {
+        this.output.send(eventToBytes(this.events[index]), wall);
+        this.preRoll.add(index);
+        wall += step;
+      }
+    } catch (err) {
+      this.clearPlaybackState();
+      this.onError?.(err instanceof Error ? err.message : String(err));
+      return null;
+    }
+    const lastSetupWall = setup.length > 1 ? start + (setup.length - 1) * step : start;
+    if (this.lastSentWall === null || lastSetupWall > this.lastSentWall) {
+      this.lastSentWall = lastSetupWall;
+    }
+    return start + lead;
+  }
+
+  /** Indices of the setup events at tick 0, in file order, for the pre-roll. */
+  private tickZeroSetup(): number[] {
+    const indices: number[] = [];
+    for (let i = this.nextIndex; i < this.events.length; i++) {
+      const e = this.events[i];
+      if (e.time > 0) break;
+      if (isSetupEvent(e)) indices.push(i);
+    }
+    return indices;
+  }
+
+  /** Resets transport state without sending anything (start failed). */
+  private clearPlaybackState(): void {
+    this.disposeTimer();
+    this.preRoll.clear();
+    this.t0 = null;
+    this.started = false;
+    this.resumeAnchorMs = null;
+    this.pausedPositionMs = 0;
+    this.floorPositionMs = 0;
+    this.nextIndex = 0;
+    this.lastSentWall = null;
+    this.sounding.clear();
   }
 
   /**
@@ -210,6 +344,7 @@ export class Scheduler {
     this.nextIndex = 0;
     this.lastSentWall = null;
     this.sounding.clear();
+    this.preRoll.clear();
     return tail === null ? now : Math.max(tail, now);
   }
 
@@ -244,6 +379,7 @@ export class Scheduler {
     this.nextIndex = 0;
     this.lastSentWall = null;
     this.sounding.clear();
+    this.preRoll.clear();
   }
 
   /** True while the song is playing. */
@@ -314,6 +450,12 @@ export class Scheduler {
     const horizon = now + this.lookaheadMs;
     try {
       while (this.nextIndex < this.events.length) {
+        // Tick-0 setup was already handed over ahead of t0 by the start
+        // pre-roll; skip it here so it is never sent twice.
+        if (this.preRoll.delete(this.nextIndex)) {
+          this.nextIndex += 1;
+          continue;
+        }
         const e = this.events[this.nextIndex];
         const wall = t0 + e.time * 1000;
         if (wall >= horizon) {
@@ -338,6 +480,7 @@ export class Scheduler {
       this.nextIndex = 0;
       this.lastSentWall = null;
       this.sounding.clear();
+      this.preRoll.clear();
       this.onError?.(err instanceof Error ? err.message : String(err));
       return;
     }
@@ -356,6 +499,7 @@ export class Scheduler {
       this.nextIndex = 0;
       this.lastSentWall = null;
       this.sounding.clear();
+      this.preRoll.clear();
       this.onEnded?.();
     }
   }

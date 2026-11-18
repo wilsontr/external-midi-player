@@ -201,7 +201,9 @@ test.describe('T8 — playlist controls, numbering and persistence', () => {
     expect(await rowNames(page)).toEqual(['a', 'c']);
     expect(await rowNumbers(page)).toEqual(['1', '2']);
 
-    await page.getByRole('button', { name: 'Move down a', exact: true }).click();
+    const rows = page.getByTestId('playlist-row');
+    await page.getByTestId('playlist-panel').scrollIntoViewIfNeeded();
+    await rows.nth(0).dragTo(rows.nth(1), { targetPosition: { x: 20, y: 25 } });
     expect(await rowNames(page)).toEqual(['c', 'a']);
     expect(await rowNumbers(page)).toEqual(['1', '2']);
 
@@ -255,21 +257,22 @@ test.describe('T11 — rack layout', () => {
     expect(scrollWidth).toBeLessThanOrEqual(1024);
   });
 
-  test('expansion unit: song list beside the part map and audio routing', async ({ page }) => {
+  test('expansion unit: song list beside the part map', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await setup(page);
     await dropFiles(page, [song('a.mid', 3), song('b.mid', 4)]);
 
-    const [songs, partMap, routing] = await Promise.all(
-      ['playlist-panel', 'instruments-panel', 'routing-panel'].map((id) =>
+    const [songs, partMap] = await Promise.all(
+      ['playlist-panel', 'instruments-panel'].map((id) =>
         page.getByTestId(id).boundingBox(),
       ),
     );
 
-    // Song list on the left (≈ 60%), part map + routing stacked on the right.
+    // Song list on the left (≈ 60%), part map in the right column; the audio
+    // routing card is gone and its pickers now live on the front unit.
     expect(songs!.x + songs!.width).toBeLessThan(partMap!.x);
-    expect(Math.abs(routing!.x - partMap!.x)).toBeLessThan(1);
-    expect(routing!.y).toBeGreaterThan(partMap!.y + partMap!.height / 2);
+    expect(partMap!.width).toBeGreaterThan(0);
+    await expect(page.getByTestId('routing-panel')).toHaveCount(0);
   });
 
   test('a populated playlist fits a 360 px viewport without horizontal overflow', async ({

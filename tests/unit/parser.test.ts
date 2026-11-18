@@ -4,6 +4,7 @@ import {
   parseSongForPlayback,
   isMidiFileName,
   clearSongCache,
+  programAt,
   summarizeInstruments,
   gmInstrumentName,
   GM_INSTRUMENTS,
@@ -413,8 +414,8 @@ describe('summarizeInstruments', () => {
     ]);
     const song = parseMidiData(bytes);
     expect(summarizeInstruments(song)).toEqual([
-      { channel: 0, programs: [{ program: 0, bankMsb: null, bankLsb: null, fromFile: false }] },
-      { channel: 2, programs: [{ program: 0, bankMsb: null, bankLsb: null, fromFile: false }] },
+      { channel: 0, programs: [{ program: 0, bankMsb: null, bankLsb: null, fromFile: false, time: 0 }] },
+      { channel: 2, programs: [{ program: 0, bankMsb: null, bankLsb: null, fromFile: false, time: 0 }] },
     ]);
   });
 
@@ -436,9 +437,9 @@ describe('summarizeInstruments', () => {
       {
         channel: 1,
         programs: [
-          { program: 40, bankMsb: 2, bankLsb: 1, fromFile: true },
-          { program: 41, bankMsb: 2, bankLsb: 1, fromFile: true },
-          { program: 40, bankMsb: 2, bankLsb: 1, fromFile: true },
+          { program: 40, bankMsb: 2, bankLsb: 1, fromFile: true, time: 0 },
+          { program: 41, bankMsb: 2, bankLsb: 1, fromFile: true, time: 0 },
+          { program: 40, bankMsb: 2, bankLsb: 1, fromFile: true, time: 0 },
         ],
       },
     ]);
@@ -447,8 +448,42 @@ describe('summarizeInstruments', () => {
   it('counts a channel that only carries a program change', () => {
     const bytes = buildMidi(0, 60, [[{ d: 0, program: [9, 0] }]]);
     expect(summarizeInstruments(parseMidiData(bytes))).toEqual([
-      { channel: 9, programs: [{ program: 0, bankMsb: null, bankLsb: null, fromFile: true }] },
+      { channel: 9, programs: [{ program: 0, bankMsb: null, bankLsb: null, fromFile: true, time: 0 }] },
     ]);
+  });
+
+  it('reports the program in effect at a position', () => {
+    // 60 PPQ at 120 BPM: 120 ticks = one second.
+    const bytes = buildMidi(0, 60, [
+      [
+        { d: 0, program: [0, 40] },
+        { d: 120, program: [0, 50] },
+        { d: 120, program: [0, 60] },
+        { d: 0, noteOn: [0, 60, 100] },
+      ],
+    ]);
+    const [channel] = summarizeInstruments(parseMidiData(bytes));
+    expect(channel.programs.map((p) => p.time)).toEqual([0, 1, 2]);
+    expect(programAt(channel, 0).program).toBe(40);
+    expect(programAt(channel, 0.9).program).toBe(40);
+    expect(programAt(channel, 1).program).toBe(50);
+    expect(programAt(channel, 1.9).program).toBe(50);
+    expect(programAt(channel, 2).program).toBe(60);
+    expect(programAt(channel, 99).program).toBe(60);
+  });
+
+  it('reports the MIDI default before a channel has selected a program', () => {
+    const bytes = buildMidi(0, 60, [
+      [
+        { d: 0, noteOn: [2, 60, 100] },
+        { d: 10, noteOff: [2, 60, 0] },
+        { d: 110, program: [2, 42] },
+      ],
+    ]);
+    const [channel] = summarizeInstruments(parseMidiData(bytes));
+    expect(programAt(channel, 0)).toMatchObject({ program: 0, fromFile: false });
+    expect(programAt(channel, 0.9)).toMatchObject({ program: 0, fromFile: false });
+    expect(programAt(channel, 1)).toMatchObject({ program: 42, fromFile: true, time: 1 });
   });
 
   it('returns no channels for a file with only tempo events', () => {

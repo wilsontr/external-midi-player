@@ -79,32 +79,34 @@ test.describe('T3 — transport and playlist', () => {
 
     const rows = page.getByTestId('playlist-row');
     await expect(rows.nth(1)).toHaveAttribute('data-status', 'error');
-    await expect(rows.nth(1).getByTestId('entry-status')).toContainText('Error');
+    await expect(rows.nth(1).getByTestId('entry-status')).toHaveText('ERR');
+    await expect(rows.nth(1).getByTestId('entry-status')).toHaveAttribute(
+      'title',
+      /Error:/,
+    );
+    // Healthy rows have no status text at all.
+    await expect(rows.nth(0).getByTestId('entry-status')).toBeHidden();
 
     await page.getByTestId('play-button').click();
     await expect(rows.nth(2)).toHaveAttribute('aria-current', 'true', { timeout: 5000 });
   });
 
-  test('reorder with the move buttons and by drag; remove per row (R2)', async ({ page }) => {
+  test('reorders by drag and removes per row (R2)', async ({ page }) => {
     await setup(page);
     await dropFiles(page, [song('a.mid'), song('b.mid'), song('c.mid')]);
     await expect(page.getByTestId('playlist-row')).toHaveCount(3);
 
-    await page.getByRole('button', { name: 'Move down a', exact: true }).click();
-    expect(await rowNames(page)).toEqual(['b', 'a', 'c']);
-    // The row action buttons must not fall through to the row's click-to-play.
-    await expect(page.getByTestId('playback-state')).toHaveText('Nothing playing.');
-
     const rows = page.getByTestId('playlist-row');
-    // HTML5 drag simulation needs both rows on screen; other actions auto-scroll,
-    // dragTo does not, and the page is taller than the viewport.
+    // HTML5 drag simulation needs both rows on screen; the page is taller than
+    // the viewport, so scroll the panel into view first.
     await page.getByTestId('playlist-panel').scrollIntoViewIfNeeded();
     await rows.nth(0).dragTo(rows.nth(2), { targetPosition: { x: 20, y: 25 } });
-    expect(await rowNames(page)).toEqual(['a', 'c', 'b']);
+    expect(await rowNames(page)).toEqual(['b', 'c', 'a']);
+    // Dragging must not fall through to the row's click-to-select.
     await expect(page.getByTestId('playback-state')).toHaveText('Nothing playing.');
 
     await page.getByRole('button', { name: 'Remove c', exact: true }).click();
-    expect(await rowNames(page)).toEqual(['a', 'b']);
+    expect(await rowNames(page)).toEqual(['b', 'a']);
     await expect(page.getByTestId('playback-state')).toHaveText('Nothing playing.');
   });
 
@@ -176,9 +178,7 @@ test.describe('T3 — transport and playlist', () => {
     expect(strikes).toHaveLength(2);
   });
 
-  test('a single click on a row plays it from the start; next/previous move the highlight', async ({
-    page,
-  }) => {
+  test('a single click selects a row without playing; double-click plays it', async ({ page }) => {
     await setup(page);
     await dropFiles(page, [song('a.mid'), song('b.mid'), song('c.mid')]);
     const rows = page.getByTestId('playlist-row');
@@ -186,13 +186,57 @@ test.describe('T3 — transport and playlist', () => {
 
     await page.getByTestId('entry-name').nth(1).click();
     await expect(rows.nth(1)).toHaveAttribute('aria-current', 'true');
+    await expect(rows.nth(1)).toHaveAttribute('data-selected', 'true');
     await expect(page.getByTestId('current-title')).toHaveText('b');
+    await expect(page.getByTestId('playback-state')).toHaveText('Nothing playing.');
+    expect((await sent(page)).some((m) => m.bytes[0] === 0x90)).toBe(false);
+
+    await page.getByTestId('entry-name').nth(1).dblclick();
     await expect(page.getByTestId('playback-state')).toHaveText('Playing');
+    await expect(rows.nth(1)).toHaveAttribute('aria-current', 'true');
+    await expect(rows.nth(1)).toHaveAttribute('data-selected', 'true');
 
     await page.getByTestId('next-button').click();
     await expect(rows.nth(2)).toHaveAttribute('aria-current', 'true');
     await page.getByTestId('previous-button').click();
     await expect(rows.nth(1)).toHaveAttribute('aria-current', 'true');
+
+    // While b is playing, a single click selects c but leaves the playing
+    // entry, the title and the transport alone. The selection marker is the
+    // dotted outline; the playing row keeps only its highlight.
+    await page.getByTestId('entry-name').nth(2).click();
+    await expect(rows.nth(2)).toHaveAttribute('data-selected', 'true');
+    await expect(rows.nth(2)).not.toHaveAttribute('aria-current', 'true');
+    expect(
+      await rows.nth(2).evaluate((row) => getComputedStyle(row).outlineStyle),
+    ).toBe('dashed');
+    await expect(rows.nth(1)).toHaveAttribute('aria-current', 'true');
+    await expect(rows.nth(1)).not.toHaveAttribute('data-selected', 'true');
+    await expect(page.getByTestId('current-title')).toHaveText('b');
+    await expect(page.getByTestId('playback-state')).toHaveText('Playing');
+
+    // Double-click moves playback to the selected row: now it is both, so the
+    // dotted selection outline sits over the playing highlight.
+    await page.getByTestId('entry-name').nth(2).dblclick();
+    await expect(rows.nth(2)).toHaveAttribute('aria-current', 'true');
+    await expect(rows.nth(2)).toHaveAttribute('data-selected', 'true');
+    expect(
+      await rows.nth(2).evaluate((row) => getComputedStyle(row).outlineStyle),
+    ).toBe('dashed');
+    await expect(page.getByTestId('current-title')).toHaveText('c');
+  });
+
+  test('starting a song clears the Panic status line', async ({ page }) => {
+    await setup(page);
+    await dropFiles(page, [song('a.mid')]);
+    await expect(page.getByTestId('playlist-row')).toHaveCount(1);
+
+    await page.getByTestId('panic-button').click();
+    await expect(page.getByTestId('status-region')).toContainText('Panic: all notes off');
+
+    await page.getByTestId('play-button').click();
+    await expect(page.getByTestId('playback-state')).toHaveText('Playing');
+    await expect(page.getByTestId('status-region')).toHaveText('');
   });
 
   test('runs the scheduler tick in a dedicated Worker', async ({ page }) => {

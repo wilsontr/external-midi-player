@@ -163,7 +163,8 @@ test.describe('T1 — scaffold and device access', () => {
     await page.goto('/');
 
     // The printed Quick start label is first: its disclosure button, then the
-    // two font-credit links. Then unit 1: volume, mute, output, transport.
+    // two font-credit links. Then unit 1: volume, mute, MIDI output, audio
+    // input/output, transport.
     await page.keyboard.press('Tab');
     await expect(page.getByTestId('quickstart-toggle')).toBeFocused();
     await page.keyboard.press('Tab');
@@ -187,6 +188,8 @@ test.describe('T1 — scaffold and device access', () => {
       'next-button',
       'play-button',
       'previous-button',
+      'audio-output-picker',
+      'audio-input-picker',
       'output-picker',
     ];
     for (const id of backwards) {

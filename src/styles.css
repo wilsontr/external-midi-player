@@ -4,8 +4,8 @@
  * One committed dark theme. Every colour in this file is a custom property
  * declared on :root; component rules only ever reference tokens, so the whole
  * look can be re-skinned (or made light) by swapping the :root block alone.
- * All texture — chassis grain, rack screws, bevels, the LCD dot grid and glass
- * glare — is drawn with gradients and shadows. There are no image assets.
+ * All texture — chassis bevels, the LCD dot grid and glass glare — is drawn
+ * with gradients and shadows. There are no image assets.
  */
 
 @font-face {
@@ -116,34 +116,12 @@ body {
 
 /* ------------------------------------------------------------------ units */
 
-/*
- * A rack unit: charcoal chassis with a top bevel, four rack screws and a
- * faint vertical grain, all drawn as background layers.
- */
+/* A rack unit: charcoal chassis with a top bevel and a soft drop shadow. */
 .unit {
   position: relative;
   min-width: 0;
   padding: 14px 20px 18px;
   background-color: var(--chassis);
-  background-image:
-    radial-gradient(circle at center, var(--screw) 0 1.7px, var(--screw-slot) 1.7px 2.9px, transparent 3.1px),
-    radial-gradient(circle at center, var(--screw) 0 1.7px, var(--screw-slot) 1.7px 2.9px, transparent 3.1px),
-    radial-gradient(circle at center, var(--screw) 0 1.7px, var(--screw-slot) 1.7px 2.9px, transparent 3.1px),
-    radial-gradient(circle at center, var(--screw) 0 1.7px, var(--screw-slot) 1.7px 2.9px, transparent 3.1px),
-    repeating-linear-gradient(0deg, var(--grain) 0 1px, transparent 1px 3px);
-  background-position:
-    13px 13px,
-    calc(100% - 13px) 13px,
-    13px calc(100% - 13px),
-    calc(100% - 13px) calc(100% - 13px),
-    0 0;
-  background-size:
-    9px 9px,
-    9px 9px,
-    9px 9px,
-    9px 9px,
-    auto;
-  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, repeat;
   border: 1px solid var(--chassis-deep);
   border-radius: 6px;
   box-shadow:
@@ -282,13 +260,6 @@ body {
   font-size: 11px;
   letter-spacing: 0;
   color: var(--silk-faint);
-}
-
-.silk-readout {
-  margin: 8px 0 4px;
-  font-size: 11px;
-  letter-spacing: 0;
-  color: var(--silk-dim);
 }
 
 .sr-only {
@@ -664,7 +635,7 @@ button:disabled {
   /* Bottom-aligned keys: the play key's LED then sits in the space above it
      instead of pushing that key down against its neighbours. */
   align-items: flex-end;
-  gap: 8px;
+  gap: 6px;
   margin: 4px 0;
 }
 
@@ -882,37 +853,6 @@ button:disabled {
   background-color: var(--lcd-bg-hi);
 }
 
-.route-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 0;
-}
-
-.route-row .silk-label {
-  flex: 0 0 46px;
-  margin: 0;
-}
-
-.route-row .select-wrap {
-  flex: 1 1 120px;
-}
-
-.routing {
-  min-width: 0;
-  padding: 10px 12px;
-  background: var(--chassis-hi);
-  border: 1px solid var(--chassis-deep);
-  border-radius: 4px;
-  box-shadow: inset 0 1px 0 var(--edge-light);
-}
-
-.routing .silk-hint,
-.routing .silk-readout {
-  overflow-wrap: anywhere;
-}
-
 /* ----------------------------------------------------------------- playlist */
 
 .playlist-keys {
@@ -952,7 +892,7 @@ button:disabled {
 .playlist-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
   padding: 4px;
   font-size: 16px;
@@ -960,7 +900,10 @@ button:disabled {
   cursor: pointer;
 }
 
-.playlist-row:focus-within {
+/* The dotted outline means "selected". Focus stays on the focused row key
+   (the global :focus-visible ring), so a playing row whose Play key was last
+   clicked does not keep a selection-looking outline. */
+.playlist-row[data-selected='true'] {
   outline: 2px dashed var(--lcd-ink);
   outline-offset: -2px;
 }
@@ -971,7 +914,12 @@ button:disabled {
   border-bottom-color: var(--lcd-ink);
 }
 
-.playlist-row.current:focus-within {
+.playlist-row.current[data-selected='true'] {
+  outline-color: var(--lcd-inv-ink);
+}
+
+/* On the inverted current row the pale focus ring would be hard to see. */
+.playlist-row.current .row-key:focus-visible {
   outline-color: var(--lcd-inv-ink);
 }
 
@@ -1028,7 +976,8 @@ button:disabled {
 }
 
 .entry-status {
-  flex: 0 1 auto;
+  /* ERR only; it must never be squeezed out by a long name. */
+  flex: 0 0 auto;
   color: var(--lcd-ink-dim);
   overflow-wrap: anywhere;
 }
@@ -1157,6 +1106,11 @@ button:disabled {
 
 .how-to li {
   margin: 2px 0;
+}
+
+.quickstart-shortcuts {
+  margin: 10px 0 0;
+  overflow-wrap: anywhere;
 }
 
 .quickstart .notice {

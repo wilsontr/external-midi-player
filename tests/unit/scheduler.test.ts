@@ -235,10 +235,13 @@ describe('Scheduler', () => {
     const scheduler = new Scheduler({ output, events, duration: 0.1 });
     scheduler.play();
     vi.advanceTimersByTime(300);
+    // The program change is tick-0 setup, so it is pre-rolled ahead of t0.
+    // The default 250 ms start lead puts song time 0 at 350, and the later
+    // events keep their offsets from there.
     expect(calls).toEqual([
       { bytes: [0xc2, 11], time: 100 },
-      { bytes: [0xe3, 0x60, 0x5d], time: 150 }, // 12000 = 0x60 | 0x5d << 7
-      { bytes: [0xd4, 100], time: 200 },
+      { bytes: [0xe3, 0x60, 0x5d], time: 400 }, // 12000 = 0x60 | 0x5d << 7
+      { bytes: [0xd4, 100], time: 450 },
     ]);
   });
 
@@ -378,6 +381,165 @@ describe('Scheduler', () => {
     expect(second.stop()).toBe(301);
   });
 
+  describe('start pre-roll', () => {
+    // Song time 0 is at least the 250 ms start lead after the first setup
+    // message, or later when the messages cannot fit at the 1.25 ms serial
+    // floor before the lead's 100 ms settle tail.
+    const preRollEnd = (count: number): number =>
+      100 + Math.max(250, (count - 1) * 1.25 + 100);
+
+    it('sends tick-0 setup ahead of t0 and leaves the notes at t0', () => {
+      const events: ParsedMidiEvent[] = [
+        { type: 'program-change', time: 0, channel: 0, program: 62 },
+        { type: 'note-on', time: 0, channel: 0, note: 72, velocity: 127 },
+        { type: 'program-change', time: 0, channel: 1, program: 62 },
+        { type: 'note-on', time: 0, channel: 1, note: 72, velocity: 127 },
+      ];
+      const { output, calls } = makeOutput();
+      const scheduler = new Scheduler({ output, events, duration: 1 });
+      scheduler.play();
+      // The setup goes out from play() itself, one slot apart, before t0.
+      // Two messages spread evenly across the lead, 150 ms apart.
+      expect(calls).toEqual([
+        { bytes: [0xc0, 62], time: 100 },
+        { bytes: [0xc1, 62], time: 250 },
+      ]);
+      vi.advanceTimersByTime(200);
+      // The first tick must not re-send the setup; both note-ons share t0.
+      expect(calls.slice(2)).toEqual([
+        { bytes: [0x90, 72, 127], time: preRollEnd(2) },
+        { bytes: [0x91, 72, 127], time: preRollEnd(2) },
+      ]);
+    });
+
+    it('pre-rolls a 16-part opening dump and keeps the chord on one timestamp', () => {
+      // The shape of Gunstar Heroes' first tick: a program change and several
+      // controllers per part, then one note per part, all at tick 0.
+      const events: ParsedMidiEvent[] = [];
+      for (let channel = 0; channel < 16; channel++) {
+        events.push({ type: 'program-change', time: 0, channel, program: 62 });
+        events.push({ type: 'control-change', time: 0, channel, controller: 7, value: 100 });
+        events.push({ type: 'note-on', time: 0, channel, note: 60 + channel, velocity: 100 });
+      }
+      const { output, calls } = makeOutput();
+      const scheduler = new Scheduler({ output, events, duration: 1 });
+      scheduler.play();
+      expect(calls).toHaveLength(32); // only setup, handed over before t0
+      // Spread across the 150 ms between the lead's start and its settle tail.
+      const step = 150 / 31;
+      for (let i = 0; i < calls.length; i++) {
+        expect(calls[i].time).toBeCloseTo(100 + i * step, 9);
+      }
+      const t0 = preRollEnd(32);
+      vi.advanceTimersByTime(200);
+      const notes = calls.filter((call) => (call.bytes[0] & 0xf0) === 0x90);
+      expect(notes).toHaveLength(16);
+      expect(notes.every((call) => call.time === t0)).toBe(true);
+    });
+
+    it('spreads the setup across a longer configured start lead', () => {
+      const events: ParsedMidiEvent[] = [
+        { type: 'program-change', time: 0, channel: 0, program: 5 },
+        { type: 'control-change', time: 0, channel: 0, controller: 7, value: 100 },
+        { type: 'note-on', time: 0, channel: 0, note: 60, velocity: 100 },
+      ];
+      const { output, calls } = makeOutput();
+      const scheduler = new Scheduler({ output, events, duration: 1, startLeadMs: 500 });
+      scheduler.play();
+      // Lead 500, settle 100: the two messages sit 400 ms apart and t0 = 600.
+      expect(calls).toEqual([
+        { bytes: [0xc0, 5], time: 100 },
+        { bytes: [0xb0, 7, 100], time: 500 },
+      ]);
+      vi.advanceTimersByTime(425);
+      expect(calls[2]).toEqual({ bytes: [0x90, 60, 100], time: 600 });
+    });
+
+    it('reports the last spread setup message so a following start waits for it', () => {
+      const events: ParsedMidiEvent[] = [
+        { type: 'program-change', time: 0, channel: 0, program: 5 },
+        { type: 'control-change', time: 0, channel: 0, controller: 7, value: 100 },
+        { type: 'note-on', time: 0, channel: 0, note: 60, velocity: 100 },
+      ];
+      const { output } = makeOutput();
+      const scheduler = new Scheduler({ output, events, duration: 1 });
+      scheduler.play();
+      // The second setup message is at 250 (the default lead's tail), not at
+      // the 101.25 serial-span position.
+      expect(scheduler.stop()).toBe(250);
+    });
+
+    it('keeps a plain note-first file on the 100 ms lead', () => {
+      const events: ParsedMidiEvent[] = [
+        { type: 'note-on', time: 0, channel: 0, note: 60, velocity: 100 },
+        { type: 'note-off', time: 0.1, channel: 0, note: 60, velocity: 0 },
+      ];
+      const { output, calls } = makeOutput();
+      const scheduler = new Scheduler({ output, events, duration: 0.1 });
+      scheduler.play();
+      expect(calls).toEqual([]);
+      vi.advanceTimersByTime(25);
+      expect(calls[0]).toEqual({ bytes: [0x90, 60, 100], time: 100 });
+    });
+
+    it('does not repeat the pre-roll on resume', () => {
+      const events: ParsedMidiEvent[] = [
+        { type: 'program-change', time: 0, channel: 0, program: 5 },
+        { type: 'note-on', time: 0, channel: 0, note: 60, velocity: 100 },
+        { type: 'note-off', time: 1, channel: 0, note: 60, velocity: 0 },
+      ];
+      const { output, calls } = makeOutput();
+      const scheduler = new Scheduler({ output, events, duration: 1 });
+      scheduler.play();
+      vi.advanceTimersByTime(100);
+      scheduler.pause();
+      vi.advanceTimersByTime(50);
+      scheduler.play();
+      vi.advanceTimersByTime(1000);
+      expect(calls.filter((call) => call.bytes[0] === 0xc0)).toHaveLength(1);
+    });
+
+    it('anchors an explicit start after its pre-roll for a track switch', () => {
+      const events: ParsedMidiEvent[] = [
+        { type: 'control-change', time: 0, channel: 0, controller: 7, value: 100 },
+        { type: 'note-on', time: 0, channel: 0, note: 60, velocity: 100 },
+      ];
+      const { output, calls } = makeOutput();
+      const scheduler = new Scheduler({ output, events, duration: 1 });
+      scheduler.play(500);
+      expect(calls).toEqual([{ bytes: [0xb0, 7, 100], time: 500 }]);
+      vi.advanceTimersByTime(600);
+      expect(calls[1]).toEqual({ bytes: [0x90, 60, 100], time: 750 });
+    });
+
+    it('reports a failed pre-roll send and leaves the transport stopped', () => {
+      const output = {
+        id: 'out',
+        name: 'Gone Out',
+        manufacturer: 'Test',
+        state: 'disconnected',
+        send: vi.fn(() => {
+          throw new Error('device gone');
+        }),
+      } as unknown as MIDIOutput;
+      const errors: string[] = [];
+      const scheduler = new Scheduler({
+        output,
+        events: [
+          { type: 'program-change', time: 0, channel: 0, program: 5 },
+          { type: 'note-on', time: 0, channel: 0, note: 60, velocity: 100 },
+        ],
+        duration: 1,
+        onError: (message) => errors.push(message),
+      });
+      expect(() => scheduler.play()).not.toThrow();
+      expect(errors).toEqual(['device gone']);
+      expect(scheduler.isPlaying()).toBe(false);
+      expect(scheduler.position()).toBe(0);
+      expect(() => scheduler.pause()).not.toThrow();
+    });
+  });
+
   describe('seek', () => {
     const SEEK_EVENTS: ParsedMidiEvent[] = [
       { type: 'program-change', time: 0, channel: 0, program: 5 },
@@ -393,21 +555,24 @@ describe('Scheduler', () => {
       { type: 'note-off', time: 2, channel: 0, note: 64, velocity: 0 },
     ];
 
+    // The three tick-0 setup events are spread across the default 250 ms
+    // start lead (which ends at 350), then the events keep their offsets.
+    const T0 = 350;
     const INITIAL: SendRecord[] = [
       { bytes: [0xc0, 5], time: 100 },
-      { bytes: [0xb0, 0, 3], time: 100 },
-      { bytes: [0xb0, 32, 1], time: 100 },
-      { bytes: [0xb0, 7, 100], time: 200 },
-      { bytes: [0xe1, 0x68, 0x07], time: 200 },
-      { bytes: [0xd2, 50], time: 300 },
-      { bytes: [0x90, 60, 100], time: 300 },
+      { bytes: [0xb0, 0, 3], time: 175 },
+      { bytes: [0xb0, 32, 1], time: 250 },
+      { bytes: [0xb0, 7, 100], time: T0 + 100 },
+      { bytes: [0xe1, 0x68, 0x07], time: T0 + 100 },
+      { bytes: [0xd2, 50], time: T0 + 200 },
+      { bytes: [0x90, 60, 100], time: T0 + 200 },
     ];
 
     it('releases the old notes, restores the MIDI state at the target and continues from it', () => {
       const { output, calls } = makeOutput();
       const scheduler = new Scheduler({ output, events: SEEK_EVENTS, duration: 2 });
       scheduler.play();
-      vi.advanceTimersByTime(150); // through the note-on at 0.2 s
+      vi.advanceTimersByTime(400); // past t0, through the note-on at 0.2 s
       expect(calls).toEqual(INITIAL);
       expect(scheduler.position()).toBe(0.05);
 
@@ -417,20 +582,20 @@ describe('Scheduler', () => {
       vi.advanceTimersByTime(1000);
       expect(calls).toEqual([
         ...INITIAL,
-        // Release the sounding note after the delivered tail (300).
-        { bytes: [0x80, 60, 0], time: 301 },
-        { bytes: [0xb0, 64, 0], time: 301 },
+        // Release the sounding note after the delivered tail (T0 + 200).
+        { bytes: [0x80, 60, 0], time: T0 + 201 },
+        { bytes: [0xb0, 64, 0], time: T0 + 201 },
         // The state the channels had reached by 1.2 s, after the release.
-        { bytes: [0xb0, 0, 3], time: 302 },
-        { bytes: [0xb0, 32, 1], time: 302 },
-        { bytes: [0xc0, 5], time: 302 },
-        { bytes: [0xb0, 7, 100], time: 302 },
-        { bytes: [0xb0, 64, 127], time: 302 },
-        { bytes: [0xe1, 0x68, 0x07], time: 302 },
-        { bytes: [0xd2, 50], time: 302 },
+        { bytes: [0xb0, 0, 3], time: T0 + 202 },
+        { bytes: [0xb0, 32, 1], time: T0 + 202 },
+        { bytes: [0xc0, 5], time: T0 + 202 },
+        { bytes: [0xb0, 7, 100], time: T0 + 202 },
+        { bytes: [0xb0, 64, 127], time: T0 + 202 },
+        { bytes: [0xe1, 0x68, 0x07], time: T0 + 202 },
+        { bytes: [0xd2, 50], time: T0 + 202 },
         // Notes before the target are not re-struck; playback resumes at 1.5 s.
-        { bytes: [0x90, 64, 80], time: 622 },
-        { bytes: [0x80, 64, 0], time: 1122 },
+        { bytes: [0x90, 64, 80], time: T0 + 522 },
+        { bytes: [0x80, 64, 0], time: T0 + 1022 },
       ]);
       expect(scheduler.isPlaying()).toBe(false);
     });

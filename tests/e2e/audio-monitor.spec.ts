@@ -89,11 +89,17 @@ test.describe('T4 — audio monitoring', () => {
     await expect(page.getByTestId('clip-indicator')).toBeVisible();
   });
 
-  test('shows the browser latency as baseLatency + outputLatency', async ({ page }) => {
+  test('keeps the audio pickers on the front unit and drops the routing card', async ({ page }) => {
     await setup(page);
-    await expect(page.getByTestId('latency-readout')).toHaveText('Browser latency: —');
-    await page.getByTestId('audio-input-picker').selectOption('in1');
-    await expect(page.getByTestId('latency-readout')).toContainText('30.0 ms');
+    await expect(page.getByTestId('routing-panel')).toHaveCount(0);
+    await expect(page.getByTestId('latency-readout')).toHaveCount(0);
+    for (const testId of ['audio-input-picker', 'audio-output-picker', 'output-picker']) {
+      expect(
+        await page
+          .getByTestId(testId)
+          .evaluate((el) => el.closest('[data-testid="header"]') !== null),
+      ).toBe(true);
+    }
   });
 
   test('switching input stops the old tracks first', async ({ page }) => {

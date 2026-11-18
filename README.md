@@ -4,10 +4,12 @@ Browser-based MIDI playlist player: plays `.mid` files out to external MIDI
 hardware and monitors that hardware's audio back into the computer. Static
 Vite + TypeScript app, no backend.
 
+![External MIDI Player with a loaded playlist, the current song playing and the live instrument card](docs/player.png)
+
 - Design (source of truth):
-  [`Browser MIDI Playlist Player — MVP Design.md`](Browser%20MIDI%20Playlist%20Player%20%E2%80%94%20MVP%20Design.md)
-- Milestones: [`tasks/`](tasks/README.md) — T1–T6 and T8–T11 are complete; T7
-  (software synth output) is pending.
+  [`Browser MIDI Playlist Player — MVP Design.md`](docs/Browser%20MIDI%20Playlist%20Player%20%E2%80%94%20MVP%20Design.md)
+- Milestones: [`tasks/`](tasks/README.md) — T1–T6 and T8–T18 are complete;
+  T7 (software synth output) and T12 (first-run sample song) are pending.
 
 ## Quickstart
 
@@ -117,6 +119,16 @@ origin stays cleared, exactly as locally.
 - **Startup mute policy (T8, intentional):** a fresh profile starts with
   monitoring muted (R10 feedback safety); later visits restore the saved
   mute/volume instead of forcing mute.
+- **Instruments card (T16):** the card lists the channels the playing file
+  uses and shows the program in effect at the current playback position, so a
+  mid-song program change updates its row; pausing or seeking shows the
+  program at that position. The channels themselves are listed from the start.
+- **Playlist selection (T15, T18):** a single click selects a row and a
+  double click (or the row's Play key) plays it from the start. Selection is
+  a dotted outline, playing is the inverted highlight, and a row that is both
+  shows both. While stopped the selection is the song Play will start; while
+  playing or paused a single click moves only the selection, never what is
+  sounding.
 - **Seeking (T8):** the timeline is live while playing or paused and commits on
   release. While playing, sounding notes are released and the MIDI state at the
   target (program/bank, controllers, pitch bend, channel pressure) is re-sent
@@ -125,6 +137,16 @@ origin stays cleared, exactly as locally.
 - **Track switches (T8):** switching to a different entry while playing or
   paused sends the full Panic (CC123/120/121 and CC64 = 0 on all 16 channels)
   after the old queue's tail, and the new track starts after the panic.
+- **Song start (T13, T14):** a fresh start sends the file's tick-0 setup
+  (program and bank changes, controllers, pitch bend, channel pressure)
+  before the clock starts, spread across a 250 ms start lead but never faster
+  than one message per 1.25 ms, with the last 100 ms of the lead left clear.
+  That keeps a front-loaded multi-part setup from crowding the first chord
+  off a serial MIDI line, and gives an older module time to load the patches
+  the program changes selected before the first note. The song's clock starts
+  at the end of the lead, which moves the first note from ~100 ms to ~350 ms
+  after Play for a file with tick-0 setup; files without one keep the 100 ms
+  lead, and tick-0 notes are not spread.
 
 ## Browser support
 

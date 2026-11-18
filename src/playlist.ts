@@ -753,7 +753,25 @@ export class PlaylistPlayer {
     this.jumpTo(previousReadyId(this.list, this.list.currentId), true);
   }
 
-  /** Plays an entry from the start (double-click). */
+  /**
+   * Makes an entry the one Play will start, without starting it (the
+   * single-click path while stopped).
+   *
+   * While playing or paused `currentId` names the song on the wire, so moving
+   * it would make the highlight (and the LCD title, part map and auto-advance)
+   * disagree with what is sounding; the UI keeps a separate, view-only
+   * selection outline in those states instead. Error rows are not selectable.
+   * Returns true when the next-to-play entry moved.
+   */
+  selectEntry(id: string): boolean {
+    if (this.playerState !== 'stopped') return false;
+    const entry = this.list.entries.find((e) => e.id === id);
+    if (!entry || entry.status !== 'ready' || this.list.currentId === id) return false;
+    this.dispatch({ type: 'setCurrent', id });
+    return true;
+  }
+
+  /** Plays an entry from the start (double-click, or its Play key). */
   playEntry(id: string): void {
     const entry = this.list.entries.find((e) => e.id === id);
     if (!entry) return;

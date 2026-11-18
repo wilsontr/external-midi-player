@@ -69,6 +69,8 @@ export interface ChannelProgram {
   bankLsb: number | null;
   /** False for the implicit default program 0 of a channel with no program change. */
   fromFile: boolean;
+  /** Song time (seconds) of the program change; 0 for the implicit default. */
+  time: number;
 }
 
 /** The instrument history of one channel in a song. */
@@ -262,6 +264,7 @@ export function summarizeInstruments(song: ParsedSong): ChannelInstrument[] {
       bankMsb: bank.msb,
       bankLsb: bank.lsb,
       fromFile: true,
+      time: event.time,
     });
     programs.set(channel, list);
   }
@@ -271,9 +274,26 @@ export function summarizeInstruments(song: ParsedSong): ChannelInstrument[] {
     .map((channel) => ({
       channel,
       programs: programs.get(channel) ?? [
-        { program: 0, bankMsb: null, bankLsb: null, fromFile: false },
+        { program: 0, bankMsb: null, bankLsb: null, fromFile: false, time: 0 },
       ],
     }));
+}
+
+/**
+ * The program in effect on a channel at `positionSec` (the latest program
+ * change at or before it), or the MIDI default before the channel's first
+ * change. Program entries are in time order, so the scan stops as soon as it
+ * passes the position.
+ */
+export function programAt(channel: ChannelInstrument, positionSec: number): ChannelProgram {
+  let current: ChannelProgram | null = null;
+  for (const program of channel.programs) {
+    if (program.time > positionSec + 1e-9) break;
+    current = program;
+  }
+  return (
+    current ?? { program: 0, bankMsb: null, bankLsb: null, fromFile: false, time: 0 }
+  );
 }
 
 /** MIDI default tempo when the file gives none: 120 BPM. */

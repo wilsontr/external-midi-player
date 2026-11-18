@@ -75,6 +75,10 @@ Add a read-only **Instruments** card that lists the MIDI channels used by the so
 - **Test fixtures:** extend the existing hand-built SMF helpers — `tests/unit/parser.test.ts` already builds program/CC events, and the Playwright `midiFile` helper accepts raw setup bytes for program changes on several channels.
 - **Design doc and index:** update the "After the MVP" bullet and the UI-layout sentence to the current-playing/left-column behavior; update the T9 row, coverage and note in `tasks/README.md`.
 
+### Superseded by T16
+
+The static-card rule was replaced by T16: each row now shows the program in effect at the current playback position and updates as the file's program changes play (and on pause/seek). The "stays unchanged during playback" acceptance item and the e2e that asserted a fixed innerHTML are superseded. Everything else here — playback-only lifecycle, no persistence, formatting, accessibility, layout — still holds.
+
 ### Decisions as implemented
 
 - **Playback-only, no persistence:** the card is driven by `PlaylistPlayer.instrumentsState()` and filled from the same parse the scheduler uses. Nothing is added to `PlaylistEntry`, the reducer, the stored playlist or the background duration parse; the saved-playlist schema is untouched.

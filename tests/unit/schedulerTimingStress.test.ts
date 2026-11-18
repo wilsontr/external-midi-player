@@ -96,7 +96,10 @@ function denseSong(durationSec: number, stepMs: number) {
     const note = 36 + (i % 60);
     events.push({ type: 'note-on', time, channel, note, velocity: 1 + (i % 127) });
     events.push({ type: 'note-off', time, channel, note, velocity: 0 });
-    if (i % 8 === 0) {
+    // Deliberately no controller on tick 0: a tick-0 setup is pre-rolled before
+    // song time 0 (covered in scheduler.test.ts), and this test is about the
+    // tick loop's jitter, which assumes everything starts at t0 = 100.
+    if (i % 8 === 0 && i !== 0) {
       events.push({ type: 'control-change', time, channel, controller: 1 + (i % 120), value: i % 128 });
     }
   }

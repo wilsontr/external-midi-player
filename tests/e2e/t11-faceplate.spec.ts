@@ -378,7 +378,7 @@ test.describe("T11 — half-rack faceplate", () => {
         const dt = new DataTransfer();
         for (const f of files)
           dt.items.add(new File([new Uint8Array(f.bytes)], f.name));
-        const target = document.querySelector('[data-testid="routing-panel"]')!;
+        const target = document.querySelector('[data-testid="expansion-unit"]')!;
         target.dispatchEvent(
           new DragEvent("drop", {
             dataTransfer: dt,
@@ -431,14 +431,20 @@ test.describe("T11 — half-rack faceplate", () => {
 
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByTestId("how-to")).toBeVisible();
+    await expect(page.getByTestId("quickstart-shortcuts")).toBeVisible();
+    await expect(page.getByTestId("quickstart-shortcuts")).toContainText("Esc panic");
+    // The shortcut hints live in the quick start, not in the transport strip.
+    await expect(page.getByTestId("header")).not.toContainText("Shortcuts");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(toggle).toHaveText("Show quick start");
     await expect(page.getByTestId("how-to")).toBeHidden();
+    await expect(page.getByTestId("quickstart-shortcuts")).toBeHidden();
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     await expect(toggle).toHaveText("Hide quick start");
     await expect(page.getByTestId("how-to")).toBeVisible();
+    await expect(page.getByTestId("quickstart-shortcuts")).toBeVisible();
   });
 
   test("remembers the quick start show/hide state across reloads", async ({

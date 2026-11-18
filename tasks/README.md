@@ -1,6 +1,6 @@
 # Task List — Browser MIDI Playlist Player (MVP)
 
-Task breakdown of [`Browser MIDI Playlist Player — MVP Design.md`](../Browser%20MIDI%20Playlist%20Player%20%E2%80%94%20MVP%20Design.md).
+Task breakdown of [`Browser MIDI Playlist Player — MVP Design.md`](../docs/Browser%20MIDI%20Playlist%20Player%20%E2%80%94%20MVP%20Design.md).
 Each file is one milestone, in build order. Total estimate: ~4.5 developer-days.
 
 ## Task schema (fixed)
@@ -53,8 +53,15 @@ Rules:
 | T9 | [T9-channel-instruments-card.md](T9-channel-instruments-card.md) | After the MVP | 1 day | done |
 | T10 | [T10-m3u-playlist-saving-loading.md](T10-m3u-playlist-saving-loading.md) | After the MVP | 0.5–1 day | done |
 | T11 | [T11-half-rack-faceplate-skin.md](T11-half-rack-faceplate-skin.md) | After the MVP | 2–3 days | done |
+| T12 | [T12-first-run-sample-song.md](T12-first-run-sample-song.md) | After the MVP | 0.25–0.5 day | pending |
+| T13 | [T13-start-setup-pre-roll.md](T13-start-setup-pre-roll.md) | After the MVP | 0.5 day | done |
+| T14 | [T14-start-lead-older-hardware.md](T14-start-lead-older-hardware.md) | After the MVP | 0.5 day | done |
+| T15 | [T15-faceplate-refinements.md](T15-faceplate-refinements.md) | After the MVP | 0.5 day | done |
+| T16 | [T16-live-instruments-card.md](T16-live-instruments-card.md) | After the MVP | 0.5 day | done |
+| T17 | [T17-slim-playlist-rows.md](T17-slim-playlist-rows.md) | After the MVP | 0.25 day | done |
+| T18 | [T18-selection-playing-markers.md](T18-selection-playing-markers.md) | After the MVP | 0.25 day | done |
 
-Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8, T10; R3 → T2, T3, T8, T9, T10; R4 → T1; R5 → T2, T5, T7; R6, R7 → T3, T5, T8; R8 → T2; R9, R10 → T4, T8; R11 → T4, T5; R12 → T3, T8; R13 → T1, T3, T4, T10.
+Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8, T10, T15, T17, T18; R3 → T2, T3, T8, T9, T10, T12, T15, T16, T17, T18; R4 → T1; R5 → T2, T5, T7, T13, T14; R6, R7 → T3, T5, T8; R8 → T2; R9, R10 → T4, T8, T15; R11 → T4, T5; R12 → T3, T8, T15; R13 → T1, T3, T4, T10, T12.
 
 T6 is a delivery task: it carries no new functional requirement and exercises R1–R13 against the production HTTPS origin. It splits the deploy half out of milestone 5 so the GitHub Pages + CI work can be reviewed on its own.
 
@@ -67,6 +74,20 @@ T9 is a post-MVP informational feature: a read-only card listing the channels an
 T10 is a post-MVP playlist interchange feature: it saves the current playlist as an M3U/M3U8 file and rebuilds the playlist from one, preserving order. It adds no new R-ID; it reuses R1's file selection, R2's ordering, R3's names/durations and R13's persistence. Because a browser cannot read original file paths, loading resolves references against files already in the playlist first and only then needs the MIDI files selected alongside the playlist; the imported bytes are still copied into `localStorage`.
 
 T11 is a post-MVP presentation task: it reskins the player as a 90s half-rack module (amber dot-matrix LCDs, rubber keys with LEDs, Helvetica Neue silkscreen labels) and regroups the existing panels into two rack units. It adds no new R-ID and changes no playback behaviour; every control, test ID and accessible name stays. Live per-channel note activity in the 16-part strip is deliberately left for a follow-up.
+
+T12 is a post-MVP first-run convenience: it ships one small General MIDI file and seeds the playlist with it only when the playlist store has never been written, so a new visitor can press Play before selecting any files. It adds no new R-ID and reuses the ordinary add/persist path, so Clear playlist stays clear across reloads and M3U load/save semantics are unchanged.
+
+T18 is a post-MVP playlist presentation fix: selection is a dotted outline and playing is the inverted highlight, both shown together when a row is selected and playing; focus moved to the focused control so it no longer looks like selection. It adds no new R-ID and changes nothing about which entry plays.
+
+T17 is a post-MVP playlist-row trim: the per-row up/down keys and the "Ready" label are gone, with `ERR` shown only on rejected files, so the song name gets the freed width. Reordering is drag-only (R2) and the full error still reaches the status region. It is presentation-only and adds no new R-ID.
+
+T16 is a post-MVP refinement of T9: the Instruments card now shows the program in effect at the current playback position, updating when the file's program changes play and following pause and seek, instead of listing every change up front. It adds no new R-ID, cites R3, adds no timer or parse, and does not change the stored playlist.
+
+T15 is a post-MVP faceplate refinement: a single click selects a playlist row and double-click plays it, the Panic status line clears when the next song starts, the audio input/output pickers move onto the front unit (with their notices), the audio-routing card and browser-latency line are deleted, the keypad gap tightens so Panic fits its row, and the shortcut hints move into Quick start. It cites the affected R-IDs and changes no playback timing.
+
+T14 is a post-MVP refinement of T13 for older hardware: the tick-0 setup is spread across a 250 ms start lead with a clear 100 ms tail, so a 1990s module that stalls while loading a bank of patches has finished before the first note. It adds no new R-ID and cites R5; the lead is a scheduler option (`startLeadMs`), and files without tick-0 setup are unchanged.
+
+T13 is a post-MVP timing fix: a song whose file front-loads a multi-part setup on tick 0 used to send that whole state at the same instant as the first chord, which a serial MIDI line cannot carry, so the opening arrived late, rolled and clipped. The scheduler now pre-rolls the tick-0 setup ahead of song time 0 at one message per 1.25 ms, then anchors the clock after it. It adds no new R-ID and cites R5; files without tick-0 setup are unchanged.
 
 ## Backlog (post-MVP, from "After the MVP")
 
