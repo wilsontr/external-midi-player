@@ -2,7 +2,7 @@
 
 - **ID**: T6
 - **Milestone**: Hardening and deploy
-- **Status**: in-progress
+- **Status**: done
 - **Estimate**: 0.5 day
 - **Depends on**: T5
 - **Modules**: `.github/workflows/deploy.yml`, `vite.config.ts`, `README.md`
@@ -47,21 +47,21 @@ concrete hosting provider and CI.
 
 ## Acceptance criteria
 
-- [ ] `npm run build` produces a `dist/index.html` whose asset URLs are
+- [x] `npm run build` produces a `dist/index.html` whose asset URLs are
   relative, and the built site loads from a `/external-midi-player/` subpath
   with no 404s.
-- [ ] Pushing to `main` runs typecheck, unit tests and Playwright (Chromium
+- [x] Pushing to `main` runs typecheck, unit tests and Playwright (Chromium
   and Firefox), then deploys; a failing test stops the deploy and leaves the
   previous site live.
-- [ ] The workflow uses `actions/upload-pages-artifact` + `actions/deploy-pages`
+- [x] The workflow uses `actions/upload-pages-artifact` + `actions/deploy-pages`
   with `pages: write`, `id-token: write` and the `github-pages` environment.
-- [ ] `workflow_dispatch` redeploys the current `main` without a new commit.
-- [ ] The Pages URL is HTTPS and Web MIDI and microphone permission prompts
+- [x] `workflow_dispatch` redeploys the current `main` without a new commit.
+- [x] The Pages URL is HTTPS and Web MIDI and microphone permission prompts
   work there (secure context), with the app fully usable.
-- [ ] Pull requests run verification but do not deploy.
-- [ ] Rollback is documented: re-run the last good deploy, or revert and push.
-- [ ] No secrets are added to the repository.
-- [ ] The app is deployed and reachable over HTTPS and works there (the deploy acceptance moved from T5).
+- [x] Pull requests run verification but do not deploy.
+- [x] Rollback is documented: re-run the last good deploy, or revert and push.
+- [x] No secrets are added to the repository.
+- [x] The app is deployed and reachable over HTTPS and works there (the deploy acceptance moved from T5).
 
 ## Notes
 
@@ -182,3 +182,37 @@ and verify the Pages origin has no CSP violations, including the Worker asset.
 GitHub Pages does not let us set response headers, so the meta CSP is the
 option. A custom domain is optional and does not change the relative base;
 update the README URL and Pages settings if one is added.
+
+**Implementation record (2026-11-18).** Live at
+<https://wilsontr.github.io/external-midi-player/>. `vite.config.ts` sets
+`base: './'`; Vite rewrites the public font URLs in `styles.css` to
+`../fonts/…` in the built stylesheet, so `dist` works from a subpath. The
+built site was served from `http://localhost:4300/external-midi-player/`
+before the deploy: Chromium and Firefox loaded every asset (including
+`assets/tickWorker-*.js`) with no 404s, no failed requests and no CSP
+violations, and playback ran under the production CSP.
+
+First deploy run `44384695977` stopped at verification and did not build or
+deploy (the previous site stayed live). Cause: Firefox headless on the Linux
+runner drops synthetic pointer events — the Connect key received no
+mousedown/click, so every click-driven Firefox test failed there, while the
+same suite passes on macOS Firefox. Verification is now two jobs:
+`verify` (Ubuntu: `tsc`, `vitest`, Playwright Chromium) and `verify-firefox`
+(macOS: Playwright Firefox); `build` needs both. `playwright.config.ts` sets
+`MOZ_DISABLE_CONTENT_SANDBOX` in the inherited environment instead of
+`launchOptions.env`, which replaces the browser's whole environment.
+
+Run `44392717720` (push to `main`) passed both verify jobs and deployed;
+`workflow_dispatch` run `44393529079` redeployed the same commit without a new
+push. Temporary PR #4 ran both verify jobs and the build, and the deploy job
+was skipped. No repository secrets exist (`/actions/secrets` is empty). Pages
+is set to `build_type: workflow` with HTTPS enforced.
+
+The deployed origin was checked in both browsers: `isSecureContext` is true,
+`navigator.requestMIDIAccess` and `getUserMedia` exist, the six-step guide
+renders, both fonts load, and playback works with no CSP violations. In
+Chromium the real APIs were granted via CDP rather than clicked through a
+native prompt: `requestMIDIAccess` returned the machine's 11 outputs and
+`getUserMedia` returned a track. Firefox cannot be granted MIDI/microphone
+from automation, so the native prompt click-through there is the one manual
+check left for the owner.

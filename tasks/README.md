@@ -47,7 +47,7 @@ Rules:
 | T3 | [T3-transport-and-playlist.md](T3-transport-and-playlist.md) | Transport and playlist | 1 day | done |
 | T4 | [T4-audio-monitoring.md](T4-audio-monitoring.md) | Audio monitoring | 1 day | done |
 | T5 | [T5-hardening.md](T5-hardening.md) | Hardening and deploy | 1 day | done |
-| T6 | [T6-github-pages-deploy.md](T6-github-pages-deploy.md) | Hardening and deploy | 0.5 day | in-progress |
+| T6 | [T6-github-pages-deploy.md](T6-github-pages-deploy.md) | Hardening and deploy | 0.5 day | done |
 | T7 | [T7-software-synth-output.md](T7-software-synth-output.md) | After the MVP | 2–3 days | pending |
 | T8 | [T8-player-refinements.md](T8-player-refinements.md) | After the MVP | 3–4 days | done |
 | T9 | [T9-channel-instruments-card.md](T9-channel-instruments-card.md) | After the MVP | 1 day | done |
