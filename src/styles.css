@@ -40,16 +40,19 @@ body {
 }
 
 /*
- * Two columns at ≥ 960 px: header + audio monitor on the left, playback +
- * playlist on the right. The DOM order stays row-major (header, playback,
- * monitor, playlist), so tab order stays sensible in both layouts.
+ * Two columns at ≥ 960 px: header, audio monitor and the Instruments card on
+ * the left; playback and the playlist on the right. The playlist spans the
+ * last two rows, so the card sits at the bottom of the left column opposite
+ * the playlist. DOM order (header, playback, monitor, instruments, playlist)
+ * stays sensible for tab order in both layouts.
  */
 @media (min-width: 960px) {
   #app {
     grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
     grid-template-areas:
       'header playback'
-      'monitor playlist';
+      'monitor playlist'
+      'instruments playlist';
     align-items: start;
   }
 
@@ -63,6 +66,10 @@ body {
 
   [data-testid='monitor-panel'] {
     grid-area: monitor;
+  }
+
+  [data-testid='instruments-panel'] {
+    grid-area: instruments;
   }
 
   [data-testid='playlist-panel'] {
@@ -296,6 +303,39 @@ button.compact {
 
 .entry-buttons button {
   padding: 2px 8px;
+}
+
+.instruments-caption {
+  margin: 0 0 8px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.instrument-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.instrument-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.instrument-channel {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.instrument-detail {
+  flex: 1 1 12em;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .meter {

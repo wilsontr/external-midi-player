@@ -12,7 +12,13 @@
  *   duration parse. See the design doc, "Transport" and "Playlist".
  */
 
-import { isMidiFileName, parseSongForPlayback, type ParseResult } from './parser';
+import {
+  isMidiFileName,
+  parseSongForPlayback,
+  summarizeInstruments,
+  type ChannelInstrument,
+  type ParseResult,
+} from './parser';
 import { Scheduler, type SchedulerOptions } from './scheduler';
 
 export interface PlaylistEntry {
@@ -254,6 +260,15 @@ export function previousReadyId(state: PlaylistState, beforeId: string | null): 
 
 export type PlayerState = 'stopped' | 'playing' | 'paused';
 
+/**
+ * The instrument summary of the song currently playing. Deliberately not tied
+ * to the highlighted playlist entry: the card follows playback only.
+ */
+export type InstrumentsState =
+  | { status: 'none' }
+  | { status: 'loading' }
+  | { status: 'ready'; channels: ChannelInstrument[] };
+
 /** The slice of `Scheduler` the transport uses (injectable for tests). */
 export type TransportScheduler = Pick<
   Scheduler,
@@ -283,6 +298,7 @@ export interface PlaylistPlayerOptions {
 export class PlaylistPlayer {
   private list: PlaylistState = emptyPlaylist;
   private playerState: PlayerState = 'stopped';
+  private instruments: InstrumentsState = { status: 'none' };
   private scheduler: TransportScheduler | null = null;
   /** Bumped by every transition that must abort an in-flight song load. */
   private loadToken = 0;
@@ -328,6 +344,11 @@ export class PlaylistPlayer {
   /** Song position in seconds (0 while loading or in the gap between songs). */
   position(): number {
     return this.scheduler?.position() ?? 0;
+  }
+
+  /** The channels and instruments of the song currently playing. */
+  instrumentsState(): InstrumentsState {
+    return this.instruments;
   }
 
   /** Waits for any pending playlist write (tests, and a best-effort pagehide flush). */
@@ -447,6 +468,9 @@ export class PlaylistPlayer {
     if (this.playerState !== 'playing') return;
     this.cancelPending();
     this.scheduler?.pause();
+    // Pausing while the song is still loading aborts that load, so there is
+    // no current song to describe.
+    if (this.scheduler === null) this.setInstruments({ status: 'none' });
     this.setState('paused');
   }
 
@@ -454,6 +478,7 @@ export class PlaylistPlayer {
   stop(): void {
     this.cancelPending();
     this.releaseScheduler();
+    this.setInstruments({ status: 'none' });
     this.setState('stopped');
   }
 
@@ -507,6 +532,7 @@ export class PlaylistPlayer {
     this.cancelPending();
     this.scheduler?.dispose();
     this.scheduler = null;
+    this.setInstruments({ status: 'none' });
     this.setState('stopped');
   }
 
@@ -563,6 +589,7 @@ export class PlaylistPlayer {
     const token = ++this.loadToken;
     this.dispatch({ type: 'setCurrent', id });
     this.setState('playing');
+    this.setInstruments({ status: 'loading' });
 
     let result: ParseResult;
     try {
@@ -573,6 +600,7 @@ export class PlaylistPlayer {
     }
     if (token !== this.loadToken) return;
     if (result.status === 'error') {
+      this.setInstruments({ status: 'none' });
       this.dispatch({ type: 'failed', id, error: result.message });
       this.options.onStatus(`${entry.name}: ${result.message}`);
       const following = nextReadyId(this.list, id);
@@ -581,6 +609,7 @@ export class PlaylistPlayer {
       return;
     }
     this.dispatch({ type: 'parsed', id, durationSec: result.song.duration });
+    this.setInstruments({ status: 'ready', channels: summarizeInstruments(result.song) });
     const scheduler = this.createScheduler({
       output,
       events: result.song.events,
@@ -602,11 +631,13 @@ export class PlaylistPlayer {
     this.scheduler = null;
     const following = nextReadyId(this.list, this.list.currentId);
     if (following === null) {
+      this.setInstruments({ status: 'none' });
       this.setState('stopped');
       return;
     }
     // Stays `playing` through the gap; the next entry is highlighted already.
     this.dispatch({ type: 'setCurrent', id: following });
+    this.setInstruments({ status: 'loading' });
     this.gapTimer = setTimeout(() => {
       this.gapTimer = null;
       void this.start(following);
@@ -771,6 +802,12 @@ export class PlaylistPlayer {
   private setState(state: PlayerState): void {
     if (this.playerState === state) return;
     this.playerState = state;
+    this.options.onChange();
+  }
+
+  /** Replaces the playing song's instrument summary and re-renders once. */
+  private setInstruments(state: InstrumentsState): void {
+    this.instruments = state;
     this.options.onChange();
   }
 }

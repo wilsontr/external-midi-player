@@ -185,6 +185,8 @@ One responsive screen, keyboard-accessible, at least 360 px wide. Panels stack i
 3. **Audio monitor panel:** input picker, output picker (or "System default"), mute toggle (on by default on a fresh profile), volume slider, stereo level meter (bars plus CLIP; the level is exposed through the meter's accessible description rather than a visible numeric readout), and the latency readout.
 4. **Playlist panel:** drop zone with a compact "+" (Add files) button, Load files and Clear playlist; numbered, clickable rows with name, duration, status and a remove button; drag handles to reorder.
 
+A read-only **Instruments card** (post-MVP, T9) sits at the bottom of the left column, below the audio monitor. It lists the currently playing file's MIDI channels with the General MIDI instrument each program change selects (channel 10 shown as drums), including a channel's program history and any bank select; it is empty until a song plays. It is purely informational: no sounding-channel feedback, highlighting or progress.
+
 Keyboard shortcuts: Space = play/pause, Esc = Panic, ←/→ = previous/next. Status messages (device lost, file rejected) appear in a single `aria-live` region.
 
 ## Risks and mitigations
@@ -244,6 +246,7 @@ The MVP is about 4.5 developer-days for one experienced front-end developer, bui
 ### After the MVP
 
 - Player and playlist refinements (T8): seek with program/controller restoration, compact add/load/clear, row numbering, responsive two-column layout, startup mute policy and panic before track changes (3–4 days).
+- Channel and instrument card (T9): read-only list of the currently playing file's channels and their General MIDI instruments, with no playback feedback (1 day).
 - Upgrade playlist persistence from `localStorage` to IndexedDB for very large playlists (0.5 day).
 - Tempo change, A–B looping, per-channel mute and remapping (2–4 days).
 - Record the monitored input to WAV (1 day).

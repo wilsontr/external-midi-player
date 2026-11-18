@@ -9,6 +9,7 @@
 import { AudioMonitor, CLIP_THRESHOLD_DB, DB_FLOOR } from './audioMonitor';
 import { MidiDevices } from './midiDevices';
 import { PlaylistPlayer, type PlaylistEntry } from './playlist';
+import { gmInstrumentName, type ChannelInstrument, type ChannelProgram } from './parser';
 
 /** Formats seconds as m:ss, optionally with tenths (for the elapsed readout). */
 function formatTime(seconds: number, tenths = false): string {
@@ -140,6 +141,12 @@ export function createUi(root: HTMLElement): void {
         speakers can cause feedback.
       </p>
     </section>
+    <section class="panel" data-testid="instruments-panel" aria-labelledby="instruments-heading">
+      <h2 id="instruments-heading">Instruments</h2>
+      <p class="instruments-caption" data-testid="instruments-caption" hidden></p>
+      <p class="hint" data-testid="instruments-empty">Play a song to see its MIDI channels and instruments.</p>
+      <ul class="instrument-list" data-testid="instrument-list" hidden></ul>
+    </section>
     <section class="panel" data-testid="playlist-panel" aria-labelledby="playlist-heading">
       <h2 id="playlist-heading">Playlist</h2>
       <div class="drop-zone" data-testid="drop-zone">
@@ -185,6 +192,9 @@ export function createUi(root: HTMLElement): void {
   const clipIndicator = root.querySelector<HTMLElement>('[data-testid="clip-indicator"]')!;
   const latencyReadout = root.querySelector<HTMLElement>('[data-testid="latency-readout"]')!;
   const feedbackWarning = root.querySelector<HTMLElement>('[data-testid="feedback-warning"]')!;
+  const instrumentsCaption = root.querySelector<HTMLElement>('[data-testid="instruments-caption"]')!;
+  const instrumentsEmpty = root.querySelector<HTMLElement>('[data-testid="instruments-empty"]')!;
+  const instrumentList = root.querySelector<HTMLUListElement>('[data-testid="instrument-list"]')!;
   const playlistPanel = root.querySelector<HTMLElement>('[data-testid="playlist-panel"]')!;
   const dropZone = root.querySelector<HTMLElement>('[data-testid="drop-zone"]')!;
   const addFilesButton = root.querySelector<HTMLButtonElement>('[data-testid="add-files-button"]')!;
@@ -225,6 +235,7 @@ export function createUi(root: HTMLElement): void {
     onChange: () => {
       renderTransport();
       renderPlaylist();
+      renderInstruments();
     },
     onStatus: setStatus,
   });
@@ -238,6 +249,69 @@ export function createUi(root: HTMLElement): void {
     playbackState.textContent = STATE_TEXT[state];
     currentTitle.textContent = player.currentEntry()?.name ?? 'No song selected.';
     updateProgress();
+  }
+
+  /** One instrument entry: GM name, 1-based program, bank when selected. */
+  function describeProgram(channel: number, program: ChannelProgram): string {
+    const bank =
+      program.bankMsb === null && program.bankLsb === null
+        ? ''
+        : ` · bank ${program.bankMsb ?? 0}:${program.bankLsb ?? 0}`;
+    const suffix = `${bank}${program.fromFile ? '' : ' (default)'}`;
+    if (channel === 9) return `Drums · kit ${program.program + 1}${suffix}`;
+    return `${gmInstrumentName(program.program)} · program ${program.program + 1}${suffix}`;
+  }
+
+  function createInstrumentRow(item: ChannelInstrument): HTMLLIElement {
+    const li = document.createElement('li');
+    li.className = 'instrument-row';
+    li.setAttribute('data-testid', 'instrument-row');
+    li.dataset.channel = String(item.channel + 1);
+    const channel = document.createElement('span');
+    channel.className = 'instrument-channel';
+    channel.textContent = `Channel ${item.channel + 1}`;
+    const detail = document.createElement('span');
+    detail.className = 'instrument-detail';
+    detail.textContent = item.programs
+      .map((program) => describeProgram(item.channel, program))
+      .join(' → ');
+    li.append(channel, detail);
+    return li;
+  }
+
+  /**
+   * The instruments of the song currently playing. Deliberately not driven by
+   * transport progress: it changes only when the playing song changes, so the
+   * card never becomes a playback visualization.
+   */
+  function renderInstruments(): void {
+    const state = player.instrumentsState();
+    const entry = player.currentEntry();
+    const caption = state.status === 'none' ? '' : (entry?.name ?? '');
+    instrumentsCaption.hidden = caption === '';
+    if (instrumentsCaption.textContent !== caption) instrumentsCaption.textContent = caption;
+
+    let empty = '';
+    let channels: ChannelInstrument[] = [];
+    if (state.status === 'none') {
+      empty = 'Play a song to see its MIDI channels and instruments.';
+    } else if (state.status === 'loading') {
+      empty = 'Reading instruments…';
+    } else if (state.channels.length === 0) {
+      empty = 'This file has no channel events.';
+    } else {
+      channels = state.channels;
+    }
+    instrumentsEmpty.hidden = empty === '';
+    if (instrumentsEmpty.textContent !== empty) instrumentsEmpty.textContent = empty;
+
+    instrumentList.hidden = channels.length === 0;
+    const rows = channels.map(createInstrumentRow);
+    const current = instrumentList.children;
+    const unchanged =
+      current.length === rows.length &&
+      rows.every((row, index) => current[index]?.textContent === row.textContent);
+    if (!unchanged) instrumentList.replaceChildren(...rows);
   }
 
   function currentDuration(): number {
@@ -866,4 +940,5 @@ export function createUi(root: HTMLElement): void {
 
   // The player restores a saved playlist without emitting a change; show it.
   renderPlaylist();
+  renderInstruments();
 }

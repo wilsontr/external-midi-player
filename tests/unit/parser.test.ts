@@ -4,6 +4,9 @@ import {
   parseSongForPlayback,
   isMidiFileName,
   clearSongCache,
+  summarizeInstruments,
+  gmInstrumentName,
+  GM_INSTRUMENTS,
   ParseError,
   type ParsedMidiEvent,
   type MidiFileLike,
@@ -395,5 +398,69 @@ describe('parseSongForPlayback', () => {
     expect(first).toEqual({ status: 'error', message: 'Could not read file' });
     const second = await parseSongForPlayback(flaky);
     expect(second.status).toBe('ok');
+  });
+});
+
+describe('summarizeInstruments', () => {
+  it('lists used channels in ascending order, with the default program when none is sent', () => {
+    const bytes = buildMidi(0, 60, [
+      [
+        { d: 0, noteOn: [2, 60, 100] },
+        { d: 10, noteOff: [2, 60, 0] },
+        { d: 0, noteOn: [0, 62, 100] },
+        { d: 10, noteOff: [0, 62, 0] },
+      ],
+    ]);
+    const song = parseMidiData(bytes);
+    expect(summarizeInstruments(song)).toEqual([
+      { channel: 0, programs: [{ program: 0, bankMsb: null, bankLsb: null, fromFile: false }] },
+      { channel: 2, programs: [{ program: 0, bankMsb: null, bankLsb: null, fromFile: false }] },
+    ]);
+  });
+
+  it('records bank select and program history, collapsing consecutive duplicates', () => {
+    const bytes = buildMidi(0, 60, [
+      [
+        { d: 0, cc: [1, 0, 2] },
+        { d: 0, cc: [1, 32, 1] },
+        { d: 0, program: [1, 40] },
+        { d: 0, program: [1, 40] },
+        { d: 0, program: [1, 41] },
+        { d: 0, program: [1, 40] },
+        { d: 1, noteOn: [1, 60, 100] },
+        { d: 1, noteOff: [1, 60, 0] },
+      ],
+    ]);
+    const song = parseMidiData(bytes);
+    expect(summarizeInstruments(song)).toEqual([
+      {
+        channel: 1,
+        programs: [
+          { program: 40, bankMsb: 2, bankLsb: 1, fromFile: true },
+          { program: 41, bankMsb: 2, bankLsb: 1, fromFile: true },
+          { program: 40, bankMsb: 2, bankLsb: 1, fromFile: true },
+        ],
+      },
+    ]);
+  });
+
+  it('counts a channel that only carries a program change', () => {
+    const bytes = buildMidi(0, 60, [[{ d: 0, program: [9, 0] }]]);
+    expect(summarizeInstruments(parseMidiData(bytes))).toEqual([
+      { channel: 9, programs: [{ program: 0, bankMsb: null, bankLsb: null, fromFile: true }] },
+    ]);
+  });
+
+  it('returns no channels for a file with only tempo events', () => {
+    const bytes = buildMidi(0, 60, [[{ d: 0, tempo: 500_000 }]]);
+    expect(summarizeInstruments(parseMidiData(bytes))).toEqual([]);
+  });
+
+  it('names GM programs, including both ends of the table', () => {
+    expect(GM_INSTRUMENTS).toHaveLength(128);
+    expect(gmInstrumentName(0)).toBe('Acoustic Grand Piano');
+    expect(gmInstrumentName(40)).toBe('Violin');
+    expect(gmInstrumentName(127)).toBe('Gunshot');
+    expect(gmInstrumentName(-1)).toBe('Program 0');
   });
 });

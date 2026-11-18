@@ -567,4 +567,96 @@ describe('PlaylistPlayer', () => {
     expect(schedulers[0].calls).toEqual(['play', 'stop', 'dispose']);
     expect(schedulers[1].calls).toEqual(['play@750']);
   });
+
+  const instrumentSong = (program = 0): ParseResult => ({
+    status: 'ok',
+    song: {
+      events: [
+        { type: 'program-change', time: 0, channel: 0, program },
+        { type: 'program-change', time: 0, channel: 1, program: 40 },
+        { type: 'note-on', time: 0, channel: 0, note: 60, velocity: 100 },
+        { type: 'note-off', time: 1, channel: 0, note: 60, velocity: 0 },
+      ],
+      duration: 10,
+      tempos: [],
+    },
+  });
+
+  /** Program numbers per channel while ready, or the state name otherwise. */
+  const channelSummary = () => {
+    const state = player.instrumentsState();
+    return state.status === 'ready'
+      ? state.channels.map((c) => c.programs.map((p) => p.program))
+      : state.status;
+  };
+
+  it('summarizes only the song that is playing', async () => {
+    parseFile = async () => instrumentSong();
+    player.add([file('a.mid')]);
+    await flush();
+    // The background duration parse must not load the card.
+    expect(player.instrumentsState()).toEqual({ status: 'none' });
+
+    player.play();
+    expect(player.instrumentsState()).toEqual({ status: 'loading' });
+    await flush();
+    expect(player.instrumentsState().status).toBe('ready');
+    expect(channelSummary()).toEqual([
+      [0],
+      [40],
+    ]);
+
+    player.pause();
+    expect(player.instrumentsState().status).toBe('ready');
+    player.seek(1);
+    expect(player.instrumentsState().status).toBe('ready');
+
+    player.stop();
+    expect(player.instrumentsState()).toEqual({ status: 'none' });
+  });
+
+  it('swaps the summary when another song starts and clears it after the last song', async () => {
+    parseFile = async (f) => instrumentSong(f.name.startsWith('b') ? 33 : 0);
+    player.add([file('a.mid'), file('b.mid')]);
+    await flush();
+    player.play();
+    await flush();
+    expect(channelSummary()).toEqual([
+      [0],
+      [40],
+    ]);
+
+    player.next();
+    expect(player.instrumentsState()).toEqual({ status: 'loading' });
+    await flush();
+    expect(channelSummary()).toEqual([
+      [33],
+      [40],
+    ]);
+
+    schedulers[schedulers.length - 1].options.onEnded!();
+    expect(player.instrumentsState()).toEqual({ status: 'none' });
+    expect(player.state).toBe('stopped');
+  });
+
+  it('clears the summary when the playing file fails to parse', async () => {
+    player.add([file('a.mid')]);
+    await flush();
+    parseFile = async () => ({ status: 'error', message: 'broken' });
+    player.play();
+    await flush();
+    expect(player.instrumentsState()).toEqual({ status: 'none' });
+    expect(player.state).toBe('stopped');
+  });
+
+  it('clears the summary when the output is lost', async () => {
+    parseFile = async () => instrumentSong();
+    player.add([file('a.mid')]);
+    player.play();
+    await flush();
+    expect(player.instrumentsState().status).toBe('ready');
+
+    player.outputLost();
+    expect(player.instrumentsState()).toEqual({ status: 'none' });
+  });
 });

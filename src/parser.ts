@@ -59,6 +59,223 @@ export class ParseError extends Error {
   }
 }
 
+/** One program selected on a channel, with the bank in effect at that moment. */
+export interface ChannelProgram {
+  /** MIDI program number, 0–127 (display 1-based). */
+  program: number;
+  /** Bank-select MSB (CC0), or null when the file never sent it. */
+  bankMsb: number | null;
+  /** Bank-select LSB (CC32), or null when the file never sent it. */
+  bankLsb: number | null;
+  /** False for the implicit default program 0 of a channel with no program change. */
+  fromFile: boolean;
+}
+
+/** The instrument history of one channel in a song. */
+export interface ChannelInstrument {
+  /** MIDI channel, 0–15 (display 1-based). */
+  channel: number;
+  /** Programs in file order, consecutive duplicates collapsed. */
+  programs: ChannelProgram[];
+}
+
+/** General MIDI Level 1 program names, indexed by program number (0–127). */
+export const GM_INSTRUMENTS = [
+  'Acoustic Grand Piano',
+  'Bright Acoustic Piano',
+  'Electric Grand Piano',
+  'Honky-tonk Piano',
+  'Electric Piano 1',
+  'Electric Piano 2',
+  'Harpsichord',
+  'Clavinet',
+  'Celesta',
+  'Glockenspiel',
+  'Music Box',
+  'Vibraphone',
+  'Marimba',
+  'Xylophone',
+  'Tubular Bells',
+  'Dulcimer',
+  'Drawbar Organ',
+  'Percussive Organ',
+  'Rock Organ',
+  'Church Organ',
+  'Reed Organ',
+  'Accordion',
+  'Harmonica',
+  'Tango Accordion',
+  'Acoustic Guitar (nylon)',
+  'Acoustic Guitar (steel)',
+  'Electric Guitar (jazz)',
+  'Electric Guitar (clean)',
+  'Electric Guitar (muted)',
+  'Overdriven Guitar',
+  'Distortion Guitar',
+  'Guitar Harmonics',
+  'Acoustic Bass',
+  'Electric Bass (finger)',
+  'Electric Bass (pick)',
+  'Fretless Bass',
+  'Slap Bass 1',
+  'Slap Bass 2',
+  'Synth Bass 1',
+  'Synth Bass 2',
+  'Violin',
+  'Viola',
+  'Cello',
+  'Contrabass',
+  'Tremolo Strings',
+  'Pizzicato Strings',
+  'Orchestral Harp',
+  'Timpani',
+  'String Ensemble 1',
+  'String Ensemble 2',
+  'Synth Strings 1',
+  'Synth Strings 2',
+  'Choir Aahs',
+  'Voice Oohs',
+  'Synth Voice',
+  'Orchestra Hit',
+  'Trumpet',
+  'Trombone',
+  'Tuba',
+  'Muted Trumpet',
+  'French Horn',
+  'Brass Section',
+  'Synth Brass 1',
+  'Synth Brass 2',
+  'Soprano Sax',
+  'Alto Sax',
+  'Tenor Sax',
+  'Baritone Sax',
+  'Oboe',
+  'English Horn',
+  'Bassoon',
+  'Clarinet',
+  'Piccolo',
+  'Flute',
+  'Recorder',
+  'Pan Flute',
+  'Blown Bottle',
+  'Shakuhachi',
+  'Whistle',
+  'Ocarina',
+  'Lead 1 (square)',
+  'Lead 2 (sawtooth)',
+  'Lead 3 (calliope)',
+  'Lead 4 (chiff)',
+  'Lead 5 (charang)',
+  'Lead 6 (voice)',
+  'Lead 7 (fifths)',
+  'Lead 8 (bass + lead)',
+  'Pad 1 (new age)',
+  'Pad 2 (warm)',
+  'Pad 3 (polysynth)',
+  'Pad 4 (choir)',
+  'Pad 5 (bowed)',
+  'Pad 6 (metallic)',
+  'Pad 7 (halo)',
+  'Pad 8 (sweep)',
+  'FX 1 (rain)',
+  'FX 2 (soundtrack)',
+  'FX 3 (crystal)',
+  'FX 4 (atmosphere)',
+  'FX 5 (brightness)',
+  'FX 6 (goblins)',
+  'FX 7 (echoes)',
+  'FX 8 (sci-fi)',
+  'Sitar',
+  'Banjo',
+  'Shamisen',
+  'Koto',
+  'Kalimba',
+  'Bag pipe',
+  'Fiddle',
+  'Shanai',
+  'Tinkle Bell',
+  'Agogo',
+  'Steel Drums',
+  'Woodblock',
+  'Taiko Drum',
+  'Melodic Tom',
+  'Synth Drum',
+  'Reverse Cymbal',
+  'Guitar Fret Noise',
+  'Breath Noise',
+  'Seashore',
+  'Bird Tweet',
+  'Telephone Ring',
+  'Helicopter',
+  'Applause',
+  'Gunshot',
+] as const;
+
+/** The General MIDI name for a program number, with a numeric fallback. */
+export function gmInstrumentName(program: number): string {
+  return GM_INSTRUMENTS[program] ?? `Program ${program + 1}`;
+}
+
+/**
+ * Lists the channels used by a song and the instruments (program changes) the
+ * file selects on each, in ascending channel order.
+ *
+ * A channel counts as used when it carries any channel-voice event, so a
+ * program change alone is enough. Consecutive repeats of the same program and
+ * bank are collapsed; a return to an earlier program (A → B → A) is kept.
+ * Channels with no program change report the MIDI default, program 0.
+ *
+ * This is a read-only summary over the parsed events: it does not change the
+ * song and keeps no reference to the event list.
+ */
+export function summarizeInstruments(song: ParsedSong): ChannelInstrument[] {
+  const used = new Set<number>();
+  const banks = new Map<number, { msb: number | null; lsb: number | null }>();
+  const programs = new Map<number, ChannelProgram[]>();
+
+  for (const event of song.events) {
+    const channel = event.channel;
+    used.add(channel);
+
+    if (event.type === 'control-change') {
+      const bank = banks.get(channel) ?? { msb: null, lsb: null };
+      if (event.controller === 0) bank.msb = event.value;
+      else if (event.controller === 32) bank.lsb = event.value;
+      banks.set(channel, bank);
+      continue;
+    }
+    if (event.type !== 'program-change') continue;
+
+    const bank = banks.get(channel) ?? { msb: null, lsb: null };
+    const list = programs.get(channel) ?? [];
+    const last = list[list.length - 1];
+    if (
+      last !== undefined &&
+      last.program === event.program &&
+      last.bankMsb === bank.msb &&
+      last.bankLsb === bank.lsb
+    ) {
+      continue;
+    }
+    list.push({
+      program: event.program,
+      bankMsb: bank.msb,
+      bankLsb: bank.lsb,
+      fromFile: true,
+    });
+    programs.set(channel, list);
+  }
+
+  return [...used]
+    .sort((a, b) => a - b)
+    .map((channel) => ({
+      channel,
+      programs: programs.get(channel) ?? [
+        { program: 0, bankMsb: null, bankLsb: null, fromFile: false },
+      ],
+    }));
+}
+
 /** MIDI default tempo when the file gives none: 120 BPM. */
 const DEFAULT_US_PER_BEAT = 500_000;
 
