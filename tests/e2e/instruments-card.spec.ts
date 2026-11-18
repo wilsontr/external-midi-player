@@ -159,7 +159,7 @@ test.describe('T9 — instruments card', () => {
     expect(await panel.locator('[aria-current]').count()).toBe(0);
   });
 
-  test('sits at the bottom of the left column and stays narrow-safe', async ({ page }) => {
+  test('the part map sits beside the song list in the expansion unit', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await setup(page);
     await dropFiles(
@@ -169,29 +169,18 @@ test.describe('T9 — instruments card', () => {
     await page.getByTestId('play-button').click();
     await expect(instrumentRows(page)).toHaveCount(3);
 
-    const [playback, monitor, instruments, playlist] = await Promise.all(
-      ['playback-panel', 'monitor-panel', 'instruments-panel', 'playlist-panel'].map((id) =>
+    const [songs, partMap, routing] = await Promise.all(
+      ['playlist-panel', 'instruments-panel', 'routing-panel'].map((id) =>
         page.getByTestId(id).boundingBox(),
       ),
     );
-    const gapAfter = (first: NonNullable<typeof monitor>, next: NonNullable<typeof monitor>) =>
-      next.y - (first.y + first.height);
 
-    // Left column: same x/width as the monitor and snug under it, even with a
-    // long playlist that used to stretch the shared grid rows.
-    expect(Math.abs(instruments!.x - monitor!.x)).toBeLessThan(1);
-    expect(Math.abs(instruments!.width - monitor!.width)).toBeLessThan(1);
-    expect(gapAfter(monitor!, instruments!)).toBeGreaterThan(0);
-    expect(gapAfter(monitor!, instruments!)).toBeLessThanOrEqual(20);
-
-    // Right column, snug under Playback, and vertically beside the card.
-    expect(playlist!.x).toBeGreaterThan(instruments!.x + instruments!.width);
-    expect(gapAfter(playback!, playlist!)).toBeGreaterThan(0);
-    expect(gapAfter(playback!, playlist!)).toBeLessThanOrEqual(20);
-    const overlap =
-      Math.min(instruments!.y + instruments!.height, playlist!.y + playlist!.height) -
-      Math.max(instruments!.y, playlist!.y);
-    expect(overlap).toBeGreaterThan(0);
+    // Song list on the left, part map above audio routing on the right; a long
+    // playlist no longer stretches the part map across a shared grid row.
+    expect(partMap!.x).toBeGreaterThan(songs!.x + songs!.width);
+    expect(Math.abs(routing!.x - partMap!.x)).toBeLessThan(1);
+    expect(routing!.y).toBeGreaterThan(partMap!.y + partMap!.height / 2);
+    await expect(instrumentsPanel(page)).toBeVisible();
 
     await page.setViewportSize({ width: 360, height: 800 });
     const overflow = await page.evaluate(

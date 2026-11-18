@@ -1,19 +1,86 @@
+/*
+ * T11 — half-rack faceplate skin.
+ *
+ * One committed dark theme. Every colour in this file is a custom property
+ * declared on :root; component rules only ever reference tokens, so the whole
+ * look can be re-skinned (or made light) by swapping the :root block alone.
+ * All texture — chassis grain, rack screws, bevels, the LCD dot grid and glass
+ * glare — is drawn with gradients and shadows. There are no image assets.
+ */
+
+@font-face {
+  font-family: 'Graph 35 Pix';
+  /* Absolute public paths so Vite can rebase them for a non-root `base`. */
+  src:
+    url('/fonts/graph-35-pix.woff2') format('woff2'),
+    url('/fonts/graph-35-pix.ttf') format('truetype');
+  font-display: swap;
+}
+
 :root {
-  color-scheme: light dark;
-  --panel-bg: #f5f6f8;
-  --panel-border: #d0d4da;
-  --text: #1c1e21;
+  color-scheme: dark;
+
+  /* Chassis */
+  --chassis: #22252a;
+  --chassis-hi: #343941;
+  --chassis-lo: #17191d;
+  --chassis-deep: #0e1013;
+  --screw: #6d747e;
+  --screw-slot: #14161a;
+  --grain: rgba(255, 255, 255, 0.014);
+  --edge-light: rgba(255, 255, 255, 0.08);
+  --shadow: rgba(0, 0, 0, 0.55);
+  --page-glow: rgba(120, 140, 170, 0.055);
+  --panel-line: #383d44;
+
+  /* Silkscreen */
+  --silk: #ded9cd;
+  --silk-dim: #9a968c;
+  --silk-faint: #767268;
+
+  /* LCD */
+  --lcd-bg: #1b1405;
+  --lcd-bg-hi: #2a1f08;
+  --lcd-ink: #ffb000;
+  --lcd-ink-dim: #c07a00;
+  --lcd-ghost: rgba(255, 176, 0, 0.22);
+  --lcd-grid: rgba(255, 176, 0, 0.1);
+  --lcd-inv-ink: #1b1405;
+  --lcd-glare: rgba(255, 255, 255, 0.055);
+  --lcd-edge: #0a0702;
+  --lcd-deep: rgba(0, 0, 0, 0.7);
+
+  /* Keys */
+  --key: #3a3f46;
+  --key-hi: #4b515b;
+  --key-lo: #292d33;
+  --key-ink: #e7e2d6;
+  --key-edge: #171a1e;
+  --key-off: #2b2f34;
+  --key-off-ink: #61656c;
+  --key-panic: #b8452c;
+  --key-panic-hi: #d4553a;
+  --key-panic-lo: #8e3020;
+
+  /* LEDs */
+  --led-red: #ff4b3a;
+  --led-red-dim: #4a1c17;
+  --led-green: #4de07a;
+  --led-green-dim: #1c3a27;
+  --led-amber: #ffb000;
+  --led-amber-dim: #4a3609;
+  --led-off: #202329;
+
+  /* Focus and notices */
+  --focus: #ffe08a;
+  --notice-ink: #ffd27a;
+  --notice-bg: #2a2110;
+  --notice-edge: #7a5a18;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --panel-bg: #1e2024;
-    --panel-border: #3a3d44;
-    --text: #e8eaed;
-  }
-}
-
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -24,14 +91,14 @@ body {
 }
 
 body {
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  color: var(--text);
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  color: var(--silk);
+  background-color: var(--chassis-deep);
+  background-image: radial-gradient(circle at 50% 0, var(--page-glow), transparent 68%);
+  background-repeat: no-repeat;
 }
 
 #app {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
   width: 100%;
   max-width: 1200px;
   min-width: 0;
@@ -39,159 +106,303 @@ body {
   padding: 16px;
 }
 
-/*
- * Below 960 px the two column wrappers dissolve (display: contents), so every
- * panel is a direct grid item in one column. Stacking order is header, audio
- * monitor, instruments, playback, playlist.
- */
-.column {
-  display: contents;
-}
-
-/*
- * Two columns at ≥ 960 px: header, audio monitor and the Instruments card on
- * the left; playback and the playlist on the right. Each column is its own
- * flex stack, so the playlist starts right under Playback and the Instruments
- * card right under the monitor, regardless of the other column's height.
- */
-@media (min-width: 960px) {
-  #app {
-    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-    align-items: start;
-  }
-
-  .column {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    min-width: 0;
-  }
-}
-
-.panel {
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  background: var(--panel-bg);
-  padding: 16px;
+.rack {
+  display: grid;
+  gap: 14px;
   min-width: 0;
 }
 
-h1 {
-  font-size: 1.25rem;
-  margin: 0 0 8px;
+/* ------------------------------------------------------------------ units */
+
+/*
+ * A rack unit: charcoal chassis with a top bevel, four rack screws and a
+ * faint vertical grain, all drawn as background layers.
+ */
+.unit {
+  position: relative;
+  min-width: 0;
+  padding: 14px 20px 18px;
+  background-color: var(--chassis);
+  background-image:
+    radial-gradient(circle at center, var(--screw) 0 1.7px, var(--screw-slot) 1.7px 2.9px, transparent 3.1px),
+    radial-gradient(circle at center, var(--screw) 0 1.7px, var(--screw-slot) 1.7px 2.9px, transparent 3.1px),
+    radial-gradient(circle at center, var(--screw) 0 1.7px, var(--screw-slot) 1.7px 2.9px, transparent 3.1px),
+    radial-gradient(circle at center, var(--screw) 0 1.7px, var(--screw-slot) 1.7px 2.9px, transparent 3.1px),
+    repeating-linear-gradient(0deg, var(--grain) 0 1px, transparent 1px 3px);
+  background-position:
+    13px 13px,
+    calc(100% - 13px) 13px,
+    13px calc(100% - 13px),
+    calc(100% - 13px) calc(100% - 13px),
+    0 0;
+  background-size:
+    9px 9px,
+    9px 9px,
+    9px 9px,
+    9px 9px,
+    auto;
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, repeat;
+  border: 1px solid var(--chassis-deep);
+  border-radius: 6px;
+  box-shadow:
+    inset 0 1px 0 var(--edge-light),
+    inset 0 -1px 0 var(--chassis-deep),
+    0 12px 28px var(--shadow);
 }
 
-h2 {
-  font-size: 1rem;
-  margin: 0 0 8px;
+.unit-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 6px 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--panel-line);
 }
 
-p {
-  margin: 8px 0;
-}
-
-.how-to-intro {
+.brand-name {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--silk);
 }
 
-.how-to {
-  margin: 4px 0 8px;
-  padding-left: 1.4em;
-  font-size: 0.9rem;
+.brand-model {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--silk-dim);
 }
 
-.how-to li {
-  margin: 2px 0;
-}
-
-.notice {
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  padding: 8px;
-  font-size: 0.9rem;
-}
-
-.actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-button {
-  font: inherit;
-  padding: 6px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--panel-border);
-  background: #4a90d9;
-  color: #fff;
-  cursor: pointer;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-button:not(:disabled):hover {
-  filter: brightness(1.1);
-}
-
-.row {
-  display: flex;
-  gap: 8px;
+.power-lamp {
+  display: inline-flex;
   align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* ------------------------------------------------------------------- faces */
+
+.face {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  min-width: 0;
+}
+
+.face-exp {
+  align-items: start;
+}
+
+@media (min-width: 960px) {
+  .face-front {
+    grid-template-columns: 190px minmax(0, 1fr) 260px;
+    align-items: stretch;
+  }
+
+  .face-exp {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
+
+.strip {
+  min-width: 0;
+}
+
+.strip-monitor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 10px 12px;
+  background: linear-gradient(180deg, var(--chassis-hi), var(--chassis) 30%);
+  border: 1px solid var(--chassis-deep);
+  border-radius: 4px;
+  box-shadow: inset 0 1px 0 var(--edge-light);
+}
+
+.strip-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* The LCD fills the face height so the status line lands on its bottom edge. */
+.strip-lcd {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.lcd-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.exp-side {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  min-width: 0;
+}
+
+/* --------------------------------------------------------------- silkscreen */
+
+.silk-label {
+  display: block;
+  margin: 0 0 6px;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--silk-dim);
+}
+
+.silk-caption {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--silk-dim);
+  white-space: nowrap;
+}
+
+.silk-hint {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--silk-faint);
+}
+
+.silk-readout {
+  margin: 8px 0 4px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--silk-dim);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --------------------------------------------------------------------- LCD */
+
+.lcd {
+  position: relative;
+  min-width: 0;
+  padding: 10px 12px;
+  font-family: 'Graph 35 Pix', 'Courier New', monospace;
+  font-size: 16px;
+  line-height: 1.35;
+  color: var(--lcd-ink);
+  background-color: var(--lcd-bg);
+  background-image: radial-gradient(circle, var(--lcd-grid) 0 1px, transparent 1.1px);
+  background-size: 4px 4px;
+  border: 1px solid var(--lcd-edge);
+  border-radius: 3px;
+  box-shadow:
+    inset 0 1px 7px var(--lcd-deep),
+    inset 0 0 0 1px var(--lcd-bg-hi);
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  font-synthesis: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Glass glare: a thin diagonal sheen over the dot matrix. */
+.lcd::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--lcd-glare), transparent 45%);
+  pointer-events: none;
+}
+
+.lcd > * {
+  position: relative;
+  z-index: 1;
+}
+
+.lcd-top {
+  display: flex;
   flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 16px;
 }
 
-select {
-  font: inherit;
-  padding: 6px 8px;
-  max-width: 100%;
+.lcd-cell {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
-:focus-visible {
-  outline: 2px solid #4a90d9;
-  outline-offset: 2px;
+.lcd-tag {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--lcd-ink-dim);
 }
 
-.status-region {
-  min-height: 1.25em;
+.lcd-state {
+  padding: 0 6px;
+  border: 1px solid var(--lcd-ink);
+  font-size: 24px;
+  line-height: 1.2;
 }
 
-.current-title {
-  font-weight: 600;
+.lcd-state[data-state='playing'] {
+  background: var(--lcd-ink);
+  color: var(--lcd-inv-ink);
+}
+
+.lcd-title {
+  margin: 6px 0;
+  font-size: 32px;
+  line-height: 1.15;
+  min-height: 1.15em;
   overflow-wrap: anywhere;
 }
 
-.hint {
-  font-size: 0.8rem;
-  opacity: 0.75;
-}
-
-button.danger {
-  background: #c0392b;
-}
-
-button.compact {
-  min-width: 2.25em;
-  padding: 6px 8px;
-  font-weight: 700;
-}
-
-.progress-row {
-  margin-top: 12px;
-  flex-wrap: nowrap;
+.lcd-seek {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 8px;
 }
 
 .timeline {
   position: relative;
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
-  height: 12px;
-  border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  background: var(--panel-border);
+  height: 16px;
+  border: 1px solid var(--lcd-ghost);
+  border-radius: 2px;
+  background-color: var(--lcd-bg-hi);
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--lcd-ghost) 0 1px,
+    transparent 1px 8px
+  );
   overflow: hidden;
   cursor: pointer;
   touch-action: none;
@@ -200,7 +411,8 @@ button.compact {
 .timeline-fill {
   height: 100%;
   width: 0;
-  background: #4a90d9;
+  background: var(--lcd-ink);
+  box-shadow: 0 0 8px var(--lcd-ink);
 }
 
 .timeline.disabled {
@@ -208,29 +420,499 @@ button.compact {
   cursor: default;
 }
 
-.progress-row span {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+/* The 16 fixed channel cells: lit = used by the playing song. */
+.part-strip {
+  display: grid;
+  grid-template-columns: repeat(16, minmax(0, 1fr));
+  gap: 2px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.part-cell {
+  padding: 2px 0;
+  font-size: 16px;
+  line-height: 1.1;
+  text-align: center;
+  color: var(--lcd-ink);
+  border: 1px solid var(--lcd-ghost);
+  border-radius: 2px;
+}
+
+.part-cell[data-used='true'] {
+  background: var(--lcd-ink);
+  color: var(--lcd-inv-ink);
+  border-color: var(--lcd-ink);
+}
+
+.status-region {
+  min-height: 1.35em;
+}
+
+.lcd-status {
+  margin: 6px 0 0;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.lcd-songs {
+  padding: 10px 8px;
+}
+
+.lcd-top-songs {
+  justify-content: space-between;
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--lcd-ghost);
+}
+
+.lcd-partmap {
+  padding: 10px 12px;
+}
+
+.lcd-partmap .lcd-tag {
+  display: block;
+  margin: 0 0 4px;
+  color: var(--lcd-ink);
+}
+
+.lcd-empty,
+.lcd-hint {
+  margin: 6px 0;
+  font-size: 16px;
+  color: var(--lcd-ink-dim);
+  overflow-wrap: anywhere;
+}
+
+/* -------------------------------------------------------------------- knob */
+
+.knob-section {
+  margin: 2px 0 10px;
+  text-align: center;
+}
+
+.knob-wrap {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  margin: 8px auto 0;
+}
+
+.knob-input {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: grab;
+}
+
+.knob-input:active {
+  cursor: grabbing;
+}
+
+.knob {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--key-edge);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 30%,
+    var(--key-hi),
+    var(--key) 55%,
+    var(--key-lo) 100%
+  );
+  box-shadow:
+    0 3px 6px var(--shadow),
+    inset 0 1px 0 var(--edge-light);
+  transform: rotate(calc(var(--turn, 1) * 270deg - 135deg));
+}
+
+.knob-pointer {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 3px;
+  height: 16px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--silk);
+}
+
+.knob-input:focus-visible + .knob {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+/* ------------------------------------------------------------------- keys */
+
+button {
+  font: inherit;
+  color: var(--key-ink);
+  background-color: var(--key);
+  border: 1px solid var(--key-edge);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+.rubber-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 12px;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--key-ink);
+  background: linear-gradient(180deg, var(--key-hi), var(--key) 45%, var(--key-lo));
+  border: 1px solid var(--key-edge);
+  border-radius: 3px;
+  box-shadow:
+    0 2px 3px var(--shadow),
+    inset 0 1px 0 var(--edge-light);
+  transition:
+    transform 60ms ease,
+    box-shadow 60ms ease;
+}
+
+.rubber-key:not(:disabled):hover {
+  box-shadow:
+    0 2px 5px var(--shadow),
+    inset 0 1px 0 var(--edge-light),
+    inset 0 0 0 1px var(--key-hi);
+}
+
+.rubber-key:not(:disabled):active {
+  transform: translateY(1px);
+  box-shadow:
+    0 1px 1px var(--shadow),
+    inset 0 1px 3px var(--shadow);
+}
+
+/* Unlit and flat, not just dimmed: a dead key on the panel. */
+.rubber-key:disabled {
+  color: var(--key-off-ink);
+  background: var(--key-off);
+  border-color: var(--key-edge);
+  box-shadow: none;
+  transform: none;
+}
+
+.key-small {
+  min-height: 28px;
+  padding: 4px 8px;
+}
+
+.compact {
+  min-width: 2.25em;
+  padding: 4px 8px;
+  font-weight: 700;
+}
+
+.key-transport {
+  width: 44px;
+  height: 34px;
+  padding: 0;
+}
+
+.key-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.key-glyph {
+  display: block;
+}
+
+.key-panic {
+  min-width: 56px;
+  background: linear-gradient(180deg, var(--key-panic-hi), var(--key-panic) 45%, var(--key-panic-lo));
+  color: var(--silk);
+}
+
+.key-panic:not(:disabled):hover {
+  box-shadow:
+    0 2px 5px var(--shadow),
+    inset 0 1px 0 var(--edge-light),
+    inset 0 0 0 1px var(--key-panic-hi);
+}
+
+.keypad {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.key-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.connect-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.connect-key {
+  min-height: 34px;
+  padding: 6px 14px;
+}
+
+/* -------------------------------------------------------------------- LEDs */
+
+.led {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--led-off);
+  box-shadow: inset 0 0 0 1px var(--chassis-deep);
+}
+
+.led-red {
+  background: var(--led-red-dim);
+}
+
+.led-red[data-lit='true'] {
+  background: var(--led-red);
+  box-shadow:
+    0 0 7px var(--led-red),
+    inset 0 0 0 1px var(--chassis-deep);
+}
+
+.led-green[data-lit='true'] {
+  background: var(--led-green);
+  box-shadow:
+    0 0 7px var(--led-green),
+    inset 0 0 0 1px var(--chassis-deep);
+}
+
+.led-amber[data-lit='true'] {
+  background: var(--led-amber);
+  box-shadow:
+    0 0 7px var(--led-amber),
+    inset 0 0 0 1px var(--chassis-deep);
+}
+
+.led-mute {
+  width: 8px;
+  height: 8px;
+}
+
+.key-cell-play .led-play {
+  width: 6px;
+  height: 6px;
+}
+
+.led-play[data-state='playing'] {
+  background: var(--led-green);
+  box-shadow:
+    0 0 7px var(--led-green),
+    inset 0 0 0 1px var(--chassis-deep);
+}
+
+.led-play[data-state='paused'] {
+  background: var(--led-amber);
+  box-shadow:
+    0 0 7px var(--led-amber),
+    inset 0 0 0 1px var(--chassis-deep);
+}
+
+/* Meter ladders: 11 level segments over a red clip segment. */
+.meter {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin: 8px 0 4px;
+}
+
+.ladder-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.ladder {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.meter-slot {
+  display: block;
+  width: 14px;
+  height: 5px;
+}
+
+.ladder .led {
+  width: 100%;
+  height: 100%;
+  border-radius: 1px;
+  box-shadow: none;
+}
+
+.ladder .led-green {
+  background: var(--led-green-dim);
+}
+
+.ladder .led-green[data-lit='true'] {
+  background: var(--led-green);
+  box-shadow: 0 0 5px var(--led-green);
+}
+
+.ladder .led-amber {
+  background: var(--led-amber-dim);
+}
+
+.ladder .led-amber[data-lit='true'] {
+  background: var(--led-amber);
+  box-shadow: 0 0 5px var(--led-amber);
+}
+
+.ladder .led-clip {
+  box-shadow: 0 0 8px var(--led-red);
+}
+
+.led-clip {
+  background: var(--led-red);
+  box-shadow: 0 0 8px var(--led-red);
+}
+
+/* ------------------------------------------------------------- output/audio */
+
+.output-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.select-wrap {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.select-wrap::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  border-top: 5px solid var(--lcd-ink);
+  border-right: 4px solid transparent;
+  border-left: 4px solid transparent;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.lcd-select {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 22px 4px 6px;
+  font-family: 'Graph 35 Pix', 'Courier New', monospace;
+  font-size: 16px;
+  line-height: 1.3;
+  color: var(--lcd-ink);
+  background-color: var(--lcd-bg);
+  border: 1px solid var(--lcd-edge);
+  border-radius: 2px;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  font-synthesis: none;
+}
+
+.lcd-select:disabled {
+  color: var(--lcd-ink-dim);
+  background-color: var(--lcd-bg-hi);
+}
+
+.route-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.route-row .silk-label {
+  flex: 0 0 46px;
+  margin: 0;
+}
+
+.route-row .select-wrap {
+  flex: 1 1 120px;
+}
+
+.routing {
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--chassis-hi);
+  border: 1px solid var(--chassis-deep);
+  border-radius: 4px;
+  box-shadow: inset 0 1px 0 var(--edge-light);
+}
+
+.routing .silk-hint,
+.routing .silk-readout {
+  overflow-wrap: anywhere;
+}
+
+/* ----------------------------------------------------------------- playlist */
+
+.playlist-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.playlist-file-hint {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
 }
 
 .drop-zone {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-  border: 2px dashed var(--panel-border);
-  border-radius: 8px;
-  padding: 12px;
+  margin: 6px 0;
+  padding: 8px;
+  font-size: 16px;
+  text-align: center;
+  color: var(--lcd-ink-dim);
+  border: 1px dashed var(--lcd-ghost);
+  border-radius: 2px;
 }
 
 .drop-zone.drag-over {
-  border-color: #4a90d9;
+  color: var(--lcd-ink);
+  border-color: var(--lcd-ink);
+  box-shadow: inset 0 0 0 1px var(--lcd-ghost);
 }
 
 .playlist {
-  list-style: none;
-  margin: 8px 0 0;
+  margin: 0;
   padding: 0;
+  list-style: none;
 }
 
 .playlist-row {
@@ -238,135 +920,296 @@ button.compact {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  padding: 6px 8px;
-  border: 1px solid transparent;
-  border-bottom-color: var(--panel-border);
+  padding: 4px;
+  font-size: 16px;
+  border-bottom: 1px solid var(--lcd-ghost);
   cursor: pointer;
 }
 
+.playlist-row:focus-within {
+  outline: 2px dashed var(--lcd-ink);
+  outline-offset: -2px;
+}
+
 .playlist-row.current {
-  border-color: #4a90d9;
-  background: rgba(74, 144, 217, 0.18);
+  background: var(--lcd-ink);
+  color: var(--lcd-inv-ink);
+  border-bottom-color: var(--lcd-ink);
+}
+
+.playlist-row.current:focus-within {
+  outline-color: var(--lcd-inv-ink);
 }
 
 .playlist-row.drop-before {
-  box-shadow: 0 -3px 0 #4a90d9;
+  box-shadow: 0 -2px 0 var(--lcd-ink);
 }
 
 .playlist-row.drop-after {
-  box-shadow: 0 3px 0 #4a90d9;
+  box-shadow: 0 2px 0 var(--lcd-ink);
 }
 
-.playlist-row[data-status='error'] .entry-status {
-  color: #c0392b;
+.playlist-row[data-status='error'] {
+  color: var(--lcd-ink-dim);
+}
+
+.playlist-row[data-status='error'] .entry-name {
+  text-decoration: line-through;
 }
 
 .drag-handle {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 16px;
+  background-image: radial-gradient(var(--lcd-ghost) 1px, transparent 1.2px);
+  background-size: 4px 4px;
   cursor: grab;
   user-select: none;
 }
 
+.playlist-row.current .drag-handle {
+  background-image: radial-gradient(var(--lcd-inv-ink) 1px, transparent 1.2px);
+}
+
 .entry-number {
+  flex: 0 0 auto;
   min-width: 1.5em;
   text-align: right;
-  font-variant-numeric: tabular-nums;
-  opacity: 0.7;
+  color: var(--lcd-ink-dim);
+}
+
+.playlist-row.current .entry-number {
+  color: var(--lcd-inv-ink);
 }
 
 .entry-name {
-  flex: 1;
-  min-width: 8em;
-  overflow-wrap: anywhere;
-}
-
-.entry-duration {
-  font-variant-numeric: tabular-nums;
-}
-
-.entry-status {
-  font-size: 0.85rem;
-}
-
-.entry-buttons {
-  display: flex;
-  gap: 4px;
-}
-
-.entry-buttons button {
-  padding: 2px 8px;
-}
-
-.instruments-caption {
-  margin: 0 0 8px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.instrument-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 6px;
-}
-
-.instrument-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.instrument-channel {
-  flex: 0 0 auto;
-  font-variant-numeric: tabular-nums;
-  opacity: 0.75;
-}
-
-.instrument-detail {
-  flex: 1 1 12em;
+  flex: 1 1 8em;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.meter {
+.entry-duration {
+  margin-left: auto;
+  text-align: right;
+}
+
+.entry-status {
+  flex: 0 1 auto;
+  color: var(--lcd-ink-dim);
+  overflow-wrap: anywhere;
+}
+
+.playlist-row.current .entry-status {
+  color: var(--lcd-inv-ink);
+}
+
+.entry-buttons {
   display: flex;
-  flex-direction: column;
+  gap: 2px;
+}
+
+.row-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--lcd-ink);
+  background: transparent;
+  border: 1px solid var(--lcd-ghost);
+  border-radius: 2px;
+}
+
+.row-key .key-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.row-key:not(:disabled):hover {
+  border-color: var(--lcd-ink);
+}
+
+.row-key:disabled {
+  color: var(--lcd-ink-dim);
+  border-color: var(--lcd-ghost);
+}
+
+.playlist-row.current .row-key {
+  color: var(--lcd-inv-ink);
+  border-color: var(--lcd-inv-ink);
+}
+
+/* --------------------------------------------------------------- instruments */
+
+.instruments-caption {
+  margin: 0 0 6px;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.instrument-list {
+  display: grid;
   gap: 4px;
-  margin-top: 12px;
-}
-
-.meter-bar {
-  height: 10px;
-  border: 1px solid var(--panel-border);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.meter-fill {
-  height: 100%;
-  width: 0;
-  background: #2ecc71;
-}
-
-.meter-footer {
-  display: flex;
-  justify-content: flex-end;
-  min-height: 1.25em;
   margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.clip {
-  color: #fff;
-  background: #c0392b;
-  border-radius: 4px;
-  padding: 0 6px;
-  font-weight: 700;
+.instrument-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0 8px;
+  font-size: 16px;
 }
 
-input[type='range'] {
-  flex: 1;
-  min-width: 6em;
+.instrument-channel {
+  flex: 0 0 auto;
+  color: var(--lcd-ink-dim);
+}
+
+.instrument-detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* -------------------------------------------------------------- quick start */
+
+.quickstart {
+  min-width: 0;
+  padding: 8px 4px 10px;
+  border-top: 1px solid var(--panel-line);
+  border-bottom: 1px solid var(--panel-line);
+}
+
+.quickstart .silk-label {
+  color: var(--silk);
+}
+
+.how-to-intro {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--silk-dim);
+}
+
+.how-to {
+  margin: 4px 0 8px;
+  padding-left: 1.4em;
+  font-size: 12px;
+  color: var(--silk-dim);
+}
+
+.how-to li {
+  margin: 2px 0;
+}
+
+.font-credit {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--silk-faint);
+}
+
+.font-credit a {
+  color: var(--silk-dim);
+}
+
+.font-credit a:hover,
+.font-credit a:focus-visible {
+  color: var(--silk);
+}
+
+/* ----------------------------------------------------------------- notices */
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--notice-ink);
+  background: var(--notice-bg);
+  border: 1px solid var(--notice-edge);
+  border-left: 3px solid var(--led-amber);
+  border-radius: 2px;
+}
+
+.notice::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--led-amber);
+  box-shadow: 0 0 6px var(--led-amber);
+}
+
+/* ------------------------------------------------------------------- focus */
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.lcd-select:focus-visible {
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------- narrow screens */
+
+@media (max-width: 480px) {
+  #app {
+    padding: 8px;
+  }
+
+  .rack {
+    gap: 10px;
+  }
+
+  .unit {
+    padding: 10px 8px 12px;
+  }
+
+  .brand-name {
+    font-size: 16px;
+  }
+
+  .lcd {
+    padding: 8px;
+  }
+
+  .lcd-title {
+    font-size: 24px;
+  }
+
+  /* 16 cells on one line would touch at this width: two rows of eight stay
+     legible (and the strip is a static view, not a timeline). */
+  .part-strip {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 2px;
+  }
+
+  .part-cell {
+    font-size: 16px;
+  }
+
+  .knob-wrap {
+    width: 56px;
+    height: 56px;
+  }
+}
+
+/* No blinking status cursor, and no key travel, when motion is reduced. */
+@media (prefers-reduced-motion: reduce) {
+  .rubber-key {
+    transition: none;
+  }
+
+  .rubber-key:not(:disabled):active {
+    transform: none;
+  }
 }
 
 [hidden] {

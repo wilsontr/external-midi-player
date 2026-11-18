@@ -52,6 +52,7 @@ Rules:
 | T8 | [T8-player-refinements.md](T8-player-refinements.md) | After the MVP | 3–4 days | done |
 | T9 | [T9-channel-instruments-card.md](T9-channel-instruments-card.md) | After the MVP | 1 day | done |
 | T10 | [T10-m3u-playlist-saving-loading.md](T10-m3u-playlist-saving-loading.md) | After the MVP | 0.5–1 day | done |
+| T11 | [T11-half-rack-faceplate-skin.md](T11-half-rack-faceplate-skin.md) | After the MVP | 2–3 days | done |
 
 Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8, T10; R3 → T2, T3, T8, T9, T10; R4 → T1; R5 → T2, T5, T7; R6, R7 → T3, T5, T8; R8 → T2; R9, R10 → T4, T8; R11 → T4, T5; R12 → T3, T8; R13 → T1, T3, T4, T10.
 
@@ -65,6 +66,7 @@ T9 is a post-MVP informational feature: a read-only card listing the channels an
 
 T10 is a post-MVP playlist interchange feature: it saves the current playlist as an M3U/M3U8 file and rebuilds the playlist from one, preserving order. It adds no new R-ID; it reuses R1's file selection, R2's ordering, R3's names/durations and R13's persistence. Because a browser cannot read original file paths, loading resolves references against files already in the playlist first and only then needs the MIDI files selected alongside the playlist; the imported bytes are still copied into `localStorage`.
 
+T11 is a post-MVP presentation task: it reskins the player as a 90s half-rack module (amber dot-matrix LCDs, rubber keys with LEDs, Helvetica Neue silkscreen labels) and regroups the existing panels into two rack units. It adds no new R-ID and changes no playback behaviour; every control, test ID and accessible name stays. Live per-channel note activity in the 16-part strip is deliberately left for a follow-up.
 
 ## Backlog (post-MVP, from "After the MVP")
 
@@ -74,6 +76,7 @@ Not tracked as tasks yet; each would become its own task file if scheduled.
 - Tempo change, A–B looping, per-channel mute and remapping (2–4 days)
 - Record the monitored input to WAV (1 day)
 - Installable offline app (0.5 day)
+- Live per-channel note activity in the T11 16-part strip, fed from the scheduler (0.5–1 day)
 
 ## Open questions (from the design doc)
 

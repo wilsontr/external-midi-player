@@ -1,0 +1,374 @@
+:root {
+  color-scheme: light dark;
+  --panel-bg: #f5f6f8;
+  --panel-border: #d0d4da;
+  --text: #1c1e21;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --panel-bg: #1e2024;
+    --panel-border: #3a3d44;
+    --text: #e8eaed;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--text);
+}
+
+#app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  width: 100%;
+  max-width: 1200px;
+  min-width: 0;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+/*
+ * Below 960 px the two column wrappers dissolve (display: contents), so every
+ * panel is a direct grid item in one column. Stacking order is header, audio
+ * monitor, instruments, playback, playlist.
+ */
+.column {
+  display: contents;
+}
+
+/*
+ * Two columns at ≥ 960 px: header, audio monitor and the Instruments card on
+ * the left; playback and the playlist on the right. Each column is its own
+ * flex stack, so the playlist starts right under Playback and the Instruments
+ * card right under the monitor, regardless of the other column's height.
+ */
+@media (min-width: 960px) {
+  #app {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    align-items: start;
+  }
+
+  .column {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+  }
+}
+
+.panel {
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  padding: 16px;
+  min-width: 0;
+}
+
+h1 {
+  font-size: 1.25rem;
+  margin: 0 0 8px;
+}
+
+h2 {
+  font-size: 1rem;
+  margin: 0 0 8px;
+}
+
+p {
+  margin: 8px 0;
+}
+
+.how-to-intro {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.how-to {
+  margin: 4px 0 8px;
+  padding-left: 1.4em;
+  font-size: 0.9rem;
+}
+
+.how-to li {
+  margin: 2px 0;
+}
+
+.notice {
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 0.9rem;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+button {
+  font: inherit;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
+  background: #4a90d9;
+  color: #fff;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button:not(:disabled):hover {
+  filter: brightness(1.1);
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+select {
+  font: inherit;
+  padding: 6px 8px;
+  max-width: 100%;
+}
+
+:focus-visible {
+  outline: 2px solid #4a90d9;
+  outline-offset: 2px;
+}
+
+.status-region {
+  min-height: 1.25em;
+}
+
+.current-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+button.danger {
+  background: #c0392b;
+}
+
+button.compact {
+  min-width: 2.25em;
+  padding: 6px 8px;
+  font-weight: 700;
+}
+
+.progress-row {
+  margin-top: 12px;
+  flex-wrap: nowrap;
+}
+
+.timeline {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--panel-border);
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.timeline-fill {
+  height: 100%;
+  width: 0;
+  background: #4a90d9;
+}
+
+.timeline.disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.progress-row span {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.drop-zone {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  border: 2px dashed var(--panel-border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.drop-zone.drag-over {
+  border-color: #4a90d9;
+}
+
+.playlist {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.playlist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-bottom-color: var(--panel-border);
+  cursor: pointer;
+}
+
+.playlist-row.current {
+  border-color: #4a90d9;
+  background: rgba(74, 144, 217, 0.18);
+}
+
+.playlist-row.drop-before {
+  box-shadow: 0 -3px 0 #4a90d9;
+}
+
+.playlist-row.drop-after {
+  box-shadow: 0 3px 0 #4a90d9;
+}
+
+.playlist-row[data-status='error'] .entry-status {
+  color: #c0392b;
+}
+
+.drag-handle {
+  cursor: grab;
+  user-select: none;
+}
+
+.entry-number {
+  min-width: 1.5em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+.entry-name {
+  flex: 1;
+  min-width: 8em;
+  overflow-wrap: anywhere;
+}
+
+.entry-duration {
+  font-variant-numeric: tabular-nums;
+}
+
+.entry-status {
+  font-size: 0.85rem;
+}
+
+.entry-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.entry-buttons button {
+  padding: 2px 8px;
+}
+
+.instruments-caption {
+  margin: 0 0 8px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.instrument-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.instrument-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.instrument-channel {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.instrument-detail {
+  flex: 1 1 12em;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.meter-bar {
+  height: 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  width: 0;
+  background: #2ecc71;
+}
+
+.meter-footer {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 1.25em;
+  margin: 0;
+}
+
+.clip {
+  color: #fff;
+  background: #c0392b;
+  border-radius: 4px;
+  padding: 0 6px;
+  font-weight: 700;
+}
+
+input[type='range'] {
+  flex: 1;
+  min-width: 6em;
+}
+
+[hidden] {
+  display: none !important;
+}

@@ -1,11 +1,12 @@
 /**
- * Single-screen UI: header (app name, notices, Connect devices, status) plus
- * the playback / playlist / audio-monitor / instruments panels. The panels
- * are grouped into two column wrappers that dissolve into a single stack
- * below the wide breakpoint. All user-visible status is written to the one
- * aria-live region. The layout is a plain DOM build with native controls, so
- * it is keyboard-accessible by construction.
- * See the design doc, "UI" and "MIDI output > Device access".
+ * Single-screen UI, styled as a 90s half-rack tone module: a front unit (audio
+ * monitor strip, amber playback LCD, transport keypad) and an expansion unit
+ * (song-list LCD, part map, audio routing), with the printed Quick start label
+ * between them. Both units span the app width and their internals stack below
+ * the wide breakpoint. All user-visible status is written to the one aria-live
+ * region on the playback LCD's bottom line. The layout is a plain DOM build
+ * with native controls, so it is keyboard-accessible by construction.
+ * See the design doc, "UI layout" and "MIDI output > Device access".
  */
 
 import { AudioMonitor, CLIP_THRESHOLD_DB, DB_FLOOR } from './audioMonitor';
@@ -37,6 +38,81 @@ function formatTime(seconds: number, tenths = false): string {
 
 const ENTRY_DRAG_TYPE = 'application/x-midi-entry';
 
+/** Level LEDs per meter ladder; the red clip light is the twelfth segment. */
+const LADDER_SEGMENTS = 11;
+
+/**
+ * Transport icons are inline SVG: the LCD font has no play/stop glyphs, and a
+ * text glyph would fall back to a different typeface mid-key.
+ */
+const ICON = {
+  previous: '<path d="M6 5h3v14H6zM20 5v14L9 12z"/>',
+  play: '<path d="M8 4l12 8-12 8z"/>',
+  pause: '<path d="M8 4h4v16H8zM16 4h4v16h-4z"/>',
+  stop: '<path d="M5 5h14v14H5z"/>',
+  next: '<path d="M15 5h3v14h-3zM4 5v14l11-7z"/>',
+  up: '<path d="M12 4l7 8h-4v8h-6v-8H5z"/>',
+  down: '<path d="M12 20l-7-8h4V4h6v8h4z"/>',
+  remove: '<path d="M8.5 6L12 9.5 15.5 6 18 8.5 14.5 12 18 15.5 15.5 18 12 14.5 8.5 18 6 15.5 9.5 12 6 8.5z"/>',
+} as const;
+
+function icon(name: keyof typeof ICON): string {
+  return (
+    '<svg class="key-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+    ICON[name] +
+    '</svg>'
+  );
+}
+
+/**
+ * One vertical LED ladder for the stereo input meter: 11 level segments plus
+ * the red clip segment on top. The level segments are driven from
+ * `data-level` (1 = bottom) and `data-lit`; the clip segment is toggled with
+ * the `hidden` attribute so the CLIP test ID keeps working.
+ */
+function meterLadder(side: 'left' | 'right'): string {
+  const clipTestId = side === 'left' ? ' data-testid="clip-indicator"' : '';
+  const levels = Array.from({ length: LADDER_SEGMENTS }, (_, i) => LADDER_SEGMENTS - i)
+    .map((level) => {
+      const kind = level > LADDER_SEGMENTS - 3 ? 'led-amber' : 'led-green';
+      return (
+        '<span class="meter-slot"><span class="led ' +
+        kind +
+        '" data-level="' +
+        level +
+        '" data-lit="false"></span></span>'
+      );
+    })
+    .join('');
+  return (
+    '<div class="ladder" data-testid="meter-' +
+    side +
+    '" aria-hidden="true">' +
+    '<span class="meter-slot meter-slot-clip">' +
+    '<span class="led led-red led-clip"' +
+    clipTestId +
+    ' hidden></span></span>' +
+    levels +
+    '</div>'
+  );
+}
+
+/** The 16 fixed channel cells of the playback LCD's part strip. */
+function partStrip(): string {
+  return Array.from({ length: 16 }, (_, index) => {
+    const channel = index + 1;
+    return (
+      '<li class="part-cell" data-testid="part-cell" data-channel="' +
+      channel +
+      '" data-used="false" aria-label="Channel ' +
+      channel +
+      '">' +
+      channel +
+      '</li>'
+    );
+  }).join('');
+}
+
 /**
  * Builds the layout into `root` and wires the Connect devices flow:
  * one click triggers *both* the Web MIDI and the microphone permission
@@ -44,9 +120,143 @@ const ENTRY_DRAG_TYPE = 'application/x-midi-entry';
  */
 export function createUi(root: HTMLElement): void {
   root.innerHTML = `
-    <div class="column column-side" data-testid="side-column">
-      <header class="panel" data-testid="header" aria-label="App header">
-        <h1>External MIDI Player</h1>
+    <div class="rack">
+      <header class="unit unit-front" data-testid="header" aria-label="App header">
+        <div class="unit-brand">
+          <h1 class="brand-name">External MIDI Player</h1>
+          <p class="brand-model">MIDI playback module · 16 channels</p>
+          <span class="power-lamp" aria-hidden="true">
+            <span class="led led-green" data-lit="true"></span>
+            <span class="silk-caption">Power</span>
+          </span>
+        </div>
+        <div class="face face-front">
+          <section class="strip strip-monitor" data-testid="monitor-panel" aria-labelledby="monitor-heading">
+            <h2 class="silk-label" id="monitor-heading">Audio monitor</h2>
+            <div class="knob-section">
+              <label class="silk-label" for="monitor-volume">Volume</label>
+              <div class="knob-wrap">
+                <input
+                  class="knob-input"
+                  type="range"
+                  id="monitor-volume"
+                  min="0"
+                  max="100"
+                  value="100"
+                  data-testid="volume-slider"
+                />
+                <div class="knob" data-testid="volume-knob" aria-hidden="true">
+                  <span class="knob-pointer"></span>
+                </div>
+              </div>
+              <span class="sr-only" data-testid="volume-text">100%</span>
+            </div>
+            <div class="mute-section">
+              <button
+                type="button"
+                class="rubber-key mute-key"
+                data-testid="mute-button"
+                aria-pressed="true"
+              >
+                <span class="led led-red led-mute" data-testid="mute-led" data-lit="true" aria-hidden="true"></span>
+                <span class="key-cap">Mute</span>
+              </button>
+            </div>
+            <div
+              class="meter"
+              data-testid="meter"
+              role="meter"
+              aria-label="Input level"
+              aria-valuemin="-100"
+              aria-valuemax="0"
+              aria-valuenow="-100"
+              aria-valuetext="Left −∞ dBFS, Right −∞ dBFS"
+            >
+              <div class="ladder-group">
+                ${meterLadder('left')}
+                <span class="silk-caption" aria-hidden="true">L</span>
+              </div>
+              <div class="ladder-group">
+                ${meterLadder('right')}
+                <span class="silk-caption" aria-hidden="true">R</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="strip strip-lcd" data-testid="playback-panel" aria-labelledby="playback-heading">
+            <h2 class="sr-only" id="playback-heading">Playback</h2>
+            <div class="lcd lcd-main">
+              <div class="lcd-top">
+                <span class="lcd-cell"><span class="lcd-tag">Song</span><span data-testid="song-number">--</span></span>
+                <span class="lcd-state" data-testid="lcd-state" data-state="stopped" aria-hidden="true">STOP</span>
+                <span class="lcd-cell"><span class="lcd-tag">Time</span><span data-testid="time-display">0:00.0 / 0:00</span></span>
+              </div>
+              <p class="lcd-title" data-testid="current-title">No song selected.</p>
+              <div class="lcd-seek">
+                <div
+                  class="timeline disabled"
+                  data-testid="timeline"
+                  role="slider"
+                  tabindex="-1"
+                  aria-label="Playback position"
+                  aria-valuemin="0"
+                  aria-valuemax="0"
+                  aria-valuenow="0"
+                  aria-valuetext="0:00.0 of 0:00"
+                  aria-disabled="true"
+                ><div class="timeline-fill" data-testid="timeline-fill"></div></div>
+              </div>
+              <ol class="part-strip" data-testid="part-strip" aria-label="Channels used by the playing song">
+                ${partStrip()}
+              </ol>
+              <p class="status-region lcd-status" role="status" aria-live="polite" data-testid="status-region"></p>
+            </div>
+            <p class="sr-only" data-testid="playback-state" data-state="stopped">Nothing playing.</p>
+          </section>
+
+          <div class="strip strip-keys">
+            <div class="output-row">
+              <label class="silk-label" for="midi-output">MIDI output</label>
+              <span class="select-wrap">
+                <select id="midi-output" class="lcd-select" data-testid="output-picker" disabled>
+                  <option value="">Select an output…</option>
+                </select>
+              </span>
+            </div>
+            <div class="keypad" data-testid="keypad" role="group" aria-label="Transport">
+              <div class="key-cell">
+                <button type="button" class="rubber-key key-transport" data-testid="previous-button" aria-label="⏮ Previous">${icon('previous')}</button>
+                <span class="silk-caption" aria-hidden="true">Prev</span>
+              </div>
+              <div class="key-cell key-cell-play" data-testid="play-key" data-state="stopped">
+                <span class="led led-play" data-testid="play-led" data-state="stopped" aria-hidden="true"></span>
+                <button type="button" class="rubber-key key-transport" data-testid="play-button" aria-label="▶ Play"><span class="key-glyph" data-testid="play-glyph">${icon('play')}</span></button>
+                <span class="silk-caption" data-testid="play-caption" aria-hidden="true">Play</span>
+              </div>
+              <div class="key-cell">
+                <button type="button" class="rubber-key key-transport" data-testid="next-button" aria-label="⏭ Next">${icon('next')}</button>
+                <span class="silk-caption" aria-hidden="true">Next</span>
+              </div>
+              <div class="key-cell">
+                <button type="button" class="rubber-key key-transport" data-testid="stop-button" aria-label="⏹ Stop">${icon('stop')}</button>
+                <span class="silk-caption" aria-hidden="true">Stop</span>
+              </div>
+              <div class="key-cell key-cell-panic">
+                <button type="button" class="rubber-key key-panic" data-testid="panic-button" aria-label="Panic"><span class="key-cap">Panic</span></button>
+                <span class="silk-caption" aria-hidden="true">Panic</span>
+              </div>
+            </div>
+            <p class="silk-hint">Shortcuts: Space play/pause · Esc panic · ← previous · → next</p>
+            <div class="connect-row">
+              <button type="button" class="rubber-key connect-key" data-testid="connect-button">Connect devices</button>
+              <button type="button" class="rubber-key connect-key" data-testid="retry-button" hidden>Retry</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section class="quickstart" data-testid="quickstart" aria-labelledby="quickstart-heading">
+        <h2 class="silk-label" id="quickstart-heading">Quick start</h2>
         <p class="how-to-intro">
           MIDI player catered to playback on external MIDI synths. How to use:
         </p>
@@ -58,132 +268,95 @@ export function createUi(root: HTMLElement): void {
           <li>Select your audio input and output.</li>
           <li>Load your MIDI files and listen.</li>
         </ol>
-        <p class="notice" data-testid="unsupported-notice" hidden>
+        <p class="notice silk-notice" data-testid="unsupported-notice" hidden>
           This browser does not support Web MIDI. Use a current desktop version
           of Chrome, Edge, or Firefox to connect MIDI devices.
         </p>
-        <p class="notice" data-testid="firefox-onboarding" hidden>
+        <p class="notice silk-notice" data-testid="firefox-onboarding" hidden>
           Firefox may ask you to install a Web MIDI site permission before it
           can list MIDI devices. That prompt is safe — it only lets this page
           talk to your MIDI hardware. Click "Connect devices", then allow the
           permission when asked.
         </p>
-        <div class="actions">
-          <button type="button" data-testid="connect-button">Connect devices</button>
-          <button type="button" data-testid="retry-button" hidden>Retry</button>
-        </div>
-        <p class="status-region" role="status" aria-live="polite" data-testid="status-region"></p>
-      </header>
-      <section class="panel" data-testid="monitor-panel" aria-labelledby="monitor-heading">
-        <h2 id="monitor-heading">Audio monitor</h2>
-        <p class="notice" data-testid="monitor-unavailable" hidden>
-          This browser cannot capture audio, so monitoring is unavailable.
-        </p>
-        <div class="row">
-          <label for="audio-input">Input</label>
-          <select id="audio-input" data-testid="audio-input-picker" disabled>
-            <option value="">Select an input…</option>
-          </select>
-        </div>
-        <div class="row" data-testid="audio-output-row">
-          <label for="audio-output">Output</label>
-          <select id="audio-output" data-testid="audio-output-picker" disabled>
-            <option value="">System default</option>
-          </select>
-          <button type="button" data-testid="grant-output-button" hidden>Choose output device…</button>
-        </div>
-        <p class="hint" data-testid="audio-output-note" hidden>
-          This browser cannot choose a monitoring output, so audio plays to the system default output.
-        </p>
-        <div class="row">
-          <button type="button" data-testid="mute-button" aria-pressed="true">🔇 Muted</button>
-          <label for="monitor-volume">Volume</label>
-          <input type="range" id="monitor-volume" min="0" max="100" value="100" data-testid="volume-slider" />
-          <span data-testid="volume-text">100%</span>
-        </div>
-        <div
-          class="meter"
-          data-testid="meter"
-          role="meter"
-          aria-label="Input level"
-          aria-valuemin="-100"
-          aria-valuemax="0"
-          aria-valuenow="-100"
-          aria-valuetext="Left −∞ dBFS, Right −∞ dBFS"
-        >
-          <div class="meter-bar"><div class="meter-fill" data-testid="meter-left"></div></div>
-          <div class="meter-bar"><div class="meter-fill" data-testid="meter-right"></div></div>
-          <p class="meter-footer">
-            <span class="clip" data-testid="clip-indicator" hidden>CLIP</span>
-          </p>
-        </div>
-        <p data-testid="latency-readout">Browser latency: —</p>
-        <p class="notice" data-testid="feedback-warning" hidden>
-          The input and output are the same device. Unmute with care: a microphone near the
-          speakers can cause feedback.
+        <p class="font-credit">
+          LCD font:
+          <a href="http://fontstruct.com/fontstructions/show/664062" rel="license noopener" target="_blank">Graph 35+ pix</a>
+          by 30100flo,
+          <a href="https://creativecommons.org/licenses/by-sa/3.0/" rel="license noopener" target="_blank">CC BY-SA 3.0</a>
         </p>
       </section>
-      <section class="panel" data-testid="instruments-panel" aria-labelledby="instruments-heading">
-        <h2 id="instruments-heading">Instruments</h2>
-        <p class="instruments-caption" data-testid="instruments-caption" hidden></p>
-        <p class="hint" data-testid="instruments-empty">Play a song to see its MIDI channels and instruments.</p>
-        <ul class="instrument-list" data-testid="instrument-list" hidden></ul>
-      </section>
-    </div>
-    <div class="column column-main" data-testid="main-column">
-      <section class="panel" data-testid="playback-panel" aria-labelledby="playback-heading">
-        <h2 id="playback-heading">Playback</h2>
-        <div class="row">
-          <label for="midi-output">MIDI output</label>
-          <select id="midi-output" data-testid="output-picker" disabled>
-            <option value="">Select an output…</option>
-          </select>
+
+      <section class="unit unit-exp" data-testid="expansion-unit" aria-label="Expansion unit">
+        <div class="face face-exp">
+          <section class="strip strip-songs" data-testid="playlist-panel" aria-labelledby="playlist-heading">
+            <h2 class="sr-only" id="playlist-heading">Playlist</h2>
+            <div class="playlist-keys" role="group" aria-label="Playlist files">
+              <button type="button" class="rubber-key key-small compact" data-testid="add-files-button" aria-label="Add files" title="Add files">+</button>
+              <button type="button" class="rubber-key key-small" data-testid="load-files-button">Load files</button>
+              <button type="button" class="rubber-key key-small" data-testid="clear-playlist-button">Clear playlist</button>
+              <button type="button" class="rubber-key key-small" data-testid="save-playlist-button" disabled>Save playlist</button>
+              <button type="button" class="rubber-key key-small" data-testid="load-playlist-button">Load playlist</button>
+              <input type="file" multiple accept=".mid,.midi" hidden data-testid="file-input" />
+              <input type="file" multiple accept=".mid,.midi" hidden data-testid="load-file-input" />
+              <input type="file" multiple accept=".m3u,.m3u8,.mid,.midi" hidden data-testid="playlist-file-input" />
+            </div>
+            <p class="silk-hint playlist-file-hint" data-testid="playlist-file-hint">
+              Save playlist writes the order and file names as an .m3u8. Loading uses files already
+              in your playlist; to add new ones, select the playlist with its .mid files together.
+            </p>
+            <div class="lcd lcd-songs">
+              <div class="lcd-top lcd-top-songs">
+                <span class="lcd-tag">Song list</span>
+                <span data-testid="song-count">0 songs</span>
+              </div>
+              <div class="drop-zone" data-testid="drop-zone">
+                <span>Drop .mid files on this unit</span>
+              </div>
+              <ol class="playlist" aria-label="Playlist" data-testid="playlist"></ol>
+              <p class="lcd-empty" data-testid="playlist-empty">No songs yet.</p>
+            </div>
+          </section>
+
+          <aside class="exp-side">
+            <section class="lcd lcd-partmap" data-testid="instruments-panel" aria-labelledby="instruments-heading">
+              <h2 class="lcd-tag" id="instruments-heading">Instruments</h2>
+              <p class="instruments-caption" data-testid="instruments-caption" hidden></p>
+              <p class="lcd-hint" data-testid="instruments-empty">Play a song to see its MIDI channels and instruments.</p>
+              <ul class="instrument-list" data-testid="instrument-list" hidden></ul>
+            </section>
+            <section class="routing" data-testid="routing-panel" aria-labelledby="routing-heading">
+              <h2 class="silk-label" id="routing-heading">Audio routing</h2>
+              <p class="notice silk-notice" data-testid="monitor-unavailable" hidden>
+                This browser cannot capture audio, so monitoring is unavailable.
+              </p>
+              <div class="route-row">
+                <label class="silk-label" for="audio-input">Input</label>
+                <span class="select-wrap">
+                  <select id="audio-input" class="lcd-select" data-testid="audio-input-picker" disabled>
+                    <option value="">Select an input…</option>
+                  </select>
+                </span>
+              </div>
+              <div class="route-row" data-testid="audio-output-row">
+                <label class="silk-label" for="audio-output">Output</label>
+                <span class="select-wrap">
+                  <select id="audio-output" class="lcd-select" data-testid="audio-output-picker" disabled>
+                    <option value="">System default</option>
+                  </select>
+                </span>
+                <button type="button" class="rubber-key key-small" data-testid="grant-output-button" hidden>Choose output device…</button>
+              </div>
+              <p class="notice silk-notice" data-testid="audio-output-note" hidden>
+                This browser cannot choose a monitoring output, so audio plays to the system default output.
+              </p>
+              <p class="silk-readout" data-testid="latency-readout">Browser latency: —</p>
+              <p class="notice silk-notice" data-testid="feedback-warning" hidden>
+                The input and output are the same device. Unmute with care: a microphone near the
+                speakers can cause feedback.
+              </p>
+            </section>
+          </aside>
         </div>
-        <p class="current-title" data-testid="current-title">No song selected.</p>
-        <div class="actions" role="group" aria-label="Transport">
-          <button type="button" data-testid="previous-button">⏮ Previous</button>
-          <button type="button" data-testid="play-button">▶ Play</button>
-          <button type="button" data-testid="stop-button">⏹ Stop</button>
-          <button type="button" data-testid="next-button">⏭ Next</button>
-          <button type="button" class="danger" data-testid="panic-button">Panic</button>
-        </div>
-        <div class="row progress-row">
-          <div
-            class="timeline disabled"
-            data-testid="timeline"
-            role="slider"
-            tabindex="-1"
-            aria-label="Playback position"
-            aria-valuemin="0"
-            aria-valuemax="0"
-            aria-valuenow="0"
-            aria-valuetext="0:00.0 of 0:00"
-            aria-disabled="true"
-          ><div class="timeline-fill" data-testid="timeline-fill"></div></div>
-          <span data-testid="time-display">0:00.0 / 0:00</span>
-        </div>
-        <p class="hint">Shortcuts: Space play/pause · Esc panic · ← previous · → next</p>
-        <p data-testid="playback-state" data-state="stopped">Nothing playing.</p>
-      </section>
-      <section class="panel" data-testid="playlist-panel" aria-labelledby="playlist-heading">
-        <h2 id="playlist-heading">Playlist</h2>
-        <div class="drop-zone" data-testid="drop-zone">
-          <span>Drop .mid files or an .m3u playlist here, or</span>
-          <button type="button" class="compact" data-testid="add-files-button" aria-label="Add files" title="Add files">+</button>
-          <button type="button" data-testid="load-files-button">Load files</button>
-          <button type="button" data-testid="clear-playlist-button">Clear playlist</button>
-          <button type="button" data-testid="save-playlist-button" disabled>Save playlist</button>
-          <button type="button" data-testid="load-playlist-button">Load playlist</button>
-          <input type="file" multiple accept=".mid,.midi" hidden data-testid="file-input" />
-          <input type="file" multiple accept=".mid,.midi" hidden data-testid="load-file-input" />
-          <input type="file" multiple accept=".m3u,.m3u8,.mid,.midi" hidden data-testid="playlist-file-input" />
-        </div>
-        <p class="hint" data-testid="playlist-file-hint">
-          Save playlist writes the order and file names as an .m3u8. Loading uses files already
-          in your playlist; to add new ones, select the playlist with its .mid files together.
-        </p>
-        <p data-testid="playlist-empty">No songs yet.</p>
-        <ol class="playlist" aria-label="Playlist" data-testid="playlist"></ol>
       </section>
     </div>
   `;
@@ -213,15 +386,27 @@ export function createUi(root: HTMLElement): void {
   const volumeSlider = root.querySelector<HTMLInputElement>('[data-testid="volume-slider"]')!;
   const volumeText = root.querySelector<HTMLElement>('[data-testid="volume-text"]')!;
   const meter = root.querySelector<HTMLElement>('[data-testid="meter"]')!;
-  const meterLeft = root.querySelector<HTMLElement>('[data-testid="meter-left"]')!;
-  const meterRight = root.querySelector<HTMLElement>('[data-testid="meter-right"]')!;
-  const clipIndicator = root.querySelector<HTMLElement>('[data-testid="clip-indicator"]')!;
+  const levelLeds = {
+    left: [...root.querySelectorAll<HTMLElement>('[data-testid="meter-left"] .led[data-level]')],
+    right: [...root.querySelectorAll<HTMLElement>('[data-testid="meter-right"] .led[data-level]')],
+  };
+  const clipLeds = [...root.querySelectorAll<HTMLElement>('.led-clip')];
+  const knob = root.querySelector<HTMLElement>('[data-testid="volume-knob"]')!;
+  const muteLed = root.querySelector<HTMLElement>('[data-testid="mute-led"]')!;
+  const lcdState = root.querySelector<HTMLElement>('[data-testid="lcd-state"]')!;
+  const songNumber = root.querySelector<HTMLElement>('[data-testid="song-number"]')!;
+  const playKey = root.querySelector<HTMLElement>('[data-testid="play-key"]')!;
+  const playLed = root.querySelector<HTMLElement>('[data-testid="play-led"]')!;
+  const playGlyph = root.querySelector<HTMLElement>('[data-testid="play-glyph"]')!;
+  const playCaption = root.querySelector<HTMLElement>('[data-testid="play-caption"]')!;
+  const partCells = [...root.querySelectorAll<HTMLElement>('[data-testid="part-cell"]')];
   const latencyReadout = root.querySelector<HTMLElement>('[data-testid="latency-readout"]')!;
   const feedbackWarning = root.querySelector<HTMLElement>('[data-testid="feedback-warning"]')!;
   const instrumentsCaption = root.querySelector<HTMLElement>('[data-testid="instruments-caption"]')!;
   const instrumentsEmpty = root.querySelector<HTMLElement>('[data-testid="instruments-empty"]')!;
   const instrumentList = root.querySelector<HTMLUListElement>('[data-testid="instrument-list"]')!;
-  const playlistPanel = root.querySelector<HTMLElement>('[data-testid="playlist-panel"]')!;
+  const expansionUnit = root.querySelector<HTMLElement>('[data-testid="expansion-unit"]')!;
+  const songCount = root.querySelector<HTMLElement>('[data-testid="song-count"]')!;
   const dropZone = root.querySelector<HTMLElement>('[data-testid="drop-zone"]')!;
   const addFilesButton = root.querySelector<HTMLButtonElement>('[data-testid="add-files-button"]')!;
   const loadFilesButton = root.querySelector<HTMLButtonElement>('[data-testid="load-files-button"]')!;
@@ -261,7 +446,7 @@ export function createUi(root: HTMLElement): void {
     },
     onSelectedOutputLost: () => {
       player.outputLost();
-      setStatus('MIDI output disconnected — playback stopped.');
+      setStatus('MIDI output disconnected - playback stopped.');
     },
   });
 
@@ -276,12 +461,27 @@ export function createUi(root: HTMLElement): void {
   });
 
   const STATE_TEXT = { stopped: 'Nothing playing.', playing: 'Playing', paused: 'Paused' };
+  const STATE_LCD = { stopped: 'STOP', playing: 'PLAY', paused: 'PAUSE' };
 
   function renderTransport(): void {
     const state = player.state;
-    playButton.textContent = state === 'playing' ? '⏸ Pause' : '▶ Play';
+    const playing = state === 'playing';
+    playButton.setAttribute('aria-label', playing ? '⏸ Pause' : '▶ Play');
+    playCaption.textContent = playing ? 'Pause' : 'Play';
+    const glyph = icon(playing ? 'pause' : 'play');
+    if (playGlyph.innerHTML !== glyph) playGlyph.innerHTML = glyph;
+    playKey.dataset.state = state;
+    playLed.dataset.state = state;
     playbackState.dataset.state = state;
     playbackState.textContent = STATE_TEXT[state];
+    lcdState.dataset.state = state;
+    lcdState.textContent = STATE_LCD[state];
+    const { entries, currentId } = player.playlist;
+    const index = entries.findIndex((entry) => entry.id === currentId);
+    songNumber.textContent =
+      index < 0
+        ? '--'
+        : `${String(index + 1).padStart(2, '0')}/${String(entries.length).padStart(2, '0')}`;
     currentTitle.textContent = player.currentEntry()?.name ?? 'No song selected.';
     updateProgress();
   }
@@ -309,15 +509,16 @@ export function createUi(root: HTMLElement): void {
     detail.className = 'instrument-detail';
     detail.textContent = item.programs
       .map((program) => describeProgram(item.channel, program))
-      .join(' → ');
+      .join(' > ');
     li.append(channel, detail);
     return li;
   }
 
   /**
-   * The instruments of the song currently playing. Deliberately not driven by
-   * transport progress: it changes only when the playing song changes, so the
-   * card never becomes a playback visualization.
+   * The instruments of the song currently playing, plus the part strip that
+   * marks its channels. Deliberately not driven by transport progress: both
+   * change only when the playing song changes, so the LCD never becomes a
+   * playback visualization.
    */
   function renderInstruments(): void {
     const state = player.instrumentsState();
@@ -347,6 +548,17 @@ export function createUi(root: HTMLElement): void {
       current.length === rows.length &&
       rows.every((row, index) => current[index]?.textContent === row.textContent);
     if (!unchanged) instrumentList.replaceChildren(...rows);
+
+    // The part strip is the static 1-16 view of the same data: lit cells are
+    // the channels this song uses, and every cell clears when the song stops.
+    const used = new Set(channels.map((item) => item.channel + 1));
+    for (const cell of partCells) {
+      const channel = Number(cell.dataset.channel);
+      const on = used.has(channel);
+      if (cell.dataset.used !== String(on)) cell.dataset.used = String(on);
+      const label = on ? `Channel ${channel}, used by this song` : `Channel ${channel}`;
+      if (cell.getAttribute('aria-label') !== label) cell.setAttribute('aria-label', label);
+    }
   }
 
   function currentDuration(): number {
@@ -500,16 +712,16 @@ export function createUi(root: HTMLElement): void {
     li.dataset.id = id;
     li.draggable = true;
     li.innerHTML = `
-      <span class="drag-handle" aria-hidden="true" title="Drag to reorder">⠿</span>
+      <span class="drag-handle" aria-hidden="true" title="Drag to reorder"></span>
       <span class="entry-number" data-testid="entry-number" aria-hidden="true"></span>
       <span class="entry-name" data-testid="entry-name"></span>
       <span class="entry-duration" data-testid="entry-duration"></span>
       <span class="entry-status" data-testid="entry-status"></span>
       <span class="entry-buttons">
-        <button type="button" data-action="play">▶</button>
-        <button type="button" data-action="up">↑</button>
-        <button type="button" data-action="down">↓</button>
-        <button type="button" data-action="remove">✕</button>
+        <button type="button" class="row-key" data-action="play">${icon('play')}</button>
+        <button type="button" class="row-key" data-action="up">${icon('up')}</button>
+        <button type="button" class="row-key" data-action="down">${icon('down')}</button>
+        <button type="button" class="row-key" data-action="remove">${icon('remove')}</button>
       </span>`;
     return li;
   }
@@ -528,7 +740,14 @@ export function createUi(root: HTMLElement): void {
     // reload all renumber consistently.
     set('entry-number', String(index + 1));
     set('entry-name', entry.name);
-    set('entry-duration', entry.durationSec === undefined ? (entry.status === 'error' ? '—' : '…') : formatTime(entry.durationSec));
+    set(
+      'entry-duration',
+      entry.durationSec === undefined
+        ? entry.status === 'error'
+          ? '-'
+          : '…'
+        : formatTime(entry.durationSec),
+    );
     set('entry-status', entry.status === 'error' ? `Error: ${entry.error ?? 'unreadable'}` : 'Ready');
     li.dataset.status = entry.status;
     li.classList.toggle('current', isCurrent);
@@ -549,6 +768,8 @@ export function createUi(root: HTMLElement): void {
     const { entries, currentId } = player.playlist;
     playlistEmpty.hidden = entries.length > 0;
     savePlaylistButton.disabled = entries.length === 0;
+    const count = `${entries.length} ${entries.length === 1 ? 'song' : 'songs'}`;
+    if (songCount.textContent !== count) songCount.textContent = count;
     const live = new Set(entries.map((e) => e.id));
     for (const [id, li] of rows) {
       if (!live.has(id)) {
@@ -662,20 +883,21 @@ export function createUi(root: HTMLElement): void {
     clearDropMarks();
   });
 
-  // File drops: on the playlist panel; stray drops elsewhere must not navigate away.
+  // File drops: anywhere on the expansion unit; stray drops elsewhere must not
+  // navigate away.
   const hasFiles = (event: DragEvent): boolean =>
     Array.from(event.dataTransfer?.types ?? []).includes('Files');
-  playlistPanel.addEventListener('dragover', (event) => {
+  expansionUnit.addEventListener('dragover', (event) => {
     if (!hasFiles(event)) return;
     event.preventDefault();
     dropZone.classList.add('drag-over');
   });
-  playlistPanel.addEventListener('dragleave', (event) => {
-    if (!playlistPanel.contains(event.relatedTarget as Node | null)) {
+  expansionUnit.addEventListener('dragleave', (event) => {
+    if (!expansionUnit.contains(event.relatedTarget as Node | null)) {
       dropZone.classList.remove('drag-over');
     }
   });
-  playlistPanel.addEventListener('drop', (event) => {
+  expansionUnit.addEventListener('drop', (event) => {
     if (!hasFiles(event)) return;
     event.preventDefault();
     dropZone.classList.remove('drag-over');
@@ -692,7 +914,7 @@ export function createUi(root: HTMLElement): void {
     if (files.length === 0) return;
     const { added, rejected } = player.load(files);
     const parts: string[] = [];
-    if (added > 0) parts.push(`Loaded ${added} file${added === 1 ? '' : 's'} — playlist replaced.`);
+    if (added > 0) parts.push(`Loaded ${added} file${added === 1 ? '' : 's'} - playlist replaced.`);
     if (rejected.length > 0) {
       parts.push(
         `Rejected ${rejected.length} file${rejected.length === 1 ? '' : 's'} (not .mid or .midi): ${rejected.join(', ')}`,
@@ -805,7 +1027,7 @@ export function createUi(root: HTMLElement): void {
     const total = parsed.tracks.length;
     parts.push(
       `Loaded ${matched.files.length} of ${total} ${total === 1 ? 'entry' : 'entries'} ` +
-        `from ${playlistFile.name} — playlist replaced.`,
+        `from ${playlistFile.name} - playlist replaced.`,
     );
     if (matched.fromPlaylist > 0) {
       parts.push(
@@ -946,7 +1168,7 @@ export function createUi(root: HTMLElement): void {
     const shared = monitor.sharesDevice();
     feedbackWarning.hidden = !shared;
     if (shared && !warningShown) {
-      setStatus('Warning: the monitoring input and output are the same device — feedback is possible.');
+      setStatus('Warning: the monitoring input and output are the same device - feedback is possible.');
     }
     warningShown = shared;
   }
@@ -955,20 +1177,33 @@ export function createUi(root: HTMLElement): void {
   function renderMonitorControls(): void {
     const muted = monitor.muted;
     muteButton.setAttribute('aria-pressed', String(muted));
-    muteButton.textContent = muted ? '🔇 Muted' : '🔊 Monitoring';
+    // The key caption stays "Mute"; the old visible label is kept as the
+    // accessible name so the control's name does not change in the reskin.
+    muteButton.setAttribute('aria-label', muted ? '🔇 Muted' : '🔊 Monitoring');
+    muteLed.dataset.lit = String(muted);
     const percent = Math.round(monitor.volume * 100);
     volumeSlider.value = String(percent);
     volumeText.textContent = `${percent}%`;
+    // The knob is pure CSS: its rotation follows the range input's value.
+    knob.style.setProperty('--turn', String(percent / 100));
   }
 
-  const meterPercent = (db: number): string =>
-    `${Math.max(0, Math.min(100, ((db - -60) / 60) * 100))}%`;
+  /** Lights the bottom `lit` segments of one ladder; 1 is the bottom segment. */
+  function renderLadder(leds: HTMLElement[], db: number): void {
+    const fraction = Math.max(0, Math.min(1, (db - -60) / 60));
+    const lit = Math.round(fraction * LADDER_SEGMENTS);
+    for (const led of leds) {
+      const on = String(Number(led.dataset.level) <= lit);
+      if (led.dataset.lit !== on) led.dataset.lit = on;
+    }
+  }
+
   const formatDb = (db: number): string => (db <= DB_FLOOR ? '−∞' : db.toFixed(1).replace('-', '−'));
   let clipUntil = 0;
   let meterDescribedAt = -Infinity;
 
   /**
-   * The bars are the visual meter; the level is exposed through the meter's
+   * The ladders are the visual meter; the level is exposed through the meter's
    * `aria-valuetext` (T8 removed the visible numeric readout). Throttled to
    * ~10 Hz so a screen reader is not flooded by animation frames.
    */
@@ -983,14 +1218,17 @@ export function createUi(root: HTMLElement): void {
     }
   }
 
-  /** Meter and latency readout, driven by requestAnimationFrame. */
+  /** Meter, clip LED and latency readout, driven by requestAnimationFrame. */
   function meterFrame(now: number): void {
     const { left, right } = monitor.peaks();
-    meterLeft.style.width = meterPercent(left);
-    meterRight.style.width = meterPercent(right);
+    renderLadder(levelLeds.left, left);
+    renderLadder(levelLeds.right, right);
     describeMeter(now, left, right);
     if (Math.max(left, right) > CLIP_THRESHOLD_DB) clipUntil = now + 1000;
-    clipIndicator.hidden = now > clipUntil;
+    const clipping = now <= clipUntil;
+    for (const led of clipLeds) {
+      if (led.hidden !== !clipping) led.hidden = !clipping;
+    }
     const latency = monitor.latencyMs();
     const latencyText =
       latency === null
@@ -1055,8 +1293,8 @@ export function createUi(root: HTMLElement): void {
         const count = midi.listOutputs().length;
         parts.push(
           count > 0
-            ? `Connected — ${count} MIDI output${count === 1 ? '' : 's'} found.`
-            : 'Connected — no MIDI outputs found yet.',
+            ? `Connected - ${count} MIDI output${count === 1 ? '' : 's'} found.`
+            : 'Connected - no MIDI outputs found yet.',
         );
       } else {
         parts.push('MIDI access denied or cancelled.');
@@ -1076,7 +1314,7 @@ export function createUi(root: HTMLElement): void {
         retryButton.textContent = 'Retry';
       }
     } catch {
-      setStatus('Connecting devices failed — click "Connect devices" to retry.');
+      setStatus('Connecting devices failed - click "Connect devices" to retry.');
       retryButton.hidden = false;
       retryButton.textContent = 'Retry';
     } finally {

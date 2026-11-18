@@ -112,7 +112,7 @@ test.describe('T1 — scaffold and device access', () => {
     await expect(page.getByTestId('firefox-onboarding')).toBeVisible();
   });
 
-  test('shows the getting-started steps between the title and Connect devices', async ({ page }) => {
+  test('prints the getting-started steps below the front unit', async ({ page }) => {
     await mockDevices(page, { outputs: [JUNO] });
     await page.goto('/');
 
@@ -121,16 +121,22 @@ test.describe('T1 — scaffold and device access', () => {
     await expect(howTo.locator('li')).toHaveCount(6);
     await expect(howTo).toContainText('Allow MIDI and microphone access');
 
-    const [titleBox, howToBox, buttonBox] = await Promise.all([
+    const [titleBox, unitBox, howToBox, connectBox, expansionBox] = await Promise.all([
       page.getByRole('heading', { level: 1 }).boundingBox(),
+      page.getByTestId('header').boundingBox(),
       howTo.boundingBox(),
       page.getByTestId('connect-button').boundingBox(),
+      page.getByTestId('expansion-unit').boundingBox(),
     ]);
-    expect(howToBox!.y).toBeGreaterThan(titleBox!.y);
-    expect(buttonBox!.y).toBeGreaterThan(howToBox!.y);
+    // Brand and Connect devices live in the front unit; the printed Quick start
+    // label sits between the two units (T11).
+    expect(titleBox!.y).toBeGreaterThan(unitBox!.y);
+    expect(connectBox!.y + connectBox!.height).toBeLessThanOrEqual(unitBox!.y + unitBox!.height);
+    expect(howToBox!.y).toBeGreaterThan(unitBox!.y + unitBox!.height);
+    expect(expansionBox!.y).toBeGreaterThan(howToBox!.y + howToBox!.height);
   });
 
-  test('layout fits a 360 px viewport with the panels stacked', async ({ page }) => {
+  test('layout fits a 360 px viewport with the units and their internals stacked', async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 800 });
     await mockDevices(page, { outputs: [JUNO] });
     await page.goto('/');
@@ -138,31 +144,53 @@ test.describe('T1 — scaffold and device access', () => {
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(360);
 
-    const testIds = ['monitor-panel', 'instruments-panel', 'playback-panel', 'playlist-panel'];
-    const boxes = await Promise.all(
-      testIds.map((id) => page.getByTestId(id).boundingBox()),
-    );
-    expect(boxes[0]!.x).toBe(boxes[1]!.x);
-    expect(boxes[1]!.x).toBe(boxes[2]!.x);
-    expect(boxes[2]!.x).toBe(boxes[3]!.x);
+    const ids = ['monitor-panel', 'playback-panel', 'keypad', 'playlist-panel', 'instruments-panel'];
+    const boxes = await Promise.all(ids.map((id) => page.getByTestId(id).boundingBox()));
+    for (const box of boxes) expect(box!.x).toBe(boxes[0]!.x);
+    // Inside unit 1: monitor strip, LCD, keypad, one after another.
     expect(boxes[1]!.y).toBeGreaterThan(boxes[0]!.y + boxes[0]!.height / 2);
     expect(boxes[2]!.y).toBeGreaterThan(boxes[1]!.y + boxes[1]!.height / 2);
-    expect(boxes[3]!.y).toBeGreaterThan(boxes[2]!.y + boxes[2]!.height / 2);
+    // Unit 2 stacks the song list above the part map.
+    expect(boxes[3]!.y).toBeGreaterThan(boxes[2]!.y);
+    expect(boxes[4]!.y).toBeGreaterThan(boxes[3]!.y + boxes[3]!.height / 2);
   });
 
-  test('is keyboard accessible', async ({ page }) => {
+  test('is keyboard accessible and follows the documented tab order', async ({ page }) => {
     await mockDevices(page, { outputs: [JUNO] });
     await page.goto('/');
 
+    // Unit 1 tab order: volume, mute, LCD seek (skipped while stopped), output,
+    // transport, connect. The knob's range input is the first stop.
     await page.keyboard.press('Tab');
-    await expect(page.getByTestId('connect-button')).toBeFocused();
+    await expect(page.getByTestId('volume-slider')).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(page.getByTestId('mute-button')).toBeFocused();
 
+    // Connect so the MIDI output picker is enabled, then walk backwards from
+    // the last key of unit 1.
+    await page.getByTestId('connect-button').click();
+    await expect(page.getByTestId('status-region')).toContainText('Connected');
+    await page.getByTestId('connect-button').focus();
+
+    const backwards = [
+      'panic-button',
+      'stop-button',
+      'next-button',
+      'play-button',
+      'previous-button',
+      'output-picker',
+    ];
+    for (const id of backwards) {
+      await page.keyboard.press('Shift+Tab');
+      await expect(page.getByTestId(id)).toBeFocused();
+    }
+    await page.keyboard.press('Shift+Tab');
+    await expect(page.getByTestId('mute-button')).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(page.getByTestId('volume-slider')).toBeFocused();
+
+    await page.getByTestId('connect-button').focus();
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('status-region')).toContainText('Connected');
-
-    // DOM order is header, monitor, instruments, playback, playlist, so the
-    // monitor's input picker is the next stop after the header.
-    await page.keyboard.press('Tab');
-    await expect(page.getByTestId('audio-input-picker')).toBeFocused();
   });
 });

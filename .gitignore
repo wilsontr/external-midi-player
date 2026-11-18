@@ -4,3 +4,5 @@ test-results/
 playwright-report/
 coverage/
 .pi/
+tmp
+.DS_Store

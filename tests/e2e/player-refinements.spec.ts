@@ -226,37 +226,50 @@ test.describe('T8 — playlist controls, numbering and persistence', () => {
   });
 });
 
-test.describe('T8 — layout and meter', () => {
-  test('two columns at ≥ 960 px: header + monitor left, playback + playlist right', async ({
-    page,
-  }) => {
+test.describe('T11 — rack layout', () => {
+  test('units span the rack at ≥ 960 px with their strips side by side', async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 900 });
     await setup(page);
 
-    const [header, playback, monitor, instruments, playlist] = await Promise.all(
-      ['header', 'playback-panel', 'monitor-panel', 'instruments-panel', 'playlist-panel'].map(
+    const [front, monitor, lcd, keypad, quickstart, expansion] = await Promise.all(
+      ['header', 'monitor-panel', 'playback-panel', 'keypad', 'quickstart', 'expansion-unit'].map(
         (id) => page.getByTestId(id).boundingBox(),
       ),
     );
-    const gapAfter = (first: NonNullable<typeof header>, next: NonNullable<typeof header>) =>
-      next.y - (first.y + first.height);
 
-    // Left column: header, monitor, instruments, all the same width and stacked
-    // tightly. Right column: playlist directly under playback.
-    expect(monitor!.x).toBe(header!.x);
-    expect(instruments!.x).toBe(header!.x);
-    expect(playlist!.x).toBe(playback!.x);
-    expect(playback!.x).toBeGreaterThan(header!.x + header!.width / 2);
-    expect(playback!.y).toBe(header!.y);
-    expect(gapAfter(header!, monitor!)).toBeLessThanOrEqual(20);
-    expect(gapAfter(monitor!, instruments!)).toBeLessThanOrEqual(20);
-    expect(gapAfter(playback!, playlist!)).toBeLessThanOrEqual(20);
-    expect(gapAfter(header!, monitor!)).toBeGreaterThan(0);
-    expect(gapAfter(monitor!, instruments!)).toBeGreaterThan(0);
-    expect(gapAfter(playback!, playlist!)).toBeGreaterThan(0);
+    // Unit 1 above the printed Quick start label, unit 2 below it; both units
+    // span the rack at the same left edge and width.
+    expect(quickstart!.y).toBeGreaterThan(front!.y + front!.height);
+    expect(expansion!.y).toBeGreaterThan(quickstart!.y + quickstart!.height);
+    expect(Math.abs(expansion!.x - front!.x)).toBeLessThan(1);
+    expect(Math.abs(expansion!.width - front!.width)).toBeLessThan(1);
+
+    // Inside unit 1: monitor strip | LCD | keypad, side by side.
+    expect(monitor!.y).toBe(lcd!.y);
+    expect(monitor!.x + monitor!.width).toBeLessThanOrEqual(lcd!.x);
+    expect(lcd!.x + lcd!.width).toBeLessThanOrEqual(keypad!.x);
+    expect(keypad!.y).toBeGreaterThan(lcd!.y);
+    expect(keypad!.width).toBeGreaterThan(200);
 
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(1024);
+  });
+
+  test('expansion unit: song list beside the part map and audio routing', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await setup(page);
+    await dropFiles(page, [song('a.mid', 3), song('b.mid', 4)]);
+
+    const [songs, partMap, routing] = await Promise.all(
+      ['playlist-panel', 'instruments-panel', 'routing-panel'].map((id) =>
+        page.getByTestId(id).boundingBox(),
+      ),
+    );
+
+    // Song list on the left (≈ 60%), part map + routing stacked on the right.
+    expect(songs!.x + songs!.width).toBeLessThan(partMap!.x);
+    expect(Math.abs(routing!.x - partMap!.x)).toBeLessThan(1);
+    expect(routing!.y).toBeGreaterThan(partMap!.y + partMap!.height / 2);
   });
 
   test('a populated playlist fits a 360 px viewport without horizontal overflow', async ({
@@ -279,25 +292,24 @@ test.describe('T8 — layout and meter', () => {
     await page.setViewportSize({ width: 900, height: 900 });
     await setup(page);
 
-    const [monitor, instruments, playback, playlist] = await Promise.all(
-      ['monitor-panel', 'instruments-panel', 'playback-panel', 'playlist-panel'].map((id) =>
-        page.getByTestId(id).boundingBox(),
+    const [monitor, lcd, keypad, songs, partMap] = await Promise.all(
+      ['monitor-panel', 'playback-panel', 'keypad', 'playlist-panel', 'instruments-panel'].map(
+        (id) => page.getByTestId(id).boundingBox(),
       ),
     );
-    expect(instruments!.x).toBe(monitor!.x);
-    expect(playback!.x).toBe(monitor!.x);
-    expect(playlist!.x).toBe(monitor!.x);
-    expect(instruments!.y).toBeGreaterThan(monitor!.y + monitor!.height / 2);
-    expect(playback!.y).toBeGreaterThan(instruments!.y + instruments!.height / 2);
-    expect(playlist!.y).toBeGreaterThan(playback!.y + playback!.height / 2);
+    for (const box of [lcd, keypad, songs, partMap]) expect(box!.x).toBe(monitor!.x);
+    expect(lcd!.y).toBeGreaterThan(monitor!.y + monitor!.height / 2);
+    expect(keypad!.y).toBeGreaterThan(lcd!.y + lcd!.height / 2);
+    expect(songs!.y).toBeGreaterThan(keypad!.y);
+    expect(partMap!.y).toBeGreaterThan(songs!.y + songs!.height / 2);
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(900);
 
-    // Keyboard access is not lost in the narrow layout: from a fresh document
-    // the first Tab stop is still the header's Connect devices button.
+    // Keyboard access is not lost in the narrow layout: the knob's range input
+    // is still the first Tab stop.
     await page.reload();
     await page.keyboard.press('Tab');
-    await expect(page.getByTestId('connect-button')).toBeFocused();
+    await expect(page.getByTestId('volume-slider')).toBeFocused();
   });
 });
 

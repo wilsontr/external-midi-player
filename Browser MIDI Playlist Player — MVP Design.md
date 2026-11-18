@@ -184,16 +184,26 @@ Expected round trip from input jack to speakers is roughly 10–40 ms on Chrome,
 
 ## UI layout
 
-One responsive screen, keyboard-accessible, at least 360 px wide. Panels stack in one column below 960 px in the order header, audio monitor, instruments, playback, playlist. At 960 px and wider there are two independent column stacks with 16 px gaps: header, audio monitor and instruments on the left; playback and playlist on the right. Each column flows on its own, so the playlist sits directly under Playback and the Instruments card directly under the monitor (T8, T9). The DOM order matches the stacking order, so tab order follows the narrow layout and, at the wide breakpoint, walks the left column and then the right.
+One responsive screen styled as a 90s **half-rack tone module** (T11). Charcoal chassis, amber dot-matrix LCDs, grey rubber keys with LEDs and Helvetica Neue silkscreen labels; the whole faceplate theme is a block of `:root` tokens in `styles.css`, with no image assets. Every control keeps its behaviour, test ID and accessible name. The layout is at least 360 px wide.
 
-1. **Header:** app name, a short getting-started list (connect hardware → "Connect devices" → allow MIDI + microphone → choose MIDI output, audio input and output → load files), browser-support warning when needed, and a "Connect devices" button that triggers the MIDI and microphone permission prompts.
-2. **Playback panel:** MIDI output picker; transport buttons (previous, play/pause, stop, next); Panic; seekable timeline with elapsed and total time; the current song title.
-3. **Audio monitor panel:** input picker, output picker (or "System default"), mute toggle (on by default on a fresh profile), volume slider, stereo level meter (bars plus CLIP; the level is exposed through the meter's accessible description rather than a visible numeric readout), and the latency readout.
-4. **Playlist panel:** drop zone with a compact "+" (Add files) button, Load files and Clear playlist; numbered, clickable rows with name, duration, status and a remove button; drag handles to reorder.
+At 960 px and wider, the two rack units span the full app width, stacked unit 1 above unit 2, with a printed **Quick start** label between them. Inside unit 1 the strips run **monitor | LCD | keypad**; inside unit 2 the **song list** (≈ 60%) sits beside the **part map and audio routing** (≈ 40%). Below 960 px each unit's internals stack in DOM order. The DOM order is unit 1, quick start, unit 2, and tab order follows it.
 
-A read-only **Instruments card** (post-MVP, T9) sits at the bottom of the left column, below the audio monitor. It lists the currently playing file's MIDI channels with the General MIDI instrument each program change selects (channel 10 shown as drums), including a channel's program history and any bank select; it is empty until a song plays. It is purely informational: no sounding-channel feedback, highlighting or progress.
+1. **Unit 1 — front panel.**
+   - *Monitor strip:* the volume control as a rotary knob drawn over the existing range input (the input stays focusable, labelled and keyboard-operable), a latching **Mute** rubber key with a red LED, and the stereo input level as two vertical 12-segment LED ladders (green with the top three amber, plus a red clip LED in place of the old CLIP text). The level is exposed through the meter's accessible description rather than a visible numeric readout.
+   - *Main amber LCD:* song number, title, state (`PLAY` / `PAUSE` / `STOP`), elapsed time and length, the segmented seek bar, a static 16-part strip that marks the channels the playing song uses (from the same data as the part map, cleared on stop) and, on its bottom line, the single `aria-live` status region.
+   - *Keypad strip:* MIDI output picker as an LCD-styled select; previous, play/pause, next, stop and red-orange Panic rubber keys with silkscreen captions and a green/amber LED on Play; "Connect devices" / "Retry" keys that trigger the MIDI and microphone permission prompts.
+   - The app name is the unit's silkscreen brand line.
+2. **Quick start (printed label below unit 1):** a short getting-started list (connect hardware → "Connect devices" → allow MIDI + microphone → choose MIDI output, audio input and output → load files), the unsupported-browser and Firefox onboarding notices, and the visible LCD-font credit line.
+3. **Unit 2 — expansion unit.**
+   - *Song list LCD:* playlist keys (`+` Add files, Load files, Clear playlist, Save playlist, Load playlist), a dashed "Drop .mid files on this unit" strip (dropping anywhere on unit 2 works), and numbered rows with name, duration right-aligned, status and row keys. The current song is an inverted row; rejected files are dimmed and struck through. Drag and move-button reordering, remove and select all keep their accessible names.
+   - *Part map LCD:* the currently playing file's MIDI channels with the General MIDI instrument each program change selects (channel 10 shown as drums), including program history and any bank select; empty until a song plays, with no per-note activity.
+   - *Audio routing:* input and output pickers and the latency readout, with the feedback warning, output-grant button and unsupported notes as amber-LED notices.
 
-Keyboard shortcuts: Space = play/pause, Esc = Panic, ←/→ = previous/next. Status messages (device lost, file rejected) appear in a single `aria-live` region.
+Power and play state are shown by an LED plus `aria-pressed` or text, never colour alone; focus is a 2 px `--focus` ring, with a dashed LCD-ink outline on a focused song-list row. LCD ink meets 4.5:1 on the LCD background and the unlit-pixel grid is at or below 12 % opacity. Disabled keys are flat and unlit. Under `prefers-reduced-motion` nothing blinks or moves, though the meters still update.
+
+The LCD readouts use the self-hosted **Graph 35+ pix** font (CC BY-SA 3.0, credited in the Quick start label) at multiples of 8 px, with smoothing off and no synthetic bold; every other label uses the `"Helvetica Neue", Helvetica, Arial, sans-serif` stack.
+
+Keyboard shortcuts: Space = play/pause, Esc = Panic, ←/→ = previous/next. Status messages (device lost, file rejected) appear in the single `aria-live` region on the playback LCD.
 
 ## Risks and mitigations
 
@@ -254,6 +264,7 @@ The MVP is about 4.5 developer-days for one experienced front-end developer, bui
 - Player and playlist refinements (T8): seek with program/controller restoration, compact add/load/clear, row numbering, responsive two-column layout, startup mute policy and panic before track changes (3–4 days).
 - Channel and instrument card (T9): read-only list of the currently playing file's channels and their General MIDI instruments, with no playback feedback (1 day).
 - Save and load the playlist as an M3U/M3U8 file (T10): export the current order and names, and rebuild the playlist from a playlist file plus the MIDI files it references; the browser cannot read original paths, so the bytes still come from the user's selection (0.5–1 day).
+- Half-rack faceplate skin (T11): restyle the player as a 90s half-rack tone module with amber dot-matrix LCDs, rubber keys with LEDs and Helvetica Neue panel labels, grouping the panels into a front-panel unit (monitor, transport, status) and an expansion unit (song list, part map, audio routing); presentation only (2–3 days).
 - Upgrade playlist persistence from `localStorage` to IndexedDB for very large playlists (0.5 day).
 - Tempo change, A–B looping, per-channel mute and remapping (2–4 days).
 - Record the monitored input to WAV (1 day).
