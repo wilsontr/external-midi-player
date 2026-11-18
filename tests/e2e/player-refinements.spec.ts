@@ -233,18 +233,27 @@ test.describe('T8 — layout and meter', () => {
     await page.setViewportSize({ width: 1024, height: 900 });
     await setup(page);
 
-    const [header, playback, monitor, playlist] = await Promise.all(
-      ['header', 'playback-panel', 'monitor-panel', 'playlist-panel'].map((id) =>
-        page.getByTestId(id).boundingBox(),
+    const [header, playback, monitor, instruments, playlist] = await Promise.all(
+      ['header', 'playback-panel', 'monitor-panel', 'instruments-panel', 'playlist-panel'].map(
+        (id) => page.getByTestId(id).boundingBox(),
       ),
     );
-    // Left column: header above monitor. Right column: playback above playlist.
+    const gapAfter = (first: NonNullable<typeof header>, next: NonNullable<typeof header>) =>
+      next.y - (first.y + first.height);
+
+    // Left column: header, monitor, instruments, all the same width and stacked
+    // tightly. Right column: playlist directly under playback.
     expect(monitor!.x).toBe(header!.x);
+    expect(instruments!.x).toBe(header!.x);
     expect(playlist!.x).toBe(playback!.x);
     expect(playback!.x).toBeGreaterThan(header!.x + header!.width / 2);
     expect(playback!.y).toBe(header!.y);
-    expect(playlist!.y).toBe(monitor!.y);
-    expect(monitor!.y).toBeGreaterThan(header!.y + header!.height / 2);
+    expect(gapAfter(header!, monitor!)).toBeLessThanOrEqual(20);
+    expect(gapAfter(monitor!, instruments!)).toBeLessThanOrEqual(20);
+    expect(gapAfter(playback!, playlist!)).toBeLessThanOrEqual(20);
+    expect(gapAfter(header!, monitor!)).toBeGreaterThan(0);
+    expect(gapAfter(monitor!, instruments!)).toBeGreaterThan(0);
+    expect(gapAfter(playback!, playlist!)).toBeGreaterThan(0);
 
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(1024);
@@ -270,15 +279,17 @@ test.describe('T8 — layout and meter', () => {
     await page.setViewportSize({ width: 900, height: 900 });
     await setup(page);
 
-    const [playback, monitor, playlist] = await Promise.all(
-      ['playback-panel', 'monitor-panel', 'playlist-panel'].map((id) =>
+    const [monitor, instruments, playback, playlist] = await Promise.all(
+      ['monitor-panel', 'instruments-panel', 'playback-panel', 'playlist-panel'].map((id) =>
         page.getByTestId(id).boundingBox(),
       ),
     );
-    expect(monitor!.x).toBe(playback!.x);
-    expect(playlist!.x).toBe(playback!.x);
-    expect(monitor!.y).toBeGreaterThan(playback!.y + playback!.height / 2);
-    expect(playlist!.y).toBeGreaterThan(monitor!.y + monitor!.height / 2);
+    expect(instruments!.x).toBe(monitor!.x);
+    expect(playback!.x).toBe(monitor!.x);
+    expect(playlist!.x).toBe(monitor!.x);
+    expect(instruments!.y).toBeGreaterThan(monitor!.y + monitor!.height / 2);
+    expect(playback!.y).toBeGreaterThan(instruments!.y + instruments!.height / 2);
+    expect(playlist!.y).toBeGreaterThan(playback!.y + playback!.height / 2);
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(900);
 

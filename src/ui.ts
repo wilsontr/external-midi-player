@@ -1,8 +1,10 @@
 /**
  * Single-screen UI: header (app name, notices, Connect devices, status) plus
- * the playback / playlist / audio-monitor panels. All user-visible status is
- * written to the one aria-live region. The layout is a plain DOM build with
- * native controls, so it is keyboard-accessible by construction.
+ * the playback / playlist / audio-monitor / instruments panels. The panels
+ * are grouped into two column wrappers that dissolve into a single stack
+ * below the wide breakpoint. All user-visible status is written to the one
+ * aria-live region. The layout is a plain DOM build with native controls, so
+ * it is keyboard-accessible by construction.
  * See the design doc, "UI" and "MIDI output > Device access".
  */
 
@@ -29,137 +31,141 @@ const ENTRY_DRAG_TYPE = 'application/x-midi-entry';
  */
 export function createUi(root: HTMLElement): void {
   root.innerHTML = `
-    <header class="panel" data-testid="header" aria-label="App header">
-      <h1>External MIDI Player</h1>
-      <p class="how-to-intro">
-        MIDI player catered to playback on external MIDI synths. How to use:
-      </p>
-      <ol class="how-to" data-testid="how-to">
-        <li>Connect your hardware.</li>
-        <li>Click <strong>Connect devices</strong>.</li>
-        <li>Allow MIDI and microphone access when the browser asks.</li>
-        <li>Select your MIDI output.</li>
-        <li>Select your audio input and output.</li>
-        <li>Load your MIDI files and listen.</li>
-      </ol>
-      <p class="notice" data-testid="unsupported-notice" hidden>
-        This browser does not support Web MIDI. Use a current desktop version
-        of Chrome, Edge, or Firefox to connect MIDI devices.
-      </p>
-      <p class="notice" data-testid="firefox-onboarding" hidden>
-        Firefox may ask you to install a Web MIDI site permission before it
-        can list MIDI devices. That prompt is safe — it only lets this page
-        talk to your MIDI hardware. Click "Connect devices", then allow the
-        permission when asked.
-      </p>
-      <div class="actions">
-        <button type="button" data-testid="connect-button">Connect devices</button>
-        <button type="button" data-testid="retry-button" hidden>Retry</button>
-      </div>
-      <p class="status-region" role="status" aria-live="polite" data-testid="status-region"></p>
-    </header>
-    <section class="panel" data-testid="playback-panel" aria-labelledby="playback-heading">
-      <h2 id="playback-heading">Playback</h2>
-      <div class="row">
-        <label for="midi-output">MIDI output</label>
-        <select id="midi-output" data-testid="output-picker" disabled>
-          <option value="">Select an output…</option>
-        </select>
-      </div>
-      <p class="current-title" data-testid="current-title">No song selected.</p>
-      <div class="actions" role="group" aria-label="Transport">
-        <button type="button" data-testid="previous-button">⏮ Previous</button>
-        <button type="button" data-testid="play-button">▶ Play</button>
-        <button type="button" data-testid="stop-button">⏹ Stop</button>
-        <button type="button" data-testid="next-button">⏭ Next</button>
-        <button type="button" class="danger" data-testid="panic-button">Panic</button>
-      </div>
-      <div class="row progress-row">
-        <div
-          class="timeline disabled"
-          data-testid="timeline"
-          role="slider"
-          tabindex="-1"
-          aria-label="Playback position"
-          aria-valuemin="0"
-          aria-valuemax="0"
-          aria-valuenow="0"
-          aria-valuetext="0:00.0 of 0:00"
-          aria-disabled="true"
-        ><div class="timeline-fill" data-testid="timeline-fill"></div></div>
-        <span data-testid="time-display">0:00.0 / 0:00</span>
-      </div>
-      <p class="hint">Shortcuts: Space play/pause · Esc panic · ← previous · → next</p>
-      <p data-testid="playback-state" data-state="stopped">Nothing playing.</p>
-    </section>
-    <section class="panel" data-testid="monitor-panel" aria-labelledby="monitor-heading">
-      <h2 id="monitor-heading">Audio monitor</h2>
-      <p class="notice" data-testid="monitor-unavailable" hidden>
-        This browser cannot capture audio, so monitoring is unavailable.
-      </p>
-      <div class="row">
-        <label for="audio-input">Input</label>
-        <select id="audio-input" data-testid="audio-input-picker" disabled>
-          <option value="">Select an input…</option>
-        </select>
-      </div>
-      <div class="row" data-testid="audio-output-row">
-        <label for="audio-output">Output</label>
-        <select id="audio-output" data-testid="audio-output-picker" disabled>
-          <option value="">System default</option>
-        </select>
-        <button type="button" data-testid="grant-output-button" hidden>Choose output device…</button>
-      </div>
-      <p class="hint" data-testid="audio-output-note" hidden>
-        This browser cannot choose a monitoring output, so audio plays to the system default output.
-      </p>
-      <div class="row">
-        <button type="button" data-testid="mute-button" aria-pressed="true">🔇 Muted</button>
-        <label for="monitor-volume">Volume</label>
-        <input type="range" id="monitor-volume" min="0" max="100" value="100" data-testid="volume-slider" />
-        <span data-testid="volume-text">100%</span>
-      </div>
-      <div
-        class="meter"
-        data-testid="meter"
-        role="meter"
-        aria-label="Input level"
-        aria-valuemin="-100"
-        aria-valuemax="0"
-        aria-valuenow="-100"
-        aria-valuetext="Left −∞ dBFS, Right −∞ dBFS"
-      >
-        <div class="meter-bar"><div class="meter-fill" data-testid="meter-left"></div></div>
-        <div class="meter-bar"><div class="meter-fill" data-testid="meter-right"></div></div>
-        <p class="meter-footer">
-          <span class="clip" data-testid="clip-indicator" hidden>CLIP</span>
+    <div class="column column-side" data-testid="side-column">
+      <header class="panel" data-testid="header" aria-label="App header">
+        <h1>External MIDI Player</h1>
+        <p class="how-to-intro">
+          MIDI player catered to playback on external MIDI synths. How to use:
         </p>
-      </div>
-      <p data-testid="latency-readout">Browser latency: —</p>
-      <p class="notice" data-testid="feedback-warning" hidden>
-        The input and output are the same device. Unmute with care: a microphone near the
-        speakers can cause feedback.
-      </p>
-    </section>
-    <section class="panel" data-testid="instruments-panel" aria-labelledby="instruments-heading">
-      <h2 id="instruments-heading">Instruments</h2>
-      <p class="instruments-caption" data-testid="instruments-caption" hidden></p>
-      <p class="hint" data-testid="instruments-empty">Play a song to see its MIDI channels and instruments.</p>
-      <ul class="instrument-list" data-testid="instrument-list" hidden></ul>
-    </section>
-    <section class="panel" data-testid="playlist-panel" aria-labelledby="playlist-heading">
-      <h2 id="playlist-heading">Playlist</h2>
-      <div class="drop-zone" data-testid="drop-zone">
-        <span>Drop .mid files here, or</span>
-        <button type="button" class="compact" data-testid="add-files-button" aria-label="Add files" title="Add files">+</button>
-        <button type="button" data-testid="load-files-button">Load files</button>
-        <button type="button" data-testid="clear-playlist-button">Clear playlist</button>
-        <input type="file" multiple accept=".mid,.midi" hidden data-testid="file-input" />
-        <input type="file" multiple accept=".mid,.midi" hidden data-testid="load-file-input" />
-      </div>
-      <p data-testid="playlist-empty">No songs yet.</p>
-      <ol class="playlist" aria-label="Playlist" data-testid="playlist"></ol>
-    </section>
+        <ol class="how-to" data-testid="how-to">
+          <li>Connect your hardware.</li>
+          <li>Click <strong>Connect devices</strong>.</li>
+          <li>Allow MIDI and microphone access when the browser asks.</li>
+          <li>Select your MIDI output.</li>
+          <li>Select your audio input and output.</li>
+          <li>Load your MIDI files and listen.</li>
+        </ol>
+        <p class="notice" data-testid="unsupported-notice" hidden>
+          This browser does not support Web MIDI. Use a current desktop version
+          of Chrome, Edge, or Firefox to connect MIDI devices.
+        </p>
+        <p class="notice" data-testid="firefox-onboarding" hidden>
+          Firefox may ask you to install a Web MIDI site permission before it
+          can list MIDI devices. That prompt is safe — it only lets this page
+          talk to your MIDI hardware. Click "Connect devices", then allow the
+          permission when asked.
+        </p>
+        <div class="actions">
+          <button type="button" data-testid="connect-button">Connect devices</button>
+          <button type="button" data-testid="retry-button" hidden>Retry</button>
+        </div>
+        <p class="status-region" role="status" aria-live="polite" data-testid="status-region"></p>
+      </header>
+      <section class="panel" data-testid="monitor-panel" aria-labelledby="monitor-heading">
+        <h2 id="monitor-heading">Audio monitor</h2>
+        <p class="notice" data-testid="monitor-unavailable" hidden>
+          This browser cannot capture audio, so monitoring is unavailable.
+        </p>
+        <div class="row">
+          <label for="audio-input">Input</label>
+          <select id="audio-input" data-testid="audio-input-picker" disabled>
+            <option value="">Select an input…</option>
+          </select>
+        </div>
+        <div class="row" data-testid="audio-output-row">
+          <label for="audio-output">Output</label>
+          <select id="audio-output" data-testid="audio-output-picker" disabled>
+            <option value="">System default</option>
+          </select>
+          <button type="button" data-testid="grant-output-button" hidden>Choose output device…</button>
+        </div>
+        <p class="hint" data-testid="audio-output-note" hidden>
+          This browser cannot choose a monitoring output, so audio plays to the system default output.
+        </p>
+        <div class="row">
+          <button type="button" data-testid="mute-button" aria-pressed="true">🔇 Muted</button>
+          <label for="monitor-volume">Volume</label>
+          <input type="range" id="monitor-volume" min="0" max="100" value="100" data-testid="volume-slider" />
+          <span data-testid="volume-text">100%</span>
+        </div>
+        <div
+          class="meter"
+          data-testid="meter"
+          role="meter"
+          aria-label="Input level"
+          aria-valuemin="-100"
+          aria-valuemax="0"
+          aria-valuenow="-100"
+          aria-valuetext="Left −∞ dBFS, Right −∞ dBFS"
+        >
+          <div class="meter-bar"><div class="meter-fill" data-testid="meter-left"></div></div>
+          <div class="meter-bar"><div class="meter-fill" data-testid="meter-right"></div></div>
+          <p class="meter-footer">
+            <span class="clip" data-testid="clip-indicator" hidden>CLIP</span>
+          </p>
+        </div>
+        <p data-testid="latency-readout">Browser latency: —</p>
+        <p class="notice" data-testid="feedback-warning" hidden>
+          The input and output are the same device. Unmute with care: a microphone near the
+          speakers can cause feedback.
+        </p>
+      </section>
+      <section class="panel" data-testid="instruments-panel" aria-labelledby="instruments-heading">
+        <h2 id="instruments-heading">Instruments</h2>
+        <p class="instruments-caption" data-testid="instruments-caption" hidden></p>
+        <p class="hint" data-testid="instruments-empty">Play a song to see its MIDI channels and instruments.</p>
+        <ul class="instrument-list" data-testid="instrument-list" hidden></ul>
+      </section>
+    </div>
+    <div class="column column-main" data-testid="main-column">
+      <section class="panel" data-testid="playback-panel" aria-labelledby="playback-heading">
+        <h2 id="playback-heading">Playback</h2>
+        <div class="row">
+          <label for="midi-output">MIDI output</label>
+          <select id="midi-output" data-testid="output-picker" disabled>
+            <option value="">Select an output…</option>
+          </select>
+        </div>
+        <p class="current-title" data-testid="current-title">No song selected.</p>
+        <div class="actions" role="group" aria-label="Transport">
+          <button type="button" data-testid="previous-button">⏮ Previous</button>
+          <button type="button" data-testid="play-button">▶ Play</button>
+          <button type="button" data-testid="stop-button">⏹ Stop</button>
+          <button type="button" data-testid="next-button">⏭ Next</button>
+          <button type="button" class="danger" data-testid="panic-button">Panic</button>
+        </div>
+        <div class="row progress-row">
+          <div
+            class="timeline disabled"
+            data-testid="timeline"
+            role="slider"
+            tabindex="-1"
+            aria-label="Playback position"
+            aria-valuemin="0"
+            aria-valuemax="0"
+            aria-valuenow="0"
+            aria-valuetext="0:00.0 of 0:00"
+            aria-disabled="true"
+          ><div class="timeline-fill" data-testid="timeline-fill"></div></div>
+          <span data-testid="time-display">0:00.0 / 0:00</span>
+        </div>
+        <p class="hint">Shortcuts: Space play/pause · Esc panic · ← previous · → next</p>
+        <p data-testid="playback-state" data-state="stopped">Nothing playing.</p>
+      </section>
+      <section class="panel" data-testid="playlist-panel" aria-labelledby="playlist-heading">
+        <h2 id="playlist-heading">Playlist</h2>
+        <div class="drop-zone" data-testid="drop-zone">
+          <span>Drop .mid files here, or</span>
+          <button type="button" class="compact" data-testid="add-files-button" aria-label="Add files" title="Add files">+</button>
+          <button type="button" data-testid="load-files-button">Load files</button>
+          <button type="button" data-testid="clear-playlist-button">Clear playlist</button>
+          <input type="file" multiple accept=".mid,.midi" hidden data-testid="file-input" />
+          <input type="file" multiple accept=".mid,.midi" hidden data-testid="load-file-input" />
+        </div>
+        <p data-testid="playlist-empty">No songs yet.</p>
+        <ol class="playlist" aria-label="Playlist" data-testid="playlist"></ol>
+      </section>
+    </div>
   `;
 
   const connectButton = root.querySelector<HTMLButtonElement>('[data-testid="connect-button"]')!;

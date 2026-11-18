@@ -138,14 +138,16 @@ test.describe('T1 — scaffold and device access', () => {
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(360);
 
-    const testIds = ['playback-panel', 'monitor-panel', 'playlist-panel'];
+    const testIds = ['monitor-panel', 'instruments-panel', 'playback-panel', 'playlist-panel'];
     const boxes = await Promise.all(
       testIds.map((id) => page.getByTestId(id).boundingBox()),
     );
     expect(boxes[0]!.x).toBe(boxes[1]!.x);
     expect(boxes[1]!.x).toBe(boxes[2]!.x);
+    expect(boxes[2]!.x).toBe(boxes[3]!.x);
     expect(boxes[1]!.y).toBeGreaterThan(boxes[0]!.y + boxes[0]!.height / 2);
     expect(boxes[2]!.y).toBeGreaterThan(boxes[1]!.y + boxes[1]!.height / 2);
+    expect(boxes[3]!.y).toBeGreaterThan(boxes[2]!.y + boxes[2]!.height / 2);
   });
 
   test('is keyboard accessible', async ({ page }) => {
@@ -158,7 +160,9 @@ test.describe('T1 — scaffold and device access', () => {
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('status-region')).toContainText('Connected');
 
+    // DOM order is header, monitor, instruments, playback, playlist, so the
+    // monitor's input picker is the next stop after the header.
     await page.keyboard.press('Tab');
-    await expect(page.getByTestId('output-picker')).toBeFocused();
+    await expect(page.getByTestId('audio-input-picker')).toBeFocused();
   });
 });

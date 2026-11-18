@@ -40,40 +40,31 @@ body {
 }
 
 /*
+ * Below 960 px the two column wrappers dissolve (display: contents), so every
+ * panel is a direct grid item in one column. Stacking order is header, audio
+ * monitor, instruments, playback, playlist.
+ */
+.column {
+  display: contents;
+}
+
+/*
  * Two columns at ≥ 960 px: header, audio monitor and the Instruments card on
- * the left; playback and the playlist on the right. The playlist spans the
- * last two rows, so the card sits at the bottom of the left column opposite
- * the playlist. DOM order (header, playback, monitor, instruments, playlist)
- * stays sensible for tab order in both layouts.
+ * the left; playback and the playlist on the right. Each column is its own
+ * flex stack, so the playlist starts right under Playback and the Instruments
+ * card right under the monitor, regardless of the other column's height.
  */
 @media (min-width: 960px) {
   #app {
     grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-    grid-template-areas:
-      'header playback'
-      'monitor playlist'
-      'instruments playlist';
     align-items: start;
   }
 
-  [data-testid='header'] {
-    grid-area: header;
-  }
-
-  [data-testid='playback-panel'] {
-    grid-area: playback;
-  }
-
-  [data-testid='monitor-panel'] {
-    grid-area: monitor;
-  }
-
-  [data-testid='instruments-panel'] {
-    grid-area: instruments;
-  }
-
-  [data-testid='playlist-panel'] {
-    grid-area: playlist;
+  .column {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
   }
 }
 

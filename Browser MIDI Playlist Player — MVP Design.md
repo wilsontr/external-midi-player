@@ -178,7 +178,7 @@ Expected round trip from input jack to speakers is roughly 10–40 ms on Chrome,
 
 ## UI layout
 
-One responsive screen, keyboard-accessible, at least 360 px wide. Panels stack in one column below 960 px; at 960 px and wider it is two columns with the header and audio monitor on the left and playback and playlist on the right (T8). The DOM order stays row-major, so tab order is sensible in both layouts.
+One responsive screen, keyboard-accessible, at least 360 px wide. Panels stack in one column below 960 px in the order header, audio monitor, instruments, playback, playlist. At 960 px and wider there are two independent column stacks with 16 px gaps: header, audio monitor and instruments on the left; playback and playlist on the right. Each column flows on its own, so the playlist sits directly under Playback and the Instruments card directly under the monitor (T8, T9). The DOM order matches the stacking order, so tab order follows the narrow layout and, at the wide breakpoint, walks the left column and then the right.
 
 1. **Header:** app name, a short getting-started list (connect hardware → "Connect devices" → allow MIDI + microphone → choose MIDI output, audio input and output → load files), browser-support warning when needed, and a "Connect devices" button that triggers the MIDI and microphone permission prompts.
 2. **Playback panel:** MIDI output picker; transport buttons (previous, play/pause, stop, next); Panic; seekable timeline with elapsed and total time; the current song title.
