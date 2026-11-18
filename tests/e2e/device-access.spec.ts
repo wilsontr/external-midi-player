@@ -112,7 +112,7 @@ test.describe('T1 — scaffold and device access', () => {
     await expect(page.getByTestId('firefox-onboarding')).toBeVisible();
   });
 
-  test('prints the getting-started steps below the front unit', async ({ page }) => {
+  test('prints the getting-started steps above the player', async ({ page }) => {
     await mockDevices(page, { outputs: [JUNO] });
     await page.goto('/');
 
@@ -121,19 +121,22 @@ test.describe('T1 — scaffold and device access', () => {
     await expect(howTo.locator('li')).toHaveCount(6);
     await expect(howTo).toContainText('Allow MIDI and microphone access');
 
-    const [titleBox, unitBox, howToBox, connectBox, expansionBox] = await Promise.all([
-      page.getByRole('heading', { level: 1 }).boundingBox(),
-      page.getByTestId('header').boundingBox(),
-      howTo.boundingBox(),
-      page.getByTestId('connect-button').boundingBox(),
-      page.getByTestId('expansion-unit').boundingBox(),
-    ]);
-    // Brand and Connect devices live in the front unit; the printed Quick start
-    // label sits between the two units (T11).
+    const [titleBox, quickstartBox, unitBox, howToBox, connectBox, expansionBox] =
+      await Promise.all([
+        page.getByRole('heading', { level: 1 }).boundingBox(),
+        page.getByTestId('quickstart').boundingBox(),
+        page.getByTestId('header').boundingBox(),
+        howTo.boundingBox(),
+        page.getByTestId('connect-button').boundingBox(),
+        page.getByTestId('expansion-unit').boundingBox(),
+      ]);
+    // Quick start is printed above the rack; brand and Connect devices live in
+    // the front unit below it.
+    expect(howToBox!.y).toBeGreaterThan(quickstartBox!.y);
+    expect(unitBox!.y).toBeGreaterThan(quickstartBox!.y + quickstartBox!.height);
     expect(titleBox!.y).toBeGreaterThan(unitBox!.y);
     expect(connectBox!.y + connectBox!.height).toBeLessThanOrEqual(unitBox!.y + unitBox!.height);
-    expect(howToBox!.y).toBeGreaterThan(unitBox!.y + unitBox!.height);
-    expect(expansionBox!.y).toBeGreaterThan(howToBox!.y + howToBox!.height);
+    expect(expansionBox!.y).toBeGreaterThan(unitBox!.y + unitBox!.height);
   });
 
   test('layout fits a 360 px viewport with the units and their internals stacked', async ({ page }) => {
@@ -159,8 +162,14 @@ test.describe('T1 — scaffold and device access', () => {
     await mockDevices(page, { outputs: [JUNO] });
     await page.goto('/');
 
-    // Unit 1 tab order: volume, mute, LCD seek (skipped while stopped), output,
-    // transport, connect. The knob's range input is the first stop.
+    // The printed Quick start label is first: its disclosure button, then the
+    // two font-credit links. Then unit 1: volume, mute, output, transport.
+    await page.keyboard.press('Tab');
+    await expect(page.getByTestId('quickstart-toggle')).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(page.locator('.font-credit a').first()).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(page.locator('.font-credit a').nth(1)).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(page.getByTestId('volume-slider')).toBeFocused();
     await page.keyboard.press('Tab');

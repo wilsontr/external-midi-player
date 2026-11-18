@@ -237,10 +237,10 @@ test.describe('T11 — rack layout', () => {
       ),
     );
 
-    // Unit 1 above the printed Quick start label, unit 2 below it; both units
-    // span the rack at the same left edge and width.
-    expect(quickstart!.y).toBeGreaterThan(front!.y + front!.height);
-    expect(expansion!.y).toBeGreaterThan(quickstart!.y + quickstart!.height);
+    // Quick start above the rack, then unit 1, then unit 2; both units span
+    // the rack at the same left edge and width.
+    expect(front!.y).toBeGreaterThan(quickstart!.y + quickstart!.height);
+    expect(expansion!.y).toBeGreaterThan(front!.y + front!.height);
     expect(Math.abs(expansion!.x - front!.x)).toBeLessThan(1);
     expect(Math.abs(expansion!.width - front!.width)).toBeLessThan(1);
 
@@ -305,11 +305,11 @@ test.describe('T11 — rack layout', () => {
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(900);
 
-    // Keyboard access is not lost in the narrow layout: the knob's range input
-    // is still the first Tab stop.
+    // Keyboard access is not lost in the narrow layout: the Quick start
+    // disclosure is the first Tab stop, with unit 1 after it.
     await page.reload();
     await page.keyboard.press('Tab');
-    await expect(page.getByTestId('volume-slider')).toBeFocused();
+    await expect(page.getByTestId('quickstart-toggle')).toBeFocused();
   });
 });
 

@@ -303,4 +303,71 @@ test.describe('T11 — half-rack faceplate', () => {
     await expect(page.getByTestId('playlist-row')).toHaveCount(1);
     await expect(page.getByTestId('entry-name')).toHaveText('dropped');
   });
+
+  test('quick start prints above the rack, collapses, and uses 18/14 px type', async ({ page }) => {
+    await setup(page);
+    const quickstart = page.getByTestId('quickstart');
+    const toggle = page.getByTestId('quickstart-toggle');
+
+    const [qs, unit] = await Promise.all([
+      quickstart.boundingBox(),
+      page.getByTestId('header').boundingBox(),
+    ]);
+    expect(qs!.y + qs!.height).toBeLessThanOrEqual(unit!.y);
+    expect(Math.abs(qs!.x - unit!.x)).toBeLessThan(1);
+    expect(Math.abs(qs!.width - unit!.width)).toBeLessThan(1);
+
+    expect(
+      await quickstart.locator('#quickstart-heading').evaluate((el) => getComputedStyle(el).fontSize),
+    ).toBe('18px');
+    expect(
+      await page.getByTestId('how-to').evaluate((el) => getComputedStyle(el).fontSize),
+    ).toBe('14px');
+    // 1em of padding on the section and 1em under the header (14 px at 14 px text).
+    expect(await quickstart.evaluate((el) => getComputedStyle(el).paddingTop)).toBe('14px');
+    expect(await page.locator('#quickstart-body').evaluate((el) => getComputedStyle(el).marginTop)).toBe(
+      '14px',
+    );
+
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByTestId('how-to')).toBeVisible();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toHaveText('Show quick start');
+    await expect(page.getByTestId('how-to')).toBeHidden();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(toggle).toHaveText('Hide quick start');
+    await expect(page.getByTestId('how-to')).toBeVisible();
+  });
+
+  test('the connect key shows a red LED and the LCD says devices are not connected', async ({
+    page,
+  }) => {
+    await mockDevices(page, { outputs: [JUNO] });
+    await page.goto('/');
+
+    const led = page.getByTestId('connect-led');
+    const status = page.getByTestId('status-region');
+    const ledColour = (): Promise<string> =>
+      led.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    await expect(status).toHaveText('Devices not connect');
+    await expect(led).toHaveAttribute('data-state', 'disconnected');
+    expect(rgbChannels(await ledColour())).toEqual([255, 75, 58]);
+
+    await page.getByTestId('connect-button').click();
+    await expect(status).toContainText('Connected');
+    await expect(led).toHaveAttribute('data-state', 'connected');
+    expect(rgbChannels(await ledColour())).toEqual([77, 224, 122]);
+  });
+
+  test('a denied permission prompt leaves the connect LED red', async ({ page }) => {
+    await mockDevices(page, { failRequest: true });
+    await page.goto('/');
+    await page.getByTestId('connect-button').click();
+
+    await expect(page.getByTestId('status-region')).toContainText('denied or cancelled');
+    await expect(page.getByTestId('connect-led')).toHaveAttribute('data-state', 'disconnected');
+  });
 });

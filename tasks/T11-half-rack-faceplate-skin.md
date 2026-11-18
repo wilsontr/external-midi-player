@@ -28,8 +28,8 @@ Restyle the player as a 90s half-rack tone module (concept A from the faceplate 
 - Input meter as two vertical **LED ladders** (L/R, 12 segments: green, amber for the top three, and red for the clip light). The red top LED replaces the CLIP text, and the `role="meter"` element keeps its `aria-valuetext`.
 - Main amber **LCD**: song number, current title, state (PLAY / PAUSE / STOP), elapsed time, length, the seek bar (the existing `timeline` slider restyled as a segmented bar) and, on its bottom line, the single `aria-live` status region.
 - **16-part strip** inside the LCD, static: channels 1–16 with the channels used by the playing song marked, derived from `player.instrumentsState()`. No per-note activity (see Notes).
-- Right strip: MIDI output picker as an LCD-styled `select`; transport keypad (Prev, Play/Pause, Next, Stop, and Panic in red-orange) with silkscreen captions under each key and a green or amber LED on Play for playing or paused; **Connect devices** / **Retry** keys.
-- Header and how-to: the app name becomes the unit's silkscreen brand line. The how-to list, unsupported-browser notice and Firefox onboarding text render as a printed "Quick start" label directly below the rack, still visible and in DOM order.
+- Right strip: MIDI output picker as an LCD-styled `select`; transport keypad (Prev, Play/Pause, Next, Stop, and Panic in red-orange) with silkscreen captions under each key and a green or amber LED on Play for playing or paused; **Connect devices** / **Retry** keys with a red/green LED that shows whether MIDI access and an output are present. While they are not, the LCD status line reads "Devices not connect".
+- Header and how-to: the app name becomes the unit's silkscreen brand line. The how-to list, unsupported-browser notice and Firefox onboarding text render as a printed "Quick start" label above the rack, with a show/hide toggle, still visible and in DOM order.
 
 **Unit 2: expansion unit (right column, replaces the playback-adjacent playlist and instruments cards)**
 
@@ -43,7 +43,7 @@ Restyle the player as a 90s half-rack tone module (concept A from the faceplate 
 
 - At ≥ 960 px: unit 1 above unit 2, each spanning the full app width, max width ≈ 1200 px. Inside unit 1: knob strip | LCD | keypad. Inside unit 2: song list (≈ 60%) | part map + monitor routing (≈ 40%).
 - Below 960 px: unit internals stack (strip, LCD, keypad; song list above part map). At 360 px there is no horizontal overflow.
-- DOM order and tab order follow: unit 1 (volume, mute, LCD seek, output, transport, connect), quick start, unit 2 (playlist keys, song list, part map, audio routing).
+- DOM order and tab order follow: quick start (toggle, credit links), unit 1 (volume, mute, LCD seek, output, transport, connect), unit 2 (playlist keys, song list, part map, audio routing).
 
 **States and accessibility**
 

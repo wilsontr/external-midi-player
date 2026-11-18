@@ -121,6 +121,47 @@ function partStrip(): string {
 export function createUi(root: HTMLElement): void {
   root.innerHTML = `
     <div class="rack">
+      <section class="quickstart" data-testid="quickstart" aria-labelledby="quickstart-heading">
+        <div class="quickstart-head">
+          <h2 class="silk-label" id="quickstart-heading">Quick start</h2>
+          <button
+            type="button"
+            class="rubber-key quickstart-toggle"
+            data-testid="quickstart-toggle"
+            aria-expanded="true"
+            aria-controls="quickstart-body"
+          >Hide quick start</button>
+        </div>
+        <div class="quickstart-body" id="quickstart-body">
+          <p class="how-to-intro">
+            MIDI player catered to playback on external MIDI synths. How to use:
+          </p>
+          <ol class="how-to" data-testid="how-to">
+            <li>Connect your hardware.</li>
+            <li>Click <strong>Connect devices</strong>.</li>
+            <li>Allow MIDI and microphone access when the browser asks.</li>
+            <li>Select your MIDI output.</li>
+            <li>Select your audio input and output.</li>
+            <li>Load your MIDI files and listen.</li>
+          </ol>
+          <p class="notice silk-notice" data-testid="unsupported-notice" hidden>
+            This browser does not support Web MIDI. Use a current desktop version
+            of Chrome, Edge, or Firefox to connect MIDI devices.
+          </p>
+          <p class="notice silk-notice" data-testid="firefox-onboarding" hidden>
+            Firefox may ask you to install a Web MIDI site permission before it
+            can list MIDI devices. That prompt is safe — it only lets this page
+            talk to your MIDI hardware. Click "Connect devices", then allow the
+            permission when asked.
+          </p>
+          <p class="font-credit">
+            LCD font:
+            <a href="http://fontstruct.com/fontstructions/show/664062" rel="license noopener" target="_blank">Graph 35+ pix</a>
+            by 30100flo,
+            <a href="https://creativecommons.org/licenses/by-sa/3.0/" rel="license noopener" target="_blank">CC BY-SA 3.0</a>
+          </p>
+        </div>
+      </section>
       <header class="unit unit-front" data-testid="header" aria-label="App header">
         <div class="unit-brand">
           <h1 class="brand-name">External MIDI Player</h1>
@@ -243,48 +284,18 @@ export function createUi(root: HTMLElement): void {
               </div>
               <div class="key-cell key-cell-panic">
                 <button type="button" class="rubber-key key-panic" data-testid="panic-button" aria-label="Panic"><span class="key-cap">Panic</span></button>
-                <span class="silk-caption" aria-hidden="true">Panic</span>
+                <span class="silk-caption key-caption-spacer" aria-hidden="true">&nbsp;</span>
               </div>
             </div>
             <p class="silk-hint">Shortcuts: Space play/pause · Esc panic · ← previous · → next</p>
             <div class="connect-row">
+              <span class="led led-connect" data-testid="connect-led" data-state="disconnected" aria-hidden="true"></span>
               <button type="button" class="rubber-key connect-key" data-testid="connect-button">Connect devices</button>
               <button type="button" class="rubber-key connect-key" data-testid="retry-button" hidden>Retry</button>
             </div>
           </div>
         </div>
       </header>
-
-      <section class="quickstart" data-testid="quickstart" aria-labelledby="quickstart-heading">
-        <h2 class="silk-label" id="quickstart-heading">Quick start</h2>
-        <p class="how-to-intro">
-          MIDI player catered to playback on external MIDI synths. How to use:
-        </p>
-        <ol class="how-to" data-testid="how-to">
-          <li>Connect your hardware.</li>
-          <li>Click <strong>Connect devices</strong>.</li>
-          <li>Allow MIDI and microphone access when the browser asks.</li>
-          <li>Select your MIDI output.</li>
-          <li>Select your audio input and output.</li>
-          <li>Load your MIDI files and listen.</li>
-        </ol>
-        <p class="notice silk-notice" data-testid="unsupported-notice" hidden>
-          This browser does not support Web MIDI. Use a current desktop version
-          of Chrome, Edge, or Firefox to connect MIDI devices.
-        </p>
-        <p class="notice silk-notice" data-testid="firefox-onboarding" hidden>
-          Firefox may ask you to install a Web MIDI site permission before it
-          can list MIDI devices. That prompt is safe — it only lets this page
-          talk to your MIDI hardware. Click "Connect devices", then allow the
-          permission when asked.
-        </p>
-        <p class="font-credit">
-          LCD font:
-          <a href="http://fontstruct.com/fontstructions/show/664062" rel="license noopener" target="_blank">Graph 35+ pix</a>
-          by 30100flo,
-          <a href="https://creativecommons.org/licenses/by-sa/3.0/" rel="license noopener" target="_blank">CC BY-SA 3.0</a>
-        </p>
-      </section>
 
       <section class="unit unit-exp" data-testid="expansion-unit" aria-label="Expansion unit">
         <div class="face face-exp">
@@ -363,6 +374,11 @@ export function createUi(root: HTMLElement): void {
 
   const connectButton = root.querySelector<HTMLButtonElement>('[data-testid="connect-button"]')!;
   const retryButton = root.querySelector<HTMLButtonElement>('[data-testid="retry-button"]')!;
+  const connectLed = root.querySelector<HTMLElement>('[data-testid="connect-led"]')!;
+  const quickstartToggle = root.querySelector<HTMLButtonElement>(
+    '[data-testid="quickstart-toggle"]',
+  )!;
+  const quickstartBody = root.querySelector<HTMLElement>('#quickstart-body')!;
   const unsupportedNotice = root.querySelector<HTMLElement>('[data-testid="unsupported-notice"]')!;
   const firefoxOnboarding = root.querySelector<HTMLElement>('[data-testid="firefox-onboarding"]')!;
   const outputPicker = root.querySelector<HTMLSelectElement>('[data-testid="output-picker"]')!;
@@ -1122,6 +1138,16 @@ export function createUi(root: HTMLElement): void {
   setInterval(updateProgress, 50);
   renderTransport();
 
+  /**
+   * The Connect key's LED: red until MIDI access is granted and at least one
+   * output is present, green after that. The LCD status line carries the words
+   * for assistive tech.
+   */
+  function renderConnectionLed(): void {
+    const connected = midi.connected && midi.listOutputs().length > 0;
+    connectLed.dataset.state = connected ? 'connected' : 'disconnected';
+  }
+
   /** (Re)build the picker from the current output list. */
   function renderOutputs(): void {
     const outputs = midi.listOutputs();
@@ -1131,6 +1157,7 @@ export function createUi(root: HTMLElement): void {
     );
     outputPicker.disabled = false;
     outputPicker.value = midi.selectedId() ?? '';
+    renderConnectionLed();
   }
 
   const monitor = new AudioMonitor({
@@ -1285,6 +1312,7 @@ export function createUi(root: HTMLElement): void {
         midi.connect(),
         monitor.unlock(),
       ]);
+      renderConnectionLed();
       audioReady = micGranted;
       renderAudioDevices();
 
@@ -1314,6 +1342,7 @@ export function createUi(root: HTMLElement): void {
         retryButton.textContent = 'Retry';
       }
     } catch {
+      renderConnectionLed();
       setStatus('Connecting devices failed - click "Connect devices" to retry.');
       retryButton.hidden = false;
       retryButton.textContent = 'Retry';
@@ -1343,10 +1372,21 @@ export function createUi(root: HTMLElement): void {
     setStatus(
       'This browser does not support Web MIDI. Use a current desktop version of Chrome, Edge, or Firefox.',
     );
-  } else if (isFirefox()) {
+  } else {
     // Explain the add-on permission prompt *before* the first click.
-    firefoxOnboarding.hidden = false;
+    if (isFirefox()) firefoxOnboarding.hidden = false;
+    // Until the user connects, the LCD spells out the device state.
+    setStatus('Devices not connect');
   }
+
+  quickstartToggle.addEventListener('click', () => {
+    const expand = quickstartToggle.getAttribute('aria-expanded') !== 'true';
+    quickstartToggle.setAttribute('aria-expanded', String(expand));
+    quickstartToggle.textContent = expand ? 'Hide quick start' : 'Show quick start';
+    quickstartBody.hidden = !expand;
+  });
+
+  renderConnectionLed();
 
   // The player restores a saved playlist without emitting a change; show it.
   renderPlaylist();

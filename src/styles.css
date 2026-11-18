@@ -677,6 +677,7 @@ button:disabled {
 
 .connect-row {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: auto;
@@ -729,6 +730,25 @@ button:disabled {
   height: 8px;
 }
 
+/* Connect key state: red until MIDI access and an output are present. */
+.led-connect[data-state='connected'] {
+  background: var(--led-green);
+  box-shadow:
+    0 0 7px var(--led-green),
+    inset 0 0 0 1px var(--chassis-deep);
+}
+
+.led-connect[data-state='disconnected'] {
+  background: var(--led-red);
+  box-shadow:
+    0 0 7px var(--led-red),
+    inset 0 0 0 1px var(--chassis-deep);
+}
+
+.key-caption-spacer {
+  visibility: hidden;
+}
+
 .key-cell-play .led-play {
   width: 6px;
   height: 6px;
@@ -760,7 +780,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
 }
 
 .ladder {
@@ -773,9 +793,13 @@ button:disabled {
   display: block;
   width: 14px;
   height: 5px;
+  line-height: 0;
 }
 
+/* Block, not inline-block: an inline LED would baseline-align inside the 5px
+   slot, paint ~10px lower and overlap the L/R captions below the ladder. */
 .ladder .led {
+  display: block;
   width: 100%;
   height: 100%;
   border-radius: 1px;
@@ -1088,25 +1112,46 @@ button:disabled {
 
 .quickstart {
   min-width: 0;
-  padding: 8px 4px 10px;
+  padding: 1em;
+  font-size: 14px;
   border-top: 1px solid var(--panel-line);
   border-bottom: 1px solid var(--panel-line);
 }
 
+.quickstart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .quickstart .silk-label {
+  margin: 0;
+  font-size: 18px;
   color: var(--silk);
 }
 
+.quickstart-toggle {
+  font-size: 14px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.quickstart-body {
+  margin-top: 1em;
+}
+
 .how-to-intro {
-  margin: 4px 0;
-  font-size: 12px;
+  margin: 0 0 0.5em;
+  font-size: inherit;
   color: var(--silk-dim);
 }
 
 .how-to {
-  margin: 4px 0 8px;
+  margin: 0 0 0.75em;
   padding-left: 1.4em;
-  font-size: 12px;
+  font-size: inherit;
   color: var(--silk-dim);
 }
 
@@ -1114,9 +1159,13 @@ button:disabled {
   margin: 2px 0;
 }
 
+.quickstart .notice {
+  font-size: inherit;
+}
+
 .font-credit {
-  margin: 8px 0 0;
-  font-size: 11px;
+  margin: 0.75em 0 0;
+  font-size: inherit;
   color: var(--silk-faint);
 }
 
