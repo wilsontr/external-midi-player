@@ -40,6 +40,9 @@ function formatTime(seconds: number, tenths = false): string {
 
 const ENTRY_DRAG_TYPE = "application/x-midi-entry";
 
+/** Whether the printed Quick start label is expanded ("1") or collapsed ("0"). */
+const QUICKSTART_STORAGE_KEY = "external-midi-player.quickstart-expanded";
+
 /** Level LEDs per meter ladder; the red clip light is the twelfth segment. */
 const LADDER_SEGMENTS = 11;
 
@@ -1551,13 +1554,36 @@ export function createUi(root: HTMLElement): void {
     setStatus("Devices not connected");
   }
 
-  quickstartToggle.addEventListener("click", () => {
-    const expand = quickstartToggle.getAttribute("aria-expanded") !== "true";
+  /** The stored disclosure state; a missing or unreadable value means expanded. */
+  function readQuickstartExpanded(): boolean {
+    try {
+      return localStorage.getItem(QUICKSTART_STORAGE_KEY) !== "0";
+    } catch {
+      return true;
+    }
+  }
+
+  /** Applies the disclosure, optionally remembering the choice. */
+  function setQuickstartExpanded(expand: boolean, persist: boolean): void {
     quickstartToggle.setAttribute("aria-expanded", String(expand));
     quickstartToggle.textContent = expand
       ? "Hide quick start"
       : "Show quick start";
     quickstartBody.hidden = !expand;
+    if (!persist) return;
+    try {
+      localStorage.setItem(QUICKSTART_STORAGE_KEY, expand ? "1" : "0");
+    } catch {
+      // Private mode or a full store: the toggle still works for this visit.
+    }
+  }
+
+  setQuickstartExpanded(readQuickstartExpanded(), false);
+  quickstartToggle.addEventListener("click", () => {
+    setQuickstartExpanded(
+      quickstartToggle.getAttribute("aria-expanded") !== "true",
+      true,
+    );
   });
 
   renderConnectionLed();

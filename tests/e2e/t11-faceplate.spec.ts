@@ -441,6 +441,43 @@ test.describe("T11 — half-rack faceplate", () => {
     await expect(page.getByTestId("how-to")).toBeVisible();
   });
 
+  test("remembers the quick start show/hide state across reloads", async ({
+    page,
+  }) => {
+    await setup(page);
+    const toggle = page.getByTestId("quickstart-toggle");
+    const howTo = page.getByTestId("how-to");
+
+    // Expanded by default, with nothing stored yet.
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(howTo).toBeVisible();
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(
+      await page.evaluate(() =>
+        localStorage.getItem("external-midi-player.quickstart-expanded"),
+      ),
+    ).toBe("0");
+
+    await page.reload();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(toggle).toHaveText("Show quick start");
+    await expect(howTo).toBeHidden();
+
+    await toggle.click();
+    expect(
+      await page.evaluate(() =>
+        localStorage.getItem("external-midi-player.quickstart-expanded"),
+      ),
+    ).toBe("1");
+
+    await page.reload();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(toggle).toHaveText("Hide quick start");
+    await expect(howTo).toBeVisible();
+  });
+
   test("the connect key shows a red LED and the LCD says devices are not connected", async ({
     page,
   }) => {
