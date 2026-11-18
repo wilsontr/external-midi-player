@@ -6,9 +6,9 @@ Vite + TypeScript app, no backend.
 
 - Design (source of truth):
   [`Browser MIDI Playlist Player — MVP Design.md`](Browser%20MIDI%20Playlist%20Player%20%E2%80%94%20MVP%20Design.md)
-- Milestones: [`tasks/`](tasks/README.md) — T1–T4 are complete; T5 (hardening)
-  is in progress and T6 (GitHub Pages deployment and CI) is pending. T7
-  (software synth output) is a post-MVP task, starting with an engine decision.
+- Milestones: [`tasks/`](tasks/README.md) — T1–T5 are complete; T6 (GitHub
+  Pages deployment and CI) is pending. T7 (software synth output) is a
+  post-MVP task, starting with an engine decision.
 
 ## Quickstart
 

@@ -1,16 +1,16 @@
-# T5: Hardening and deploy
+# T5: Hardening
 
 - **ID**: T5
 - **Milestone**: Hardening and deploy
-- **Status**: in-progress
+- **Status**: done
 - **Estimate**: 1 day
 - **Depends on**: T2, T3, T4
-- **Modules**: `scheduler.ts`, `workerTimer.ts`, `tickWorker.ts` (Worker tick), `ui.ts` (statuses), `vite.config.ts` (CSP), test suite, static deploy
+- **Modules**: `scheduler.ts`, `workerTimer.ts`, `tickWorker.ts` (Worker tick), `ui.ts` (statuses), `vite.config.ts` (CSP), test suite
 - **Requirements**: R5, R6, R7, R11
 
 ## Objective
 
-Harden the working app against the known risks (timer throttling, stuck notes, device loss, malformed files), complete the automated and manual test coverage, and deploy it as a static site over HTTPS.
+Harden the working app against the known risks (timer throttling, stuck notes, device loss, malformed files) and complete the automated and manual test coverage. Deployment is split into T6.
 
 ## Scope
 
@@ -25,7 +25,6 @@ Harden the working app against the known risks (timer throttling, stuck notes, d
   - MIDI: one USB-MIDI synth, one DIN interface, one virtual port (IAC on macOS, loopMIDI on Windows).
   - Audio: one USB audio interface with the synth's output connected.
   - Checks: timing over a 5-minute file, no hanging notes after each transport action, hot-plug of MIDI and audio devices, monitoring latency readout, feedback-safe default.
-- Static deploy to any HTTPS host — the concrete GitHub Pages + CI implementation is T6 (Web MIDI and `getUserMedia` require a secure context).
 
 ## Acceptance criteria
 
@@ -34,7 +33,6 @@ Harden the working app against the known risks (timer throttling, stuck notes, d
 - [x] Monitoring falls back to the system default with a note where output selection is unavailable (R11).
 - [x] All Playwright UI flows pass on Chromium and Firefox.
 - [x] The full manual matrix (browsers × MIDI devices × audio) passes. Confirmed by the project owner on 2026-11-17 with Chrome and Firefox, the external MIDI synth and the Scarlett input.
-- [ ] The app is deployed and reachable over HTTPS and works there (delivered by T6).
 - [x] The tick timer starts/stops/disposes with playback, survives pause/resume and falls back to `setInterval` if the Worker fails (`tests/unit/workerTimer.test.ts`, `tests/unit/scheduler.test.ts`).
 - [x] A send/release failure is caught, stops the transport and reports through the single `aria-live` region (`tests/unit/scheduler.test.ts`, `tests/unit/playlist.test.ts`).
 - [x] The production build injects the baseline CSP, and the built app (including the Worker) loads and plays under it with no CSP violations.
@@ -44,7 +42,7 @@ Harden the working app against the known risks (timer throttling, stuck notes, d
 - The baseline CSP is injected by a build-only Vite plugin (`inject-content-security-policy`), so dev-mode HMR (websockets + inline module sources) keeps working. The built site was verified in Chromium with mocked MIDI/audio: no CSP violations, and the Worker asset loads from `assets/`.
 - Risks covered here: background-tab timer throttling, scheduled messages that cannot be cancelled in Chrome (200 ms overhang bound), malformed or huge MIDI files (parse in try/catch, mark entry as error, skip on auto-advance).
 - Virtual MIDI port looping back into the same synth (doubled notes) is out of scope; document it in help text.
-- Deployment automation is split into T6; run the manual matrix against the Pages URL once T6 lands, or against `npm run preview` before then.
+- Deployment now lives entirely in T6; T5's manual matrix ran against the local/preview build.
 - The timing stress test covers scheduler tick jitter deterministically; the Worker tick addresses real background-tab throttling, with the 200 ms look-ahead absorbing short stalls.
 - Keep the look-ahead at 200 ms — it is the bound on post-pause overhang.
-- Manual matrix confirmed by the project owner on 2026-11-17 (Chrome and Firefox, external synth + Scarlett). The Firefox Playwright leg passed on the same date; only the T6 deployment remains for the deploy acceptance.
+- Manual matrix confirmed by the project owner on 2026-11-17 (Chrome and Firefox, external synth + Scarlett). The Firefox Playwright leg passed on the same date.

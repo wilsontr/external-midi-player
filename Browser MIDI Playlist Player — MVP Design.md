@@ -233,7 +233,7 @@ The MVP is about 4.5 developer-days for one experienced front-end developer, bui
 2. **Parsing and scheduler (1 day):** event-list builder, look-ahead scheduler, note tracking, Panic, unit tests.
 3. **Transport and playlist (1 day):** play/pause/stop/next/previous, auto-advance, drag-and-drop, reorder, progress display.
 4. **Audio monitoring (1 day):** input and output pickers, graph, meter, mute, Chrome and Firefox output paths, latency readout.
-5. **Hardening and deploy (1 day):** Worker timer, error states, baseline CSP, Playwright tests, manual matrix, static deploy (any HTTPS host; reference deployment: GitHub Pages via GitHub Actions, T6).
+5. **Hardening and deploy (1 day):** Worker timer, error states, baseline CSP, Playwright tests and manual matrix (T5); static deploy over HTTPS via GitHub Pages + Actions (T6).
 
 ### After the MVP
 

@@ -4,7 +4,7 @@
 - **Milestone**: Hardening and deploy
 - **Status**: pending
 - **Estimate**: 0.5 day
-- **Depends on**: T3, T4
+- **Depends on**: T5
 - **Modules**: `.github/workflows/deploy.yml`, `vite.config.ts`, `README.md`
 - **Requirements**: R1–R13 (delivery over HTTPS)
 
@@ -61,6 +61,7 @@ concrete hosting provider and CI.
 - [ ] Pull requests run verification but do not deploy.
 - [ ] Rollback is documented: re-run the last good deploy, or revert and push.
 - [ ] No secrets are added to the repository.
+- [ ] The app is deployed and reachable over HTTPS and works there (the deploy acceptance moved from T5).
 
 ## Notes
 
@@ -169,10 +170,10 @@ Pages URL after the first deploy.
 3. Temporarily break a test (or the build) on a branch/PR and confirm
    verification fails and no deployment occurs; the live site stays up.
 
-**Relationship to T5.** T5's manual matrix should run against this URL once
-it exists; the deploy acceptance in T5 is delivered by T6. T6 can be built as
-soon as T3/T4 are done, but do not call the deployment production-ready until
-T5's manual checks pass.
+**Relationship to T5.** T5 is complete: hardening, the manual matrix and the
+Firefox Playwright leg passed. This ticket owns the deployment acceptance that
+moved from T5. Use the T5 checks as the pre-release gate, then run the
+deployed-site smoke test.
 
 **Constraints.** Pages is static and HTTPS-only, which matches R1–R13 (no
 backend, secure context required for Web MIDI and `getUserMedia`). The
