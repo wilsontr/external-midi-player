@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   verify:
-    name: Typecheck and test
+    name: Typecheck, unit and Chromium
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -24,12 +24,30 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npx vitest run
-      - run: npx playwright install --with-deps chromium firefox
-      - run: npx playwright test
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test --project=chromium
+
+  # Firefox headless on the Linux runner drops synthetic pointer events at
+  # some coordinates (the Connect key in particular): the page receives no
+  # mousedown/click, so every click-driven test fails there while the same
+  # suite passes on macOS Firefox. Run the Firefox leg on macOS instead.
+  verify-firefox:
+    name: Firefox (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install firefox
+      - run: npx playwright test --project=firefox
 
   build:
     name: Build static site
-    needs: verify
+    needs: [verify, verify-firefox]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

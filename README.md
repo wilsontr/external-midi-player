@@ -40,18 +40,22 @@ on GitHub Pages over HTTPS, which is required for Web MIDI and
 `.github/workflows/deploy.yml` runs on every push to `main`, on pull requests,
 and on `workflow_dispatch`:
 
-1. **verify** — `npm ci`, `npx tsc --noEmit`, `npx vitest run`, then
-   `npx playwright install --with-deps chromium firefox` and
-   `npx playwright test`.
-2. **build** — `npm ci` and `npm run build`, then upload `dist` with
+1. **verify** (Ubuntu) — `npm ci`, `npx tsc --noEmit`, `npx vitest run`, then
+   `npx playwright install --with-deps chromium` and
+   `npx playwright test --project=chromium`.
+2. **verify-firefox** (macOS) — `npx playwright install firefox` and
+   `npx playwright test --project=firefox`. Firefox headless on the Linux
+   runner drops synthetic pointer events (the Connect key receives no click),
+   while the same suite passes on macOS Firefox, so the Firefox leg runs there.
+3. **build** — `npm ci` and `npm run build`, then upload `dist` with
    `actions/upload-pages-artifact` (only outside pull requests).
-3. **deploy** — `actions/deploy-pages` in the `github-pages` environment with
+4. **deploy** — `actions/deploy-pages` in the `github-pages` environment with
    `pages: write` and `id-token: write` (only on `main`, never for pull
    requests; the `pages` concurrency group serialises deployments without
    queueing PR checks behind them).
 
-A failing test stops the pipeline at `verify`, so nothing is uploaded and the
-previous site stays live. Forks cannot deploy: the artifact upload and the
+A failing test stops the pipeline before `build`, so nothing is uploaded and
+the previous site stays live. Forks cannot deploy: the artifact upload and the
 deploy job are both skipped for pull requests.
 
 ### One-time repository setup
