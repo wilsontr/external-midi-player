@@ -76,6 +76,21 @@ describe('playlistReducer', () => {
     expect(onlyBad.currentId).toBeNull();
   });
 
+  it('replaces the whole list (Load) and clears it (Clear)', () => {
+    let s = stateWith('a.mid', 'b.mid');
+    s = playlistReducer(s, { type: 'setCurrent', id: s.entries[1].id });
+    const replaced = playlistReducer(s, {
+      type: 'replace',
+      entries: [createEntry(file('x.mid')), createEntry(file('y.mid'))],
+    });
+    expect(names(replaced)).toEqual(['x', 'y']);
+    expect(replaced.currentId).toBe(replaced.entries[0].id);
+
+    const cleared = playlistReducer(replaced, { type: 'replace', entries: [] });
+    expect(cleared.entries).toEqual([]);
+    expect(cleared.currentId).toBeNull();
+  });
+
   it('moves an entry to the target index and keeps the current entry by id', () => {
     let s = stateWith('a.mid', 'b.mid', 'c.mid', 'd.mid');
     s = playlistReducer(s, { type: 'setCurrent', id: s.entries[0].id });
@@ -98,6 +113,18 @@ describe('playlistReducer', () => {
     s = playlistReducer(s, { type: 'failed', id: s.entries[1].id, error: 'bad header' });
     expect(s.entries[0].durationSec).toBe(12.5);
     expect(s.entries[1]).toMatchObject({ status: 'error', error: 'bad header' });
+  });
+
+  it('moves the highlight off a failed current entry to the next ready one', () => {
+    let s = stateWith('bad.mid', 'good.mid');
+    const [bad, good] = s.entries;
+    expect(s.currentId).toBe(bad.id);
+    s = playlistReducer(s, { type: 'failed', id: bad.id, error: 'not a MIDI file' });
+    expect(s.currentId).toBe(good.id);
+
+    // With nothing playable left, there is no highlight.
+    s = playlistReducer(s, { type: 'failed', id: good.id, error: 'gone' });
+    expect(s.currentId).toBeNull();
   });
 
   it('auto-advance helpers skip error entries', () => {
@@ -126,6 +153,9 @@ describe('PlaylistPlayer', () => {
   /** Swapped by tests that need a failing parse. */
   let parseFile: (f: File) => Promise<ParseResult>;
   let storage: PlaylistStorage;
+  /** Wall time the fake scheduler reports from panic()/stop(). */
+  let panicWall: number;
+  let stopTail: number | null;
 
   const parse = async (f: File): Promise<ParseResult> =>
     f.name.startsWith('bad')
@@ -145,12 +175,20 @@ describe('PlaylistPlayer', () => {
         const fake: FakeScheduler = {
           options,
           calls,
-          play: () => calls.push('play'),
+          play: (startAt?: number) =>
+            calls.push(startAt === undefined ? 'play' : `play@${startAt}`),
           pause: () => calls.push('pause'),
-          stop: () => calls.push('stop'),
-          panic: () => calls.push('panic'),
+          stop: () => {
+            calls.push('stop');
+            return stopTail;
+          },
+          panic: () => {
+            calls.push('panic');
+            return panicWall;
+          },
           dispose: () => calls.push('dispose'),
           position: () => 0,
+          seek: (position: number) => calls.push(`seek:${position}`),
         };
         schedulers.push(fake);
         return fake;
@@ -165,6 +203,8 @@ describe('PlaylistPlayer', () => {
     outputAvailable = true;
     parseFile = parse;
     storage = memoryStorage();
+    panicWall = 100;
+    stopTail = null;
     player = makePlayer();
   });
 
@@ -316,13 +356,14 @@ describe('PlaylistPlayer', () => {
     player.next();
     await flush();
     expect(currentName()).toBe('b');
-    // Switching songs releases the old scheduler's sounding notes.
-    expect(first.calls).toContain('stop');
+    // Switching songs panics the old scheduler instead of a plain release.
+    expect(first.calls).toContain('panic');
+    expect(first.calls).toContain('dispose');
     const second = schedulers[1];
     player.previous();
     await flush();
     expect(currentName()).toBe('a');
-    expect(second.calls).toContain('stop');
+    expect(second.calls).toContain('panic');
     player.next();
     await flush();
     player.next();
@@ -408,5 +449,122 @@ describe('PlaylistPlayer', () => {
 
     expect(player.state).toBe('stopped');
     expect(last(statuses)).toContain('MIDI output failed');
+  });
+
+  it('loads files as a replacement, stopping playback and rejecting non-MIDI', async () => {
+    player.add([file('a.mid'), file('b.mid')]);
+    await flush();
+    player.play();
+    await flush();
+
+    const result = player.load([file('x.mid'), file('notes.txt')]);
+    expect(result).toEqual({ added: 1, rejected: ['notes.txt'] });
+    expect(player.playlist.entries.map((e) => e.name)).toEqual(['x']);
+    expect(player.currentEntry()?.name).toBe('x');
+    expect(player.state).toBe('stopped');
+    expect(last(schedulers[0].calls)).toBe('stop');
+
+    await flush();
+    expect(player.playlist.entries[0].durationSec).toBe(10);
+    await player.flushPersistence();
+    expect(makePlayer().playlist.entries.map((e) => e.name)).toEqual(['x']);
+  });
+
+  it('keeps the existing playlist when Load selects nothing valid', () => {
+    player.add([file('a.mid')]);
+    const before = player.playlist.entries.map((e) => e.id);
+    expect(player.load([file('notes.txt')])).toEqual({ added: 0, rejected: ['notes.txt'] });
+    expect(player.playlist.entries.map((e) => e.id)).toEqual(before);
+    expect(player.state).toBe('stopped');
+  });
+
+  it('clears the playlist, stops playback and persists the empty list', async () => {
+    player.add([file('a.mid')]);
+    await flush();
+    player.play();
+    await flush();
+
+    player.clear();
+    expect(player.playlist.entries).toEqual([]);
+    expect(player.currentEntry()).toBeNull();
+    expect(player.state).toBe('stopped');
+    expect(last(schedulers[0].calls)).toBe('stop');
+
+    await player.flushPersistence();
+    expect(storage.getItem(PLAYLIST_STORAGE_KEY)).toContain('"entries":[]');
+    expect(makePlayer().playlist.entries).toEqual([]);
+  });
+
+  it('forwards seeks while playing or paused and ignores them while stopped', async () => {
+    player.add([file('a.mid')]);
+    await flush();
+
+    player.seek(1); // stopped: no scheduler and no seek
+    expect(schedulers).toHaveLength(0);
+
+    player.play();
+    await flush();
+    player.seek(3);
+    expect(schedulers[0].calls).toContain('seek:3');
+
+    player.pause();
+    player.seek(4);
+    expect(schedulers[0].calls).toContain('seek:4');
+
+    player.stop();
+    const count = schedulers[0].calls.length;
+    player.seek(1);
+    expect(schedulers[0].calls).toHaveLength(count);
+  });
+
+  it('sends a Panic before starting a different track while playing', async () => {
+    player.add([file('a.mid'), file('b.mid')]);
+    await flush();
+    player.play();
+    await flush();
+    expect(schedulers).toHaveLength(1);
+
+    panicWall = 500;
+    player.next();
+    await flush();
+
+    expect(schedulers[0].calls).toEqual(['play', 'panic', 'dispose']);
+    // The new song is anchored after the Panic (plus the switch gap).
+    expect(schedulers[1].calls).toEqual(['play@550']);
+    expect(currentName()).toBe('b');
+    expect(player.state).toBe('playing');
+  });
+
+  it('panics for a paused track switch but not when starting from stopped', async () => {
+    player.add([file('a.mid'), file('b.mid')]);
+    await flush();
+    player.play();
+    await flush();
+    player.pause();
+    panicWall = 900;
+
+    player.playEntry(player.playlist.entries[1].id);
+    await flush();
+    expect(schedulers[0].calls).toEqual(['play', 'pause', 'panic', 'dispose']);
+    expect(schedulers[1].calls).toEqual(['play@950']);
+
+    player.stop();
+    const count = schedulers.length;
+    player.playEntry(player.playlist.entries[0].id);
+    await flush();
+    expect(schedulers[count].calls).toEqual(['play']);
+  });
+
+  it('restarts the same entry without a Panic but after the released tail', async () => {
+    player.add([file('a.mid')]);
+    await flush();
+    player.play();
+    await flush();
+
+    stopTail = 700;
+    player.playEntry(player.playlist.entries[0].id);
+    await flush();
+    expect(schedulers[0].calls).toEqual(['play', 'stop', 'dispose']);
+    expect(schedulers[1].calls).toEqual(['play@750']);
   });
 });

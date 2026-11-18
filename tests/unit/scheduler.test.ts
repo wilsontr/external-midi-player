@@ -127,7 +127,9 @@ describe('Scheduler', () => {
     vi.advanceTimersByTime(100);
     scheduler.pause();
     vi.advanceTimersByTime(50);
-    scheduler.play(); // t0 re-anchored: 150 + 100 - 0 = 250
+    // Resume is anchored after the released tail (201 + 20 = 221), not at
+    // now + 100, so the pause's release cannot cut off the resumed notes.
+    scheduler.play(); // t0 = 221 - 0 = 221
     vi.advanceTimersByTime(1000);
     expect(calls).toEqual([
       { bytes: [0x90, 60, 100], time: 100 },
@@ -135,9 +137,9 @@ describe('Scheduler', () => {
       { bytes: [0x80, 60, 0], time: 201 },
       { bytes: [0xb0, 64, 0], time: 201 },
       // Resumed events keep their song times under the new t0.
-      { bytes: [0x80, 60, 0], time: 550 },
-      { bytes: [0x91, 72, 90], time: 650 },
-      { bytes: [0x81, 72, 0], time: 850 },
+      { bytes: [0x80, 60, 0], time: 521 },
+      { bytes: [0x91, 72, 90], time: 621 },
+      { bytes: [0x81, 72, 0], time: 821 },
     ]);
     expect(scheduler.isPlaying()).toBe(false);
   });
@@ -348,6 +350,148 @@ describe('Scheduler', () => {
 
     scheduler.stop();
     expect(timer.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('anchors play() at an explicit wall time for a track switch', () => {
+    const { output, calls } = makeOutput();
+    const scheduler = new Scheduler({ output, events: EVENTS, duration: DURATION });
+    scheduler.play(500);
+    vi.advanceTimersByTime(1200);
+    expect(calls).toEqual(
+      FULL_RUN.map((call) => ({ ...call, time: call.time + 400 })),
+    );
+  });
+
+  it('reports the panic and stop walls so the next song can start after them', () => {
+    const { output } = makeOutput();
+    const scheduler = new Scheduler({ output, events: EVENTS, duration: DURATION });
+    scheduler.play();
+    vi.advanceTimersByTime(100);
+    // The last queued event is at wall 200 (t=0.1); the panic sits just after.
+    expect(scheduler.panic()).toBe(201);
+    scheduler.dispose();
+
+    const second = new Scheduler({ output, events: EVENTS, duration: DURATION });
+    second.play();
+    vi.advanceTimersByTime(100);
+    // t0 is now 200, so the queued CC sits at 300 and the release follows it.
+    expect(second.stop()).toBe(301);
+  });
+
+  describe('seek', () => {
+    const SEEK_EVENTS: ParsedMidiEvent[] = [
+      { type: 'program-change', time: 0, channel: 0, program: 5 },
+      { type: 'control-change', time: 0, channel: 0, controller: 0, value: 3 },
+      { type: 'control-change', time: 0, channel: 0, controller: 32, value: 1 },
+      { type: 'control-change', time: 0.1, channel: 0, controller: 7, value: 100 },
+      { type: 'pitch-bend', time: 0.1, channel: 1, value: 1000 },
+      { type: 'channel-pressure', time: 0.2, channel: 2, value: 50 },
+      { type: 'note-on', time: 0.2, channel: 0, note: 60, velocity: 100 },
+      { type: 'control-change', time: 0.4, channel: 0, controller: 64, value: 127 },
+      { type: 'note-off', time: 1, channel: 0, note: 60, velocity: 0 },
+      { type: 'note-on', time: 1.5, channel: 0, note: 64, velocity: 80 },
+      { type: 'note-off', time: 2, channel: 0, note: 64, velocity: 0 },
+    ];
+
+    const INITIAL: SendRecord[] = [
+      { bytes: [0xc0, 5], time: 100 },
+      { bytes: [0xb0, 0, 3], time: 100 },
+      { bytes: [0xb0, 32, 1], time: 100 },
+      { bytes: [0xb0, 7, 100], time: 200 },
+      { bytes: [0xe1, 0x68, 0x07], time: 200 },
+      { bytes: [0xd2, 50], time: 300 },
+      { bytes: [0x90, 60, 100], time: 300 },
+    ];
+
+    it('releases the old notes, restores the MIDI state at the target and continues from it', () => {
+      const { output, calls } = makeOutput();
+      const scheduler = new Scheduler({ output, events: SEEK_EVENTS, duration: 2 });
+      scheduler.play();
+      vi.advanceTimersByTime(150); // through the note-on at 0.2 s
+      expect(calls).toEqual(INITIAL);
+      expect(scheduler.position()).toBe(0.05);
+
+      scheduler.seek(1.2);
+      expect(scheduler.position()).toBe(1.2);
+
+      vi.advanceTimersByTime(1000);
+      expect(calls).toEqual([
+        ...INITIAL,
+        // Release the sounding note after the delivered tail (300).
+        { bytes: [0x80, 60, 0], time: 301 },
+        { bytes: [0xb0, 64, 0], time: 301 },
+        // The state the channels had reached by 1.2 s, after the release.
+        { bytes: [0xb0, 0, 3], time: 302 },
+        { bytes: [0xb0, 32, 1], time: 302 },
+        { bytes: [0xc0, 5], time: 302 },
+        { bytes: [0xb0, 7, 100], time: 302 },
+        { bytes: [0xb0, 64, 127], time: 302 },
+        { bytes: [0xe1, 0x68, 0x07], time: 302 },
+        { bytes: [0xd2, 50], time: 302 },
+        // Notes before the target are not re-struck; playback resumes at 1.5 s.
+        { bytes: [0x90, 64, 80], time: 622 },
+        { bytes: [0x80, 64, 0], time: 1122 },
+      ]);
+      expect(scheduler.isPlaying()).toBe(false);
+    });
+
+    it('seeks while paused, stays paused, and resumes from the target after the state', () => {
+      const { output, calls } = makeOutput();
+      const scheduler = new Scheduler({ output, events: EVENTS, duration: DURATION });
+      scheduler.play();
+      vi.advanceTimersByTime(100);
+      scheduler.pause();
+      expect(scheduler.isPlaying()).toBe(false);
+
+      scheduler.seek(0.4);
+      expect(scheduler.position()).toBe(0.4);
+      expect(scheduler.isPlaying()).toBe(false);
+      expect(calls.slice(-1)).toEqual([{ bytes: [0xb0, 10, 64], time: 202 }]);
+
+      vi.advanceTimersByTime(50);
+      scheduler.play();
+      vi.advanceTimersByTime(600);
+      expect(calls).toEqual([
+        { bytes: [0x90, 60, 100], time: 100 },
+        { bytes: [0xb0, 10, 64], time: 200 },
+        { bytes: [0x80, 60, 0], time: 201 },
+        { bytes: [0xb0, 64, 0], time: 201 },
+        // Target state goes out while paused; the resume note follows it.
+        { bytes: [0xb0, 10, 64], time: 202 },
+        { bytes: [0x91, 72, 90], time: 222 },
+        { bytes: [0x81, 72, 0], time: 422 },
+      ]);
+    });
+
+    it('clamps to the song and ignores a seek while stopped', () => {
+      const { output, calls } = makeOutput();
+      const scheduler = new Scheduler({ output, events: EVENTS, duration: DURATION });
+      scheduler.seek(0.3);
+      expect(scheduler.position()).toBe(0);
+      vi.advanceTimersByTime(100);
+
+      scheduler.play();
+      vi.advanceTimersByTime(25);
+      scheduler.seek(-5);
+      expect(scheduler.position()).toBe(0);
+      scheduler.seek(99);
+      expect(scheduler.position()).toBe(DURATION);
+
+      const ended = vi.fn();
+      const endScheduler = new Scheduler({
+        output,
+        events: EVENTS,
+        duration: DURATION,
+        onEnded: ended,
+      });
+      endScheduler.play();
+      vi.advanceTimersByTime(25);
+      endScheduler.seek(99);
+      expect(endScheduler.position()).toBe(DURATION);
+      vi.advanceTimersByTime(300);
+      expect(ended).toHaveBeenCalledTimes(1);
+      expect(calls.length).toBeGreaterThan(0);
+    });
   });
 
   it('stops cleanly and reports when output.send throws', () => {

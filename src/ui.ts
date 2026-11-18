@@ -74,7 +74,18 @@ export function createUi(root: HTMLElement): void {
         <button type="button" class="danger" data-testid="panic-button">Panic</button>
       </div>
       <div class="row progress-row">
-        <progress max="1" value="0" aria-label="Playback position" data-testid="progress"></progress>
+        <div
+          class="timeline disabled"
+          data-testid="timeline"
+          role="slider"
+          tabindex="-1"
+          aria-label="Playback position"
+          aria-valuemin="0"
+          aria-valuemax="0"
+          aria-valuenow="0"
+          aria-valuetext="0:00.0 of 0:00"
+          aria-disabled="true"
+        ><div class="timeline-fill" data-testid="timeline-fill"></div></div>
         <span data-testid="time-display">0:00.0 / 0:00</span>
       </div>
       <p class="hint">Shortcuts: Space play/pause · Esc panic · ← previous · → next</p>
@@ -107,14 +118,22 @@ export function createUi(root: HTMLElement): void {
         <input type="range" id="monitor-volume" min="0" max="100" value="100" data-testid="volume-slider" />
         <span data-testid="volume-text">100%</span>
       </div>
-      <div class="meter" data-testid="meter" role="img" aria-label="Input level meter">
+      <div
+        class="meter"
+        data-testid="meter"
+        role="meter"
+        aria-label="Input level"
+        aria-valuemin="-100"
+        aria-valuemax="0"
+        aria-valuenow="-100"
+        aria-valuetext="Left −∞ dBFS, Right −∞ dBFS"
+      >
         <div class="meter-bar"><div class="meter-fill" data-testid="meter-left"></div></div>
         <div class="meter-bar"><div class="meter-fill" data-testid="meter-right"></div></div>
+        <p class="meter-footer">
+          <span class="clip" data-testid="clip-indicator" hidden>CLIP</span>
+        </p>
       </div>
-      <p class="row">
-        <span data-testid="meter-text">L −∞ · R −∞ dBFS</span>
-        <span class="clip" data-testid="clip-indicator" hidden>CLIP</span>
-      </p>
       <p data-testid="latency-readout">Browser latency: —</p>
       <p class="notice" data-testid="feedback-warning" hidden>
         The input and output are the same device. Unmute with care: a microphone near the
@@ -125,8 +144,11 @@ export function createUi(root: HTMLElement): void {
       <h2 id="playlist-heading">Playlist</h2>
       <div class="drop-zone" data-testid="drop-zone">
         <span>Drop .mid files here, or</span>
-        <button type="button" data-testid="add-files-button">Add files</button>
+        <button type="button" class="compact" data-testid="add-files-button" aria-label="Add files" title="Add files">+</button>
+        <button type="button" data-testid="load-files-button">Load files</button>
+        <button type="button" data-testid="clear-playlist-button">Clear playlist</button>
         <input type="file" multiple accept=".mid,.midi" hidden data-testid="file-input" />
+        <input type="file" multiple accept=".mid,.midi" hidden data-testid="load-file-input" />
       </div>
       <p data-testid="playlist-empty">No songs yet.</p>
       <ol class="playlist" aria-label="Playlist" data-testid="playlist"></ol>
@@ -145,7 +167,8 @@ export function createUi(root: HTMLElement): void {
   const previousButton = root.querySelector<HTMLButtonElement>('[data-testid="previous-button"]')!;
   const nextButton = root.querySelector<HTMLButtonElement>('[data-testid="next-button"]')!;
   const panicButton = root.querySelector<HTMLButtonElement>('[data-testid="panic-button"]')!;
-  const progress = root.querySelector<HTMLProgressElement>('[data-testid="progress"]')!;
+  const timeline = root.querySelector<HTMLElement>('[data-testid="timeline"]')!;
+  const timelineFill = root.querySelector<HTMLElement>('[data-testid="timeline-fill"]')!;
   const timeDisplay = root.querySelector<HTMLElement>('[data-testid="time-display"]')!;
   const audioInputPicker = root.querySelector<HTMLSelectElement>('[data-testid="audio-input-picker"]')!;
   const audioOutputPicker = root.querySelector<HTMLSelectElement>('[data-testid="audio-output-picker"]')!;
@@ -156,16 +179,21 @@ export function createUi(root: HTMLElement): void {
   const muteButton = root.querySelector<HTMLButtonElement>('[data-testid="mute-button"]')!;
   const volumeSlider = root.querySelector<HTMLInputElement>('[data-testid="volume-slider"]')!;
   const volumeText = root.querySelector<HTMLElement>('[data-testid="volume-text"]')!;
+  const meter = root.querySelector<HTMLElement>('[data-testid="meter"]')!;
   const meterLeft = root.querySelector<HTMLElement>('[data-testid="meter-left"]')!;
   const meterRight = root.querySelector<HTMLElement>('[data-testid="meter-right"]')!;
-  const meterText = root.querySelector<HTMLElement>('[data-testid="meter-text"]')!;
   const clipIndicator = root.querySelector<HTMLElement>('[data-testid="clip-indicator"]')!;
   const latencyReadout = root.querySelector<HTMLElement>('[data-testid="latency-readout"]')!;
   const feedbackWarning = root.querySelector<HTMLElement>('[data-testid="feedback-warning"]')!;
   const playlistPanel = root.querySelector<HTMLElement>('[data-testid="playlist-panel"]')!;
   const dropZone = root.querySelector<HTMLElement>('[data-testid="drop-zone"]')!;
   const addFilesButton = root.querySelector<HTMLButtonElement>('[data-testid="add-files-button"]')!;
+  const loadFilesButton = root.querySelector<HTMLButtonElement>('[data-testid="load-files-button"]')!;
+  const clearPlaylistButton = root.querySelector<HTMLButtonElement>(
+    '[data-testid="clear-playlist-button"]',
+  )!;
   const fileInput = root.querySelector<HTMLInputElement>('[data-testid="file-input"]')!;
+  const loadFileInput = root.querySelector<HTMLInputElement>('[data-testid="load-file-input"]')!;
   const playlistEmpty = root.querySelector<HTMLElement>('[data-testid="playlist-empty"]')!;
   const playlistList = root.querySelector<HTMLOListElement>('[data-testid="playlist"]')!;
 
@@ -212,15 +240,147 @@ export function createUi(root: HTMLElement): void {
     updateProgress();
   }
 
-  /** Refreshes the progress bar and elapsed / total readout (runs 20×/s). */
-  function updateProgress(): void {
-    const total = player.currentEntry()?.durationSec ?? 0;
-    const position = total > 0 ? Math.min(player.position(), total) : player.position();
-    const value = total > 0 ? position / total : 0;
-    if (progress.value !== value) progress.value = value;
-    const text = `${formatTime(position, true)} / ${formatTime(total)}`;
+  function currentDuration(): number {
+    return player.currentEntry()?.durationSec ?? 0;
+  }
+
+  /** The timeline is live only while playing or paused, and only once the duration is known. */
+  function seekableNow(): boolean {
+    return (player.state === 'playing' || player.state === 'paused') && currentDuration() > 0;
+  }
+
+  let timelineSeekable = false;
+  let draggingTimeline = false;
+  let previewSeconds = 0;
+
+  /** Updates the timeline fill and its accessible value description. */
+  function renderTimeline(positionSec: number, totalSec: number): void {
+    const position = Math.max(0, Math.min(totalSec, positionSec));
+    const ratio = totalSec > 0 ? position / totalSec : 0;
+    timelineFill.style.width = `${ratio * 100}%`;
+    const now = position.toFixed(1);
+    if (timeline.getAttribute('aria-valuenow') !== now) timeline.setAttribute('aria-valuenow', now);
+    const max = totalSec.toFixed(1);
+    if (timeline.getAttribute('aria-valuemax') !== max) timeline.setAttribute('aria-valuemax', max);
+    const text = `${formatTime(position, true)} of ${formatTime(totalSec)}`;
+    if (timeline.getAttribute('aria-valuetext') !== text) {
+      timeline.setAttribute('aria-valuetext', text);
+    }
+  }
+
+  function renderElapsed(positionSec: number, totalSec: number): void {
+    const text = `${formatTime(positionSec, true)} / ${formatTime(totalSec)}`;
     if (timeDisplay.textContent !== text) timeDisplay.textContent = text;
   }
+
+  /** Refreshes the timeline and elapsed / total readout (runs 20×/s). */
+  function updateProgress(): void {
+    const total = currentDuration();
+    const seekable = seekableNow();
+    if (seekable !== timelineSeekable) {
+      timelineSeekable = seekable;
+      timeline.tabIndex = seekable ? 0 : -1;
+      timeline.setAttribute('aria-disabled', String(!seekable));
+      timeline.classList.toggle('disabled', !seekable);
+    }
+    if (draggingTimeline) {
+      // The drag preview owns the display until the pointer is released.
+      renderElapsed(previewSeconds, total);
+      return;
+    }
+    const position = Math.max(0, Math.min(total, player.position()));
+    renderTimeline(position, total);
+    renderElapsed(position, total);
+  }
+
+  /** Commits a seek (on pointer release or a keyboard step). */
+  function commitSeek(positionSec: number): void {
+    const total = currentDuration();
+    if (!timelineSeekable || total <= 0) return;
+    const position = Math.max(0, Math.min(total, positionSec));
+    player.seek(position);
+    renderTimeline(position, total);
+    renderElapsed(position, total);
+  }
+
+  /** Shows a pending seek while the pointer is still down (not committed yet). */
+  function previewSeek(positionSec: number): void {
+    const total = currentDuration();
+    previewSeconds = Math.max(0, Math.min(total, positionSec));
+    renderTimeline(previewSeconds, total);
+    renderElapsed(previewSeconds, total);
+  }
+
+  function timelineSecondsAt(clientX: number): number {
+    const rect = timeline.getBoundingClientRect();
+    if (rect.width <= 0) return 0;
+    return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * currentDuration();
+  }
+
+  timeline.addEventListener('pointerdown', (event) => {
+    if (!timelineSeekable || event.button !== 0) return;
+    draggingTimeline = true;
+    timeline.focus();
+    try {
+      timeline.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture is a nicety; dragging still works without it.
+    }
+    previewSeek(timelineSecondsAt(event.clientX));
+    event.preventDefault();
+  });
+  timeline.addEventListener('pointermove', (event) => {
+    if (!draggingTimeline) return;
+    previewSeek(timelineSecondsAt(event.clientX));
+  });
+  timeline.addEventListener('pointerup', (event) => {
+    if (!draggingTimeline) return;
+    draggingTimeline = false;
+    try {
+      timeline.releasePointerCapture(event.pointerId);
+    } catch {
+      // Already released.
+    }
+    commitSeek(previewSeconds);
+  });
+  timeline.addEventListener('pointercancel', () => {
+    if (!draggingTimeline) return;
+    draggingTimeline = false;
+    updateProgress();
+  });
+  timeline.addEventListener('keydown', (event) => {
+    if (!timelineSeekable) return;
+    const total = currentDuration();
+    const position = draggingTimeline
+      ? previewSeconds
+      : Math.max(0, Math.min(total, player.position()));
+    let next: number;
+    switch (event.key) {
+      case 'ArrowLeft':
+        next = position - 1;
+        break;
+      case 'ArrowRight':
+        next = position + 1;
+        break;
+      case 'PageDown':
+        next = position - 10;
+        break;
+      case 'PageUp':
+        next = position + 10;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = total;
+        break;
+      default:
+        return;
+    }
+    // Keep the document shortcut handler (←/→ = previous/next) out of this.
+    event.preventDefault();
+    commitSeek(next);
+  });
 
   const rows = new Map<string, HTMLLIElement>();
 
@@ -232,6 +392,7 @@ export function createUi(root: HTMLElement): void {
     li.draggable = true;
     li.innerHTML = `
       <span class="drag-handle" aria-hidden="true" title="Drag to reorder">⠿</span>
+      <span class="entry-number" data-testid="entry-number" aria-hidden="true"></span>
       <span class="entry-name" data-testid="entry-name"></span>
       <span class="entry-duration" data-testid="entry-duration"></span>
       <span class="entry-status" data-testid="entry-status"></span>
@@ -244,11 +405,19 @@ export function createUi(root: HTMLElement): void {
     return li;
   }
 
-  function updateRow(li: HTMLLIElement, entry: PlaylistEntry, isCurrent: boolean): void {
+  function updateRow(
+    li: HTMLLIElement,
+    entry: PlaylistEntry,
+    isCurrent: boolean,
+    index: number,
+  ): void {
     const set = (testId: string, text: string): void => {
       const el = li.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!;
       if (el.textContent !== text) el.textContent = text;
     };
+    // Row numbers are derived from the order, so add/load/remove/reorder and a
+    // reload all renumber consistently.
+    set('entry-number', String(index + 1));
     set('entry-name', entry.name);
     set('entry-duration', entry.durationSec === undefined ? (entry.status === 'error' ? '—' : '…') : formatTime(entry.durationSec));
     set('entry-status', entry.status === 'error' ? `Error: ${entry.error ?? 'unreadable'}` : 'Ready');
@@ -283,7 +452,7 @@ export function createUi(root: HTMLElement): void {
         li = createRow(entry.id);
         rows.set(entry.id, li);
       }
-      updateRow(li, entry, entry.id === currentId);
+      updateRow(li, entry, entry.id === currentId, index);
       if (playlistList.children[index] !== li) {
         playlistList.insertBefore(li, playlistList.children[index] ?? null);
       }
@@ -409,11 +578,40 @@ export function createUi(root: HTMLElement): void {
     if (hasFiles(event)) event.preventDefault();
   });
 
+  function loadFiles(files: File[]): void {
+    if (files.length === 0) return;
+    const { added, rejected } = player.load(files);
+    const parts: string[] = [];
+    if (added > 0) parts.push(`Loaded ${added} file${added === 1 ? '' : 's'} — playlist replaced.`);
+    if (rejected.length > 0) {
+      parts.push(
+        `Rejected ${rejected.length} file${rejected.length === 1 ? '' : 's'} (not .mid or .midi): ${rejected.join(', ')}`,
+      );
+    }
+    if (added === 0) parts.push('Playlist unchanged.');
+    setStatus(parts.join(' '));
+  }
+
+  function clearPlaylist(): void {
+    if (player.playlist.entries.length === 0) {
+      setStatus('The playlist is already empty.');
+      return;
+    }
+    player.clear();
+    setStatus('Playlist cleared.');
+  }
+
   addFilesButton.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', () => {
     addFiles(Array.from(fileInput.files ?? []));
     fileInput.value = '';
   });
+  loadFilesButton.addEventListener('click', () => loadFileInput.click());
+  loadFileInput.addEventListener('change', () => {
+    loadFiles(Array.from(loadFileInput.files ?? []));
+    loadFileInput.value = '';
+  });
+  clearPlaylistButton.addEventListener('click', clearPlaylist);
 
   function panic(): void {
     if (midi.selectedOutput() === null) {
@@ -521,14 +719,30 @@ export function createUi(root: HTMLElement): void {
     `${Math.max(0, Math.min(100, ((db - -60) / 60) * 100))}%`;
   const formatDb = (db: number): string => (db <= DB_FLOOR ? '−∞' : db.toFixed(1).replace('-', '−'));
   let clipUntil = 0;
+  let meterDescribedAt = -Infinity;
+
+  /**
+   * The bars are the visual meter; the level is exposed through the meter's
+   * `aria-valuetext` (T8 removed the visible numeric readout). Throttled to
+   * ~10 Hz so a screen reader is not flooded by animation frames.
+   */
+  function describeMeter(now: number, left: number, right: number): void {
+    if (now - meterDescribedAt < 100) return;
+    meterDescribedAt = now;
+    const text = `Left ${formatDb(left)} dBFS, Right ${formatDb(right)} dBFS`;
+    if (meter.getAttribute('aria-valuetext') !== text) {
+      meter.setAttribute('aria-valuetext', text);
+      const loudest = Math.min(0, Math.max(DB_FLOOR, Math.max(left, right)));
+      meter.setAttribute('aria-valuenow', String(Math.round(loudest * 10) / 10));
+    }
+  }
 
   /** Meter and latency readout, driven by requestAnimationFrame. */
   function meterFrame(now: number): void {
     const { left, right } = monitor.peaks();
     meterLeft.style.width = meterPercent(left);
     meterRight.style.width = meterPercent(right);
-    const text = `L ${formatDb(left)} · R ${formatDb(right)} dBFS`;
-    if (meterText.textContent !== text) meterText.textContent = text;
+    describeMeter(now, left, right);
     if (Math.max(left, right) > CLIP_THRESHOLD_DB) clipUntil = now + 1000;
     clipIndicator.hidden = now > clipUntil;
     const latency = monitor.latencyMs();

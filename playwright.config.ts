@@ -12,7 +12,17 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { browserName: 'chromium' } },
-    { name: 'firefox', use: { browserName: 'firefox' } },
+    {
+      name: 'firefox',
+      use: {
+        browserName: 'firefox',
+        // Playwright's Firefox build cannot initialize its macOS seatbelt
+        // sandbox when the browser itself runs inside a nested file sandbox
+        // (some developer/CI sandboxes); it crashes on the first page. Content
+        // sandboxing is irrelevant for these mocked, localhost-only tests.
+        launchOptions: { env: { MOZ_DISABLE_CONTENT_SANDBOX: '1' } },
+      },
+    },
   ],
   webServer: {
     command: 'npm run dev -- --port 4173 --strictPort',

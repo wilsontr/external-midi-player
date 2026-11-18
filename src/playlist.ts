@@ -56,6 +56,8 @@ export interface PlaylistState {
 
 export type PlaylistAction =
   | { type: 'add'; entries: PlaylistEntry[] }
+  /** Replaces the whole list ("Load files"); an empty list clears it. */
+  | { type: 'replace'; entries: PlaylistEntry[] }
   | { type: 'remove'; id: string }
   /** Moves the entry so it ends up at `toIndex` of the resulting list. */
   | { type: 'move'; id: string; toIndex: number }
@@ -152,6 +154,13 @@ export function playlistReducer(state: PlaylistState, action: PlaylistAction): P
           : (entries.find((e) => e.status === 'ready')?.id ?? null);
       return { entries, currentId };
     }
+    case 'replace': {
+      const entries = action.entries;
+      if (entries.length === 0) {
+        return state.entries.length === 0 ? state : emptyPlaylist;
+      }
+      return { entries, currentId: entries.find((e) => e.status === 'ready')?.id ?? null };
+    }
     case 'remove': {
       const index = state.entries.findIndex((e) => e.id === action.id);
       if (index < 0) return state;
@@ -177,8 +186,15 @@ export function playlistReducer(state: PlaylistState, action: PlaylistAction): P
       return state.currentId === action.id ? state : { ...state, currentId: action.id };
     case 'parsed':
       return updateEntry(state, action.id, { durationSec: action.durationSec });
-    case 'failed':
-      return updateEntry(state, action.id, { status: 'error', error: action.error });
+    case 'failed': {
+      const updated = updateEntry(state, action.id, { status: 'error', error: action.error });
+      if (updated === state || state.currentId !== action.id) return updated;
+      // The highlighted entry just turned out to be unplayable: move the
+      // highlight to the next ready entry so "plays next" stays truthful.
+      const index = updated.entries.findIndex((e) => e.id === action.id);
+      if (index < 0) return updated;
+      return { ...updated, currentId: neighborReadyId(updated.entries, index) };
+    }
   }
 }
 
@@ -241,7 +257,7 @@ export type PlayerState = 'stopped' | 'playing' | 'paused';
 /** The slice of `Scheduler` the transport uses (injectable for tests). */
 export type TransportScheduler = Pick<
   Scheduler,
-  'play' | 'pause' | 'stop' | 'panic' | 'dispose' | 'position'
+  'play' | 'pause' | 'stop' | 'panic' | 'dispose' | 'position' | 'seek'
 >;
 
 export interface PlaylistPlayerOptions {
@@ -257,6 +273,8 @@ export interface PlaylistPlayerOptions {
   createScheduler?: (options: SchedulerOptions) => TransportScheduler;
   /** Gap between songs so external synths finish their release tails. Default 1000 ms. */
   gapMs?: number;
+  /** Gap after a track-switch Panic before the new song starts. Default 50 ms. */
+  switchGapMs?: number;
   /** Storage for the playlist + current entry. Defaults to `localStorage`. */
   storage?: PlaylistStorage;
 }
@@ -283,12 +301,14 @@ export class PlaylistPlayer {
   private readonly parse: (file: File) => Promise<ParseResult>;
   private readonly createScheduler: (options: SchedulerOptions) => TransportScheduler;
   private readonly gapMs: number;
+  private readonly switchGapMs: number;
 
   constructor(options: PlaylistPlayerOptions) {
     this.options = options;
     this.parse = options.parse ?? parseSongForPlayback;
     this.createScheduler = options.createScheduler ?? ((o) => new Scheduler(o));
     this.gapMs = options.gapMs ?? 1000;
+    this.switchGapMs = options.switchGapMs ?? 50;
     this.storage = options.storage ?? resolveStorage();
     this.restore();
   }
@@ -335,6 +355,51 @@ export class PlaylistPlayer {
       void this.pumpParseQueue();
     }
     return { added: accepted.length, rejected };
+  }
+
+  /**
+   * Replaces the playlist with the selected files (the "Load files" action).
+   * Playback stops first. Non-MIDI files are rejected; if no valid file is
+   * selected the existing playlist is kept unchanged. The first ready entry
+   * (the first new entry) becomes the current one.
+   */
+  load(files: File[]): { added: number; rejected: string[] } {
+    const accepted = files.filter((f) => isMidiFileName(f.name));
+    const rejected = files.filter((f) => !isMidiFileName(f.name)).map((f) => f.name);
+    if (accepted.length === 0) return { added: 0, rejected };
+    this.stop();
+    this.parseQueue.length = 0;
+    this.fileData.clear();
+    const entries = accepted.map(createEntry);
+    this.dispatch({ type: 'replace', entries });
+    this.parseQueue.push(...entries.map((e) => e.id));
+    void this.pumpParseQueue();
+    return { added: accepted.length, rejected };
+  }
+
+  /** Stops playback and empties the playlist, persisting the empty list. */
+  clear(): void {
+    this.stop();
+    this.parseQueue.length = 0;
+    this.fileData.clear();
+    this.dispatch({ type: 'replace', entries: [] });
+  }
+
+  /**
+   * Seeks within the current song. Ignored while stopped: the timeline is
+   * live only while playing or paused, and a stopped song always restarts
+   * from 0 (documented in T8 and the design doc).
+   */
+  seek(positionSec: number): void {
+    if (this.playerState === 'stopped' || this.scheduler === null) return;
+    try {
+      this.scheduler.seek(positionSec);
+    } catch (err) {
+      this.outputLost();
+      this.options.onStatus(
+        `MIDI output failed — playback stopped (${err instanceof Error ? err.message : String(err)}).`,
+      );
+    }
   }
 
   remove(id: string): void {
@@ -452,7 +517,13 @@ export class PlaylistPlayer {
       else void this.start(id);
       return;
     }
-    this.stop();
+    if (this.playerState === 'paused' && id !== null && id !== this.list.currentId) {
+      // A paused track switch gets the same full Panic (R8) as a playing one;
+      // the new entry is then selected and stays paused/stopped.
+      this.panic();
+    } else {
+      this.stop();
+    }
     if (id !== null) this.dispatch({ type: 'setCurrent', id });
   }
 
@@ -466,7 +537,29 @@ export class PlaylistPlayer {
       return;
     }
     this.cancelPending();
-    this.releaseScheduler();
+    // Switching from a playing or paused track: Panic (CC123/120/121 and
+    // CC64 = 0 on all 16 channels) goes out after the old queue's tail, and
+    // the new song is anchored after the panic so none of its notes are cut
+    // off. Restarting the same entry only releases (no Panic), also after the
+    // old tail. From stopped there is nothing to release.
+    let startAt: number | undefined;
+    const previous = this.scheduler;
+    if (previous !== null) {
+      const switching = this.playerState !== 'stopped' && this.list.currentId !== id;
+      try {
+        if (switching) {
+          startAt = previous.panic() + this.switchGapMs;
+        } else if (this.playerState !== 'stopped') {
+          const tail = previous.stop();
+          if (tail !== null) startAt = tail + this.switchGapMs;
+        }
+      } catch {
+        // The output vanished; the new song's own send/parse will surface it.
+      } finally {
+        previous.dispose();
+        this.scheduler = null;
+      }
+    }
     const token = ++this.loadToken;
     this.dispatch({ type: 'setCurrent', id });
     this.setState('playing');
@@ -501,7 +594,7 @@ export class PlaylistPlayer {
       },
     });
     this.scheduler = scheduler;
-    scheduler.play();
+    scheduler.play(startAt);
   }
 
   private handleEnded(ended: TransportScheduler): void {

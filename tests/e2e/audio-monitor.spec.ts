@@ -65,15 +65,24 @@ test.describe('T4 — audio monitoring', () => {
     expect(await audioMock(page, 'm.gain.gain.value')).toBe(0);
   });
 
-  test('the meter shows peak dBFS (even while muted) and a clip indicator above −1 dBFS', async ({
+  test('the meter shows peak levels (even while muted) through its accessible description', async ({
     page,
   }) => {
     await setup(page);
     await page.getByTestId('audio-input-picker').selectOption('in1');
-    await expect(page.getByTestId('meter-text')).toHaveText('L −∞ · R −∞ dBFS');
+    const meter = page.getByTestId('meter');
+    await expect(meter).toHaveAttribute(
+      'aria-valuetext',
+      'Left −∞ dBFS, Right −∞ dBFS',
+    );
+    // The numeric readout is gone; only the bars and CLIP remain visible.
+    await expect(page.getByTestId('monitor-panel')).not.toContainText('dBFS');
 
     await page.evaluate(() => ((window as any).__mockAudio.level = [0.5, 0.25]));
-    await expect(page.getByTestId('meter-text')).toHaveText('L −6.0 · R −12.0 dBFS');
+    await expect(meter).toHaveAttribute(
+      'aria-valuetext',
+      'Left −6.0 dBFS, Right −12.0 dBFS',
+    );
     await expect(page.getByTestId('clip-indicator')).toBeHidden();
 
     await page.evaluate(() => ((window as any).__mockAudio.level = [0.95, 0.1]));
@@ -132,17 +141,26 @@ test.describe('T4 — audio monitoring', () => {
     await page.evaluate(() => ((window as any).__mockAudio.level = [0.5, 0.5]));
 
     await picker.selectOption('in1');
-    await expect(page.getByTestId('meter-text')).toHaveText('L −6.0 · R −6.0 dBFS');
+    await expect(page.getByTestId('meter')).toHaveAttribute(
+      'aria-valuetext',
+      'Left −6.0 dBFS, Right −6.0 dBFS',
+    );
 
     await picker.selectOption('in2');
 
     await expect(page.getByTestId('status-region')).toContainText('Could not open the selected audio input');
     await expect(picker).toHaveValue('');
-    await expect(page.getByTestId('meter-text')).toHaveText('L −∞ · R −∞ dBFS');
+    await expect(page.getByTestId('meter')).toHaveAttribute(
+      'aria-valuetext',
+      'Left −∞ dBFS, Right −∞ dBFS',
+    );
 
     // The next working device starts monitoring again.
     await picker.selectOption('in1');
-    await expect(page.getByTestId('meter-text')).toHaveText('L −6.0 · R −6.0 dBFS');
+    await expect(page.getByTestId('meter')).toHaveAttribute(
+      'aria-valuetext',
+      'Left −6.0 dBFS, Right −6.0 dBFS',
+    );
   });
 
   test('falls back to the system default when the chosen output is rejected', async ({ page }) => {
@@ -197,7 +215,10 @@ test.describe('T4 — audio monitoring', () => {
 
     await expect(page.getByTestId('status-region')).toContainText('input disconnected');
     await expect(page.getByTestId('audio-input-picker')).toHaveValue('');
-    await expect(page.getByTestId('meter-text')).toHaveText('L −∞ · R −∞ dBFS');
+    await expect(page.getByTestId('meter')).toHaveAttribute(
+      'aria-valuetext',
+      'Left −∞ dBFS, Right −∞ dBFS',
+    );
   });
 
   test('warns when the input and output are the same device', async ({ page }) => {

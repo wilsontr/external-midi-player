@@ -21,7 +21,7 @@ The intended setup: the browser drives an external synth or sound module over US
 
 - Safari and mobile browsers (no Web MIDI support in Safari).
 - A built-in software synth; playback always goes to a MIDI port.
-- Seeking within a song, tempo change, looping, or channel remapping.
+- Seeking within a song (added post-MVP in T8), tempo change, looping, or channel remapping.
 - Recording the monitored audio.
 - MIDI input, SysEx, or editing MIDI files.
 
@@ -99,6 +99,8 @@ Timing accuracy comes from handing every message to the browser with a future ti
 - **Stop / next / previous:** same release, offset reset to 0.
 - Messages already handed to the browser cannot be cancelled in Chrome (`output.clear()` is not implemented), so the 200 ms look-ahead bounds the overhang. The release messages are sent with a timestamp just after the last queued event.
 - **Panic:** for channels 1–16, send CC123 (all notes off), CC120 (all sound off), CC121 (reset controllers) and CC64 = 0.
+- **Seek (post-MVP, T8):** click/drag or keyboard (arrows, Page, Home, End); the seek commits on release and only while playing or paused (a stopped song always restarts at 0). A playing seek releases sounding notes, re-sends the MIDI state at the target (program and bank changes, controllers, pitch bend, channel pressure) just after the look-ahead tail, then re-anchors the clock so playback continues from the target; notes that began before the target are not re-struck.
+- **Track switch:** switching to a different entry while playing or paused sends Panic (R8) just after the old queue's tail and starts the new track only after the panic, so the old tail cannot cut off the new notes.
 
 ## Playlist
 
@@ -124,6 +126,7 @@ PlaylistEntry {
 - The current entry is highlighted. Clicking a row (or its Play button) plays that entry from the start.
 - Auto-advance moves to the next `ready` entry, skipping `error` entries, with a fixed 1 s gap so external synths finish their release tails.
 - Removing the playing entry stops playback. Reordering during playback keeps the current song playing.
+- **Load files** replaces the playlist with the files chosen in the picker (after stopping playback); non-MIDI files are rejected and, if nothing valid is selected, the existing playlist is unchanged. **Clear playlist** stops playback, empties the list and persists the empty list. Rows are numbered 1..N from their order, so the numbers follow add, load, remove, reorder and a reload.
 
 **Player state** is one of `stopped`, `playing` or `paused`. Play and resume go to `playing`; pause goes to `paused`; stop, end of list and output disconnect go to `stopped`.
 
@@ -160,8 +163,8 @@ navigator.mediaDevices.getUserMedia({ audio: {
 `MediaStreamAudioSourceNode` → `GainNode` (volume and mute) → output. The meter taps the source in parallel, through a `ChannelSplitterNode` and one `AnalyserNode` per channel, so both peak levels can be read separately and the meter keeps working while monitoring is muted (which is how it starts).
 
 - Create the `AudioContext` with `latencyHint: 'interactive'` and resume it from a user click.
-- The meter reads peak level from the analysers on `requestAnimationFrame` and shows it in dBFS with a clip indicator above −1 dBFS.
-- Monitoring starts muted. The user unmutes after choosing devices, which avoids a feedback loop when the input is a microphone near speakers.
+- The meter reads peak level from the analysers on `requestAnimationFrame`, draws stereo bars, and exposes the level in dBFS through the meter's accessible description; a clip indicator lights above −1 dBFS.
+- Monitoring starts muted on a fresh profile (no stored settings), which avoids a feedback loop when the input is a microphone near speakers (R10). Later visits restore the saved mute and volume instead of forcing mute. That startup policy is intentional (T8).
 
 ### Output device
 
@@ -175,12 +178,12 @@ Expected round trip from input jack to speakers is roughly 10–40 ms on Chrome,
 
 ## UI layout
 
-One screen, three stacked panels, keyboard-accessible, at least 360 px wide:
+One responsive screen, keyboard-accessible, at least 360 px wide. Panels stack in one column below 960 px; at 960 px and wider it is two columns with the header and audio monitor on the left and playback and playlist on the right (T8). The DOM order stays row-major, so tab order is sensible in both layouts.
 
 1. **Header:** app name, a short getting-started list (connect hardware → "Connect devices" → allow MIDI + microphone → choose MIDI output, audio input and output → load files), browser-support warning when needed, and a "Connect devices" button that triggers the MIDI and microphone permission prompts.
-2. **Playback panel:** MIDI output picker; transport buttons (previous, play/pause, stop, next); Panic; progress bar with elapsed and total time; the current song title.
-3. **Audio monitor panel:** input picker, output picker (or "System default"), mute toggle (on by default), volume slider, stereo level meter, and the latency readout.
-4. **Playlist panel:** drop zone and "Add files" button; clickable rows with name, duration, status and a remove button; drag handles to reorder.
+2. **Playback panel:** MIDI output picker; transport buttons (previous, play/pause, stop, next); Panic; seekable timeline with elapsed and total time; the current song title.
+3. **Audio monitor panel:** input picker, output picker (or "System default"), mute toggle (on by default on a fresh profile), volume slider, stereo level meter (bars plus CLIP; the level is exposed through the meter's accessible description rather than a visible numeric readout), and the latency readout.
+4. **Playlist panel:** drop zone with a compact "+" (Add files) button, Load files and Clear playlist; numbered, clickable rows with name, duration, status and a remove button; drag handles to reorder.
 
 Keyboard shortcuts: Space = play/pause, Esc = Panic, ←/→ = previous/next. Status messages (device lost, file rejected) appear in a single `aria-live` region.
 
@@ -208,15 +211,18 @@ Automated tests cover parsing and scheduling logic; device behaviour is checked 
 
 - Event-list builder: format 0 and 1 fixtures, tempo changes, overlapping notes on one channel.
 - Scheduler with a fake clock and a mock `MIDIOutput`: every event sent once, timestamps correct, release messages sent on pause and stop.
+- Scheduler seek: old notes released, the MIDI state at the target re-sent (program/bank, controllers, pitch bend, channel pressure), notes before the target not re-struck, paused seeks stay paused, stopped seeks ignored, and the resumed clock anchored after the delivered tail.
 - Scheduler timing stress: a dense five-minute event list driven by a jittered tick loop — exact timestamps inside the look-ahead, bounded lateness after a 500 ms stall, no past timestamps and no drift.
-- Playlist reducer: add, remove, reorder, auto-advance skipping error entries.
+- Playlist reducer: add, replace (Load) and clear, remove, reorder, auto-advance skipping error entries, and moving the highlight off a failed current entry.
 - Persistence: playlist and audio settings save/restore, corrupt data ignored, storage failures handled.
 - Worker tick timer: start/stop/dispose, pause/resume, and the worker-error fallback; a Playwright assertion that playback creates the Worker.
 
 **Automated (Playwright, Chromium and Firefox)**
 
-- UI flows with mocked `requestMIDIAccess` and `getUserMedia`: add files, play, pause, next, Panic, device disconnect.
+- UI flows with mocked `requestMIDIAccess` and `getUserMedia`: add/load/clear files, row numbering, play, pause, next, Panic, device disconnect.
 - Reload restores the playlist, current entry and audio settings.
+- Seek: click/drag and keyboard seeking while playing and paused (state restoration, no hanging notes) and the disabled-while-stopped policy.
+- Track switch: Panic is timestamped before the first note of the new track.
 
 **Manual matrix**
 

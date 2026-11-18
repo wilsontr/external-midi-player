@@ -49,7 +49,7 @@ Rules:
 | T5 | [T5-hardening.md](T5-hardening.md) | Hardening and deploy | 1 day | done |
 | T6 | [T6-github-pages-deploy.md](T6-github-pages-deploy.md) | Hardening and deploy | 0.5 day | pending |
 | T7 | [T7-software-synth-output.md](T7-software-synth-output.md) | After the MVP | 2–3 days | pending |
-| T8 | [T8-player-refinements.md](T8-player-refinements.md) | After the MVP | 3–4 days | pending |
+| T8 | [T8-player-refinements.md](T8-player-refinements.md) | After the MVP | 3–4 days | done |
 
 Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8; R3 → T2, T3, T8; R4 → T1; R5 → T2, T5, T7; R6, R7 → T3, T5, T8; R8 → T2; R9, R10 → T4, T8; R11 → T4, T5; R12 → T3, T8; R13 → T1, T3, T4.
 

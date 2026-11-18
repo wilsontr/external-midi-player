@@ -2,7 +2,7 @@
 
 - **ID**: T8
 - **Milestone**: After the MVP
-- **Status**: pending
+- **Status**: done
 - **Estimate**: 3–4 days (seek-dependent)
 - **Depends on**: T5
 - **Modules**: `playlist.ts`, `scheduler.ts`, `ui.ts`, `audioMonitor.ts`, `styles.css`, test suite
@@ -46,14 +46,15 @@ Polish playlist editing, the monitor/layout presentation and transport switching
 
 ## Acceptance criteria
 
-- [ ] "+" adds files exactly like "Add files"; "Load files" replaces the playlist; "Clear" empties it; all three update `localStorage` and survive a reload.
-- [ ] Playlist rows show 1..N numbering that stays correct after add/load/remove/reorder/reload.
-- [ ] At ≥ 960 px the layout is two columns with header + audio monitor left and playback + playlist right; below it stacks; 360 px has no horizontal overflow; keyboard access still works.
-- [ ] The numeric L/R dBFS readout is gone; the bars and CLIP still work and the meter keeps an accessible level description.
-- [ ] Click/drag timeline seeking commits on release, works while playing and paused, restores the MIDI state at the target, updates the progress display and leaves no hanging notes.
-- [ ] The startup mute policy is decided and documented; if it stays as today, a first visit is muted and later visits restore the saved state.
-- [ ] Switching tracks while playing sends Panic before the new track; the new track starts cleanly with no cut-off or hanging notes.
-- [ ] Playlist/storage/layout/seek/panic behavior is covered by Vitest and Playwright tests, and the project Definition of Done passes.
+- [x] "+" adds files exactly like "Add files"; "Load files" replaces the playlist; "Clear" empties it; all three update `localStorage` and survive a reload.
+- [x] Playlist rows show 1..N numbering that stays correct after add/load/remove/reorder/reload.
+- [x] At ≥ 960 px the layout is two columns with header + audio monitor left and playback + playlist right; below it stacks; 360 px has no horizontal overflow; keyboard access still works.
+- [x] The numeric L/R dBFS readout is gone; the bars and CLIP still work and the meter keeps an accessible level description.
+- [x] Click/drag timeline seeking commits on release, works while playing and paused, restores the MIDI state at the target, updates the progress display and leaves no hanging notes.
+- [x] The startup mute policy is decided and documented; if it stays as today, a first visit is muted and later visits restore the saved state.
+- [x] Switching tracks while playing sends Panic before the new track; the new track starts cleanly with no cut-off or hanging notes.
+- [x] Playlist/storage/layout/seek/panic behavior is covered by Vitest and Playwright tests, and the project Definition of Done passes.
+
 
 ## Notes
 
@@ -71,3 +72,13 @@ Polish playlist editing, the monitor/layout presentation and transport switching
 - **Panic vs release:** `Scheduler.stop()` releases only tracked sounding notes; the requested panic is the full R8 sequence, which also resets controllers and sustain. The Player should trigger it on a track change, not on a normal stop from idle.
 - **Design doc updates:** move "Seek within a song" from the After-the-MVP list into this ticket's scope, and note the post-MVP responsive layout and mute policy in the design doc / README. The MVP non-goals remain the MVP non-goals.
 - T6 deployment and T7 software synth are independent of T8; deploy these changes through T6 when they are ready.
+
+### Decisions as implemented
+
+- **Startup mute:** kept the current policy and recorded it as intentional: a fresh profile starts muted (R10), later visits restore the saved mute/volume. R10 is unchanged.
+- **Seeking while stopped:** disabled (the timeline is live only while playing or paused); a stopped song always restarts at 0. Seeking while paused moves the resume point and re-sends the target state, so resume sounds like the target position.
+- **Clear/Load confirmation:** no confirmation dialog. Load replaces immediately after the explicit file picker; Clear acts on the explicit button. Both are single, reversible actions (Load's files come from a picker).
+- **Track-switch delay:** Panic is timestamped after the old queue's tail and the new song is anchored 50 ms later (`switchGapMs`), not at `now + 100 ms`, so the old tail and the 64 panic messages cannot cut off new notes.
+- **Breakpoint and width:** 960 px breakpoint; the app's max width grew from 720 px to 1200 px.
+- **Row numbers:** explicit numbered spans derived from list order (the `<ol>` semantics remain, the visible number is `aria-hidden` to avoid double announcement).
+- **Meter accessibility:** the meter is `role="meter"` with an `aria-valuetext` such as "Left −6.0 dBFS, Right −12.0 dBFS", updated at ~10 Hz; the visible numeric readout is removed.

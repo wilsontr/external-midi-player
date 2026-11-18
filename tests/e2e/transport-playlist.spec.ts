@@ -219,10 +219,10 @@ test.describe('T3 — transport and playlist', () => {
     const updates = await page.evaluate(
       () =>
         new Promise<number>((resolve) => {
-          const bar = document.querySelector('[data-testid="progress"]')!;
+          const display = document.querySelector('[data-testid="time-display"]')!;
           let count = 0;
           const observer = new MutationObserver((records) => (count += records.length));
-          observer.observe(bar, { attributes: true, attributeFilter: ['value'] });
+          observer.observe(display, { childList: true, characterData: true, subtree: true });
           setTimeout(() => {
             observer.disconnect();
             resolve(count);

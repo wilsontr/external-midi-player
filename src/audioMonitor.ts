@@ -182,6 +182,9 @@ export class AudioMonitor {
       (typeof navigator !== 'undefined' ? (navigator.mediaDevices as OutputSelectingDevices | undefined) : undefined);
     this.routing = options.routing ?? detectOutputRouting();
     this.storage = options.storage ?? resolveStorage();
+    // Startup mute policy (T8, intentional): a fresh profile starts muted to
+    // avoid a feedback loop (R10); a later visit restores the saved mute and
+    // volume instead of forcing mute again.
     const saved = this.loadSettings();
     if (saved !== null) {
       this.isMuted = saved.muted;

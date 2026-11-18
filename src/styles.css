@@ -29,13 +29,45 @@ body {
 }
 
 #app {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
-  max-width: 720px;
+  width: 100%;
+  max-width: 1200px;
   min-width: 0;
   margin: 0 auto;
   padding: 16px;
+}
+
+/*
+ * Two columns at ≥ 960 px: header + audio monitor on the left, playback +
+ * playlist on the right. The DOM order stays row-major (header, playback,
+ * monitor, playlist), so tab order stays sensible in both layouts.
+ */
+@media (min-width: 960px) {
+  #app {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    grid-template-areas:
+      'header playback'
+      'monitor playlist';
+    align-items: start;
+  }
+
+  [data-testid='header'] {
+    grid-area: header;
+  }
+
+  [data-testid='playback-panel'] {
+    grid-area: playback;
+  }
+
+  [data-testid='monitor-panel'] {
+    grid-area: monitor;
+  }
+
+  [data-testid='playlist-panel'] {
+    grid-area: playlist;
+  }
 }
 
 .panel {
@@ -43,6 +75,7 @@ body {
   border-radius: 8px;
   background: var(--panel-bg);
   padding: 16px;
+  min-width: 0;
 }
 
 h1 {
@@ -142,14 +175,39 @@ button.danger {
   background: #c0392b;
 }
 
+button.compact {
+  min-width: 2.25em;
+  padding: 6px 8px;
+  font-weight: 700;
+}
+
 .progress-row {
   margin-top: 12px;
   flex-wrap: nowrap;
 }
 
-progress {
+.timeline {
+  position: relative;
   flex: 1;
   min-width: 0;
+  height: 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--panel-border);
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.timeline-fill {
+  height: 100%;
+  width: 0;
+  background: #4a90d9;
+}
+
+.timeline.disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .progress-row span {
@@ -210,6 +268,13 @@ progress {
   user-select: none;
 }
 
+.entry-number {
+  min-width: 1.5em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
 .entry-name {
   flex: 1;
   min-width: 8em;
@@ -251,6 +316,13 @@ progress {
   height: 100%;
   width: 0;
   background: #2ecc71;
+}
+
+.meter-footer {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 1.25em;
+  margin: 0;
 }
 
 .clip {
