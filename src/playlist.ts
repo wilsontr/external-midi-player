@@ -183,6 +183,8 @@ export interface M3uMatch {
   extra: File[];
   /** Base names that resolved between several selected files. */
   ambiguous: string[];
+  /** How many references were satisfied by `fallbackFiles` (the current playlist). */
+  fromPlaylist: number;
 }
 
 /** True for the two playlist extensions accepted by Load playlist. */
@@ -324,25 +326,62 @@ function fileNameOf(value: string): string {
  * match wins; otherwise the base name is compared case-insensitively (NFC),
  * so a playlist exported on one machine loads from a plain file picker on the
  * next. Duplicate base names are assigned in selection order and reported.
+ *
+ * `fallbackFiles` are the files already in the playlist. They are tried only
+ * when the selection has no match, so re-loading a playlist saved in this
+ * session works without picking the MIDI files again; they are never reported
+ * as `extra` (the playlist is replaced, not merged).
  */
-export function matchM3u(tracks: M3uTrack[], files: File[]): M3uMatch {
+export function matchM3u(
+  tracks: M3uTrack[],
+  files: File[],
+  fallbackFiles: File[] = [],
+): M3uMatch {
   const used = new Set<number>();
+  const fallbackUsed = new Set<number>();
   const matched: File[] = [];
   const missing: string[] = [];
   const ambiguous: string[] = [];
+  let fromPlaylist = 0;
   const paths = files.map((f) => normalizedPath(f.webkitRelativePath || f.name));
   const bases = files.map((f) => f.name.normalize('NFC').toLowerCase());
+  const fallbackPaths = fallbackFiles.map((f) =>
+    normalizedPath(f.webkitRelativePath || f.name),
+  );
+  const fallbackBases = fallbackFiles.map((f) => f.name.normalize('NFC').toLowerCase());
+
+  const candidatesIn = (
+    reference: string,
+    base: string,
+    group: File[],
+    groupPaths: string[],
+    groupBases: string[],
+  ): number[] => {
+    const byPath: number[] = [];
+    group.forEach((_, index) => {
+      if (groupPaths[index] === reference) byPath.push(index);
+    });
+    if (byPath.length > 0) return byPath;
+    const byBase: number[] = [];
+    group.forEach((_, index) => {
+      if (groupBases[index] === base) byBase.push(index);
+    });
+    return byBase;
+  };
 
   for (const track of tracks) {
     const reference = normalizedPath(track.reference);
     const base = fileNameOf(track.reference).normalize('NFC').toLowerCase();
-    let candidates = files
-      .map((file, index) => ({ file, index }))
-      .filter(({ index }) => paths[index] === reference);
-    if (candidates.length === 0) {
-      candidates = files
-        .map((file, index) => ({ file, index }))
-        .filter(({ index }) => bases[index] === base);
+
+    let candidates = candidatesIn(reference, base, files, paths, bases);
+    let group = files;
+    let groupUsed = used;
+    let usingFallback = false;
+    if (candidates.length === 0 && fallbackFiles.length > 0) {
+      candidates = candidatesIn(reference, base, fallbackFiles, fallbackPaths, fallbackBases);
+      group = fallbackFiles;
+      groupUsed = fallbackUsed;
+      usingFallback = true;
     }
     if (candidates.length === 0) {
       if (!missing.includes(track.reference)) missing.push(track.reference);
@@ -354,9 +393,10 @@ export function matchM3u(tracks: M3uTrack[], files: File[]): M3uMatch {
     }
     // Spread duplicate references over duplicate files; a single file is
     // reused when the playlist lists it more than once.
-    const pick = candidates.find(({ index }) => !used.has(index)) ?? candidates[0];
-    used.add(pick.index);
-    matched.push(pick.file);
+    const pick = candidates.find((index) => !groupUsed.has(index)) ?? candidates[0];
+    groupUsed.add(pick);
+    matched.push(group[pick]);
+    if (usingFallback) fromPlaylist += 1;
   }
 
   return {
@@ -364,6 +404,7 @@ export function matchM3u(tracks: M3uTrack[], files: File[]): M3uMatch {
     missing,
     extra: files.filter((_, index) => !used.has(index)),
     ambiguous,
+    fromPlaylist,
   };
 }
 

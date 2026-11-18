@@ -180,11 +180,38 @@ test.describe('T10 — M3U playlist saving and loading', () => {
 
     const status = page.getByTestId('status-region');
     await expect(status).toContainText('Loaded 1 of 2 entries');
-    await expect(status).toContainText('Not found in the selection: missing.mid');
+    await expect(status).toContainText('Not found in the selection or playlist: missing.mid');
     await expect(status).toContainText('Skipped unsupported');
     await expect(status).toContainText('https://example.com/remote.mid');
     await expect(status).toContainText('notes.txt');
     await expect(status).toContainText('Ignored 1 selected file not in the playlist: extra.mid');
+  });
+
+  test('loads a saved playlist using the files already in the playlist', async ({ page }) => {
+    await setup(page);
+    await dropFiles(page, [song('a.mid', 5), song('b.mid', 7), song('c.mid', 9)]);
+    await expect(page.getByTestId('entry-duration')).toHaveText(['0:05', '0:07', '0:09']);
+
+    // Select only the playlist; its files are already loaded, so no second
+    // selection should be required.
+    await pickPlaylistFiles(page, [
+      playlistFile(
+        'midi-playlist.m3u8',
+        '#EXTM3U\n#EXTINF:9,c\nc.mid\n#EXTINF:5,a\na.mid\n',
+      ),
+    ]);
+
+    const rows = page.getByTestId('playlist-row');
+    await expect(rows).toHaveCount(2);
+    expect(await rowNames(page)).toEqual(['c', 'a']);
+    await expect(page.getByTestId('entry-duration')).toHaveText(['0:09', '0:05']);
+    await expect(rows.first()).toHaveAttribute('aria-current', 'true');
+    await expect(page.getByTestId('status-region')).toContainText('Loaded 2 of 2 entries');
+    await expect(page.getByTestId('status-region')).toContainText(
+      'Used 2 files already in the playlist',
+    );
+    await expect(page.getByTestId('status-region')).not.toContainText('without its MIDI files');
+    await expect(page.getByTestId('status-region')).not.toContainText('Playlist unchanged');
   });
 
   test('an unmatched playlist leaves the playlist unchanged', async ({ page }) => {
@@ -198,7 +225,7 @@ test.describe('T10 — M3U playlist saving and loading', () => {
     ]);
 
     await expect(page.getByTestId('status-region')).toContainText(
-      'No files from list.m3u matched the selection',
+      'No files from list.m3u matched the selection or the current playlist',
     );
     await expect(page.getByTestId('status-region')).toContainText('gone.mid');
     await expect(page.getByTestId('status-region')).toContainText('Playlist unchanged');
@@ -207,19 +234,17 @@ test.describe('T10 — M3U playlist saving and loading', () => {
     await expect(page.getByTestId('playlist-row')).toHaveAttribute('aria-current', 'true');
   });
 
-  test('a playlist selected without its MIDI files asks for them and changes nothing', async ({
-    page,
-  }) => {
+  test('a playlist selected on an empty playlist asks for its MIDI files', async ({ page }) => {
     await setup(page);
-    await dropFiles(page, [song('keep.mid', 4)]);
 
     await pickPlaylistFiles(page, [playlistFile('list.m3u', '#EXTM3U\na.mid\n')]);
 
-    await expect(page.getByTestId('status-region')).toContainText(
-      'list.m3u was selected without its MIDI files',
-    );
-    await expect(page.getByTestId('status-region')).toContainText('Playlist unchanged');
-    expect(await rowNames(page)).toEqual(['keep']);
+    const status = page.getByTestId('status-region');
+    await expect(status).toContainText('list.m3u was selected without its MIDI files');
+    await expect(status).toContainText('Not found in the selection or playlist: a.mid');
+    await expect(status).toContainText('Select the playlist together with its .mid files');
+    await expect(status).toContainText('Playlist unchanged');
+    await expect(page.getByTestId('playlist-row')).toHaveCount(0);
   });
 
   test('dropping a playlist with files loads it; dropping MIDI files still appends', async ({

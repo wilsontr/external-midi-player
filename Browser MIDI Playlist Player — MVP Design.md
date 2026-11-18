@@ -140,8 +140,8 @@ PlaylistEntry {
 **M3U interchange (post-MVP, T10)**
 
 - **Save playlist** downloads `midi-playlist.m3u8`: UTF-8, `#EXTM3U`, then an `#EXTINF` duration and the file name for every row in order (`-1` for an unknown duration).
-- **Load playlist** takes one `.m3u`/`.m3u8` plus the `.mid`/`.midi` files it references, in one selection or a drop. References match by `webkitRelativePath` when the browser exposes one, otherwise by case-insensitive base name; duplicate names are assigned in selection order. The matched files replace the playlist in M3U order through the ordinary Load path, so playback stops and the result is persisted like any other rows.
-- A browser keeps no original path for a `File`, so a saved playlist stores names only and loading always needs the files themselves. Missing references, unsupported entries (URLs and non-MIDI files) and ignored extra selections go to the single status region. `#EXTINF` durations are written from the app's own parse but ignored on import, where the background parse stays authoritative.
+- **Load playlist** takes one `.m3u`/`.m3u8` plus, when needed, the `.mid`/`.midi` files it references, in one selection or a drop. References match by `webkitRelativePath` when the browser exposes one, otherwise by case-insensitive base name, and are resolved against the selected files first and the files already in the playlist second — so re-loading a playlist exported in this session needs only the playlist file. Duplicate names are assigned in selection order. The matched files replace the playlist in M3U order through the ordinary Load path, so playback stops and the result is persisted like any other rows.
+- A browser keeps no original path for a `File`, so a saved playlist stores names only; loading therefore resolves against files already in the playlist or ones selected with it, and genuinely new files must be selected. Missing references, unsupported entries (URLs and non-MIDI files) and ignored extra selections go to the single status region. `#EXTINF` durations are written from the app's own parse but ignored on import, where the background parse stays authoritative.
 
 ## Audio input routing
 

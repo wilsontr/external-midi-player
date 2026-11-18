@@ -314,6 +314,38 @@ describe('M3U playlist files (T10)', () => {
     expect(match.files).toEqual([files[0], files[0]]);
     expect(match.extra).toEqual([]);
     expect(match.ambiguous).toEqual([]);
+    expect(match.fromPlaylist).toBe(0);
+  });
+
+  it('falls back to files already in the playlist when nothing is selected', () => {
+    const existing = [picked('b.mid'), picked('a.mid')];
+    const { tracks } = parseM3u('a.mid\nb.mid\nmissing.mid\n');
+    const match = matchM3u(tracks, [], existing);
+    expect(match.files).toEqual([existing[1], existing[0]]);
+    expect(match.fromPlaylist).toBe(2);
+    expect(match.missing).toEqual(['missing.mid']);
+    // Existing playlist files are not "extra": the list is replaced, not merged.
+    expect(match.extra).toEqual([]);
+  });
+
+  it('prefers a selected file over an existing playlist file', () => {
+    const selected = [picked('a.mid')];
+    const existing = [picked('a.mid')];
+    const { tracks } = parseM3u('a.mid\n');
+    const match = matchM3u(tracks, selected, existing);
+    expect(match.files).toEqual(selected);
+    expect(match.fromPlaylist).toBe(0);
+    expect(match.ambiguous).toEqual([]);
+    expect(match.extra).toEqual([]);
+  });
+
+  it('mixes selected files with files already in the playlist', () => {
+    const selected = [picked('a.mid')];
+    const existing = [picked('b.mid')];
+    const { tracks } = parseM3u('a.mid\nb.mid\n');
+    const match = matchM3u(tracks, selected, existing);
+    expect(match.files).toEqual([selected[0], existing[0]]);
+    expect(match.fromPlaylist).toBe(1);
   });
 });
 
@@ -666,6 +698,21 @@ describe('PlaylistPlayer', () => {
     await flush();
     await player.flushPersistence();
     expect(makePlayer().playlist.entries.map((e) => e.name)).toEqual(['a', 'b']);
+  });
+
+  it('reloads an M3U from the files already in the playlist', async () => {
+    player.add([file('a.mid'), file('b.mid')]);
+    await flush();
+
+    const existing = player.playlist.entries.map((e) => e.file);
+    const { tracks } = parseM3u('#EXTM3U\nb.mid\na.mid\n');
+    const matched = matchM3u(tracks, [], existing);
+    expect(matched.files.map((f) => f.name)).toEqual(['b.mid', 'a.mid']);
+    expect(matched.fromPlaylist).toBe(2);
+
+    player.load(matched.files);
+    expect(player.playlist.entries.map((e) => e.name)).toEqual(['b', 'a']);
+    expect(player.currentEntry()?.name).toBe('b');
   });
 
   it('keeps the existing playlist when an M3U selection matches nothing', () => {

@@ -63,7 +63,7 @@ T8 is a post-MVP feature bundle: playlist/layout refinements plus timeline seeki
 
 T9 is a post-MVP informational feature: a read-only card listing the channels and GM instruments of the song currently playing. It adds no new R-ID; the card extends R3 and is built only from the playback parse, so it is not persisted. It has no playback interaction by design.
 
-T10 is a post-MVP playlist interchange feature: it saves the current playlist as an M3U/M3U8 file and rebuilds the playlist from one, preserving order. It adds no new R-ID; it reuses R1's file selection, R2's ordering, R3's names/durations and R13's persistence. Because a browser cannot read original file paths, loading needs the MIDI files selected alongside the playlist, and the imported bytes are still copied into `localStorage`.
+T10 is a post-MVP playlist interchange feature: it saves the current playlist as an M3U/M3U8 file and rebuilds the playlist from one, preserving order. It adds no new R-ID; it reuses R1's file selection, R2's ordering, R3's names/durations and R13's persistence. Because a browser cannot read original file paths, loading resolves references against files already in the playlist first and only then needs the MIDI files selected alongside the playlist; the imported bytes are still copied into `localStorage`.
 
 
 ## Backlog (post-MVP, from "After the MVP")

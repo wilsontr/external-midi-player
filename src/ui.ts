@@ -179,8 +179,8 @@ export function createUi(root: HTMLElement): void {
           <input type="file" multiple accept=".m3u,.m3u8,.mid,.midi" hidden data-testid="playlist-file-input" />
         </div>
         <p class="hint" data-testid="playlist-file-hint">
-          Save playlist writes the order and file names as an .m3u8. To load one, select
-          the playlist and its .mid files together.
+          Save playlist writes the order and file names as an .m3u8. Loading uses files already
+          in your playlist; to add new ones, select the playlist with its .mid files together.
         </p>
         <p data-testid="playlist-empty">No songs yet.</p>
         <ol class="playlist" aria-label="Playlist" data-testid="playlist"></ol>
@@ -740,8 +740,11 @@ export function createUi(root: HTMLElement): void {
 
   /**
    * Loads a playlist file plus the MIDI files it references. M3U references
-   * are names, not bytes, so the picker must contain both; matched files go
-   * through the ordinary Load path (replace, stop, persist).
+   * are names, not bytes, so a reference first resolves against files selected
+   * with the playlist and then against the files already in the playlist —
+   * re-loading a playlist exported in this session needs no extra selection.
+   * New files must be picked with the playlist. Matched files go through the
+   * ordinary Load path (replace, stop, persist).
    */
   async function loadPlaylist(files: File[]): Promise<void> {
     const playlists = files.filter((f) => isPlaylistFileName(f.name));
@@ -771,24 +774,29 @@ export function createUi(root: HTMLElement): void {
       setStatus(`${playlistFile.name}: ${parsed.error}.`);
       return;
     }
-    const matched = matchM3u(parsed.tracks, midiFiles);
+    const existingFiles = player.playlist.entries.map((entry) => entry.file);
+    const matched = matchM3u(parsed.tracks, midiFiles, existingFiles);
 
     const parts: string[] = [];
     if (matched.files.length === 0) {
       if (parsed.tracks.length === 0) {
         parts.push(`${playlistFile.name}: no MIDI file references found.`);
-      } else if (midiFiles.length === 0) {
+      } else if (midiFiles.length === 0 && existingFiles.length === 0) {
         parts.push(`${playlistFile.name} was selected without its MIDI files.`);
+      } else if (midiFiles.length === 0) {
+        parts.push(`No files from ${playlistFile.name} matched the current playlist.`);
       } else {
-        parts.push(`No files from ${playlistFile.name} matched the selection.`);
+        parts.push(`No files from ${playlistFile.name} matched the selection or the current playlist.`);
       }
       if (matched.missing.length > 0) {
-        parts.push(`Not found in the selection: ${summarizeList(matched.missing)}.`);
+        parts.push(`Not found in the selection or playlist: ${summarizeList(matched.missing)}.`);
       }
       if (parsed.unsupported.length > 0) {
         parts.push(`Skipped unsupported: ${summarizeList(parsed.unsupported)}.`);
       }
-      parts.push('Playlist unchanged.');
+      parts.push(
+        'Select the playlist together with its .mid files, or add those files first. Playlist unchanged.',
+      );
       setStatus(parts.join(' '));
       return;
     }
@@ -799,8 +807,13 @@ export function createUi(root: HTMLElement): void {
       `Loaded ${matched.files.length} of ${total} ${total === 1 ? 'entry' : 'entries'} ` +
         `from ${playlistFile.name} — playlist replaced.`,
     );
+    if (matched.fromPlaylist > 0) {
+      parts.push(
+        `Used ${matched.fromPlaylist} ${matched.fromPlaylist === 1 ? 'file' : 'files'} already in the playlist.`,
+      );
+    }
     if (matched.missing.length > 0) {
-      parts.push(`Not found in the selection: ${summarizeList(matched.missing)}.`);
+      parts.push(`Not found in the selection or playlist: ${summarizeList(matched.missing)}.`);
     }
     if (parsed.unsupported.length > 0) {
       parts.push(`Skipped unsupported: ${summarizeList(parsed.unsupported)}.`);
