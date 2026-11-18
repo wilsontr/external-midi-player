@@ -137,6 +137,12 @@ PlaylistEntry {
 - Playlist writes are debounced; the small audio settings are written immediately. Stored data is versioned, corrupt data is ignored, and storage failures (quota, private mode) leave the session working without persistence.
 - On reload the playlist and current entry are shown immediately; the MIDI output is reselected on "Connect devices" and the audio devices after the microphone permission is granted. Playback always returns stopped, never mid-song.
 
+**M3U interchange (post-MVP, T10)**
+
+- **Save playlist** downloads `midi-playlist.m3u8`: UTF-8, `#EXTM3U`, then an `#EXTINF` duration and the file name for every row in order (`-1` for an unknown duration).
+- **Load playlist** takes one `.m3u`/`.m3u8` plus the `.mid`/`.midi` files it references, in one selection or a drop. References match by `webkitRelativePath` when the browser exposes one, otherwise by case-insensitive base name; duplicate names are assigned in selection order. The matched files replace the playlist in M3U order through the ordinary Load path, so playback stops and the result is persisted like any other rows.
+- A browser keeps no original path for a `File`, so a saved playlist stores names only and loading always needs the files themselves. Missing references, unsupported entries (URLs and non-MIDI files) and ignored extra selections go to the single status region. `#EXTINF` durations are written from the app's own parse but ignored on import, where the background parse stays authoritative.
+
 ## Audio input routing
 
 The chosen input is captured with `getUserMedia`, passed through a gain stage and a meter in a Web Audio graph, and played to the chosen output. Browser voice processing is switched off so instrument audio passes through unaltered.
@@ -247,6 +253,7 @@ The MVP is about 4.5 developer-days for one experienced front-end developer, bui
 
 - Player and playlist refinements (T8): seek with program/controller restoration, compact add/load/clear, row numbering, responsive two-column layout, startup mute policy and panic before track changes (3–4 days).
 - Channel and instrument card (T9): read-only list of the currently playing file's channels and their General MIDI instruments, with no playback feedback (1 day).
+- Save and load the playlist as an M3U/M3U8 file (T10): export the current order and names, and rebuild the playlist from a playlist file plus the MIDI files it references; the browser cannot read original paths, so the bytes still come from the user's selection (0.5–1 day).
 - Upgrade playlist persistence from `localStorage` to IndexedDB for very large playlists (0.5 day).
 - Tempo change, A–B looping, per-channel mute and remapping (2–4 days).
 - Record the monitored input to WAV (1 day).

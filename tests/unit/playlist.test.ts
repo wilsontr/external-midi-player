@@ -1,12 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
+  M3U_MAX_LINES,
   PLAYLIST_STORAGE_KEY,
   PlaylistPlayer,
+  buildM3u,
   createEntry,
   emptyPlaylist,
+  isPlaylistFileName,
+  matchM3u,
   nextReadyId,
+  parseM3u,
   playlistReducer,
   previousReadyId,
+  type PlaylistEntry,
   type PlaylistState,
   type PlaylistStorage,
   type TransportScheduler,
@@ -137,6 +143,177 @@ describe('playlistReducer', () => {
     expect(nextReadyId(s, null)).toBe(a.id);
     expect(previousReadyId(s, d.id)).toBe(a.id);
     expect(previousReadyId(s, a.id)).toBeNull();
+  });
+});
+
+describe('M3U playlist files (T10)', () => {
+  const entryList = (...names: string[]): PlaylistEntry[] => stateWith(...names).entries;
+  const withDurations = (...durations: Array<number | undefined>): PlaylistEntry[] => {
+    const entries = entryList(...durations.map((_, i) => `song-${i + 1}.mid`));
+    let s: PlaylistState = { entries, currentId: entries[0]?.id ?? null };
+    entries.forEach((entry, index) => {
+      const durationSec = durations[index];
+      if (durationSec !== undefined) {
+        s = playlistReducer(s, { type: 'parsed', id: entry.id, durationSec });
+      }
+    });
+    return s.entries;
+  };
+
+  const picked = (name: string, relativePath?: string): File => {
+    const f = file(name);
+    if (relativePath !== undefined) {
+      Object.defineProperty(f, 'webkitRelativePath', { value: relativePath });
+    }
+    return f;
+  };
+
+  it('recognises the two playlist extensions', () => {
+    expect(isPlaylistFileName('list.m3u')).toBe(true);
+    expect(isPlaylistFileName('LIST.M3U8')).toBe(true);
+    expect(isPlaylistFileName('list.mid')).toBe(false);
+    expect(isPlaylistFileName('list.m3u.bak')).toBe(false);
+  });
+
+  it('writes the header, EXTINF durations and file names in order', () => {
+    const text = buildM3u(entryList('a.mid', 'b.midi'));
+    expect(text).toBe(
+      '#EXTM3U\n' +
+        '#EXTINF:-1,a\n' +
+        'a.mid\n' +
+        '#EXTINF:-1,b\n' +
+        'b.midi\n',
+    );
+  });
+
+  it('rounds known durations, writes -1 for unknown ones and includes error rows', () => {
+    let s: PlaylistState = { entries: withDurations(12.6, undefined), currentId: null };
+    s = playlistReducer(s, { type: 'failed', id: s.entries[1].id, error: 'unreadable' });
+    expect(buildM3u(s.entries)).toContain('#EXTINF:13,song-1');
+    expect(buildM3u(s.entries)).toContain('#EXTINF:-1,song-2');
+  });
+
+  it('keeps commas, spaces and non-ASCII names, and strips line breaks', () => {
+    const entries = entryList('héllo, wörld.mid', 'a b.mid');
+    const text = buildM3u(entries);
+    expect(text).toContain('#EXTINF:-1,héllo, wörld\nhéllo, wörld.mid\n');
+    expect(text).toContain('#EXTINF:-1,a b\na b.mid\n');
+
+    const multiline = createEntry(new File([new Uint8Array([0])], 'line\nbreak.mid'));
+    expect(buildM3u([multiline])).toContain('#EXTINF:-1,line break\nline break.mid\n');
+  });
+
+  it('writes only the header for an empty playlist', () => {
+    expect(buildM3u([])).toBe('#EXTM3U\n');
+  });
+
+  it('parses BOM, CRLF, comments, EXTINF titles and quoted Windows paths', () => {
+    const result = parseM3u(
+      '\uFEFF#EXTM3U\r\n' +
+        '\r\n' +
+        '# a comment\r\n' +
+        '#EXTINF:12.4,First song\r\n' +
+        '"C:\\Music\\One.MID"\r\n' +
+        '#EXT-X-EXTRA:ignored\r\n' +
+        '#EXTINF:-1,Second\r\n' +
+        './sub/two.midi\r\n',
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.unsupported).toEqual([]);
+    expect(result.tracks).toEqual([
+      { reference: 'C:\\Music\\One.MID', title: 'First song', durationSec: 12.4 },
+      { reference: './sub/two.midi', title: 'Second', durationSec: undefined },
+    ]);
+  });
+
+  it('accepts an EXTINF without a title or with a malformed duration', () => {
+    const noTitle = parseM3u('#EXTINF:5\nsong.mid\n').tracks[0];
+    expect(noTitle.durationSec).toBe(5);
+    expect(noTitle.title).toBeUndefined();
+
+    const badDuration = parseM3u('#EXTINF:oops,Title\nsong.mid\n').tracks[0];
+    expect(badDuration.durationSec).toBeUndefined();
+    expect(badDuration.title).toBe('Title');
+  });
+
+  it('strips file:// references and reports URLs and non-MIDI files', () => {
+    const result = parseM3u(
+      '#EXTM3U\n' +
+        'file:///C:/Music/a.mid\n' +
+        'https://example.com/b.mid\n' +
+        'rtsp://example.com/c.mid\n' +
+        'notes.txt\n' +
+        'song.midi\n',
+    );
+    expect(result.tracks.map((t) => t.reference)).toEqual(['C:/Music/a.mid', 'song.midi']);
+    expect(result.unsupported).toEqual([
+      'https://example.com/b.mid',
+      'rtsp://example.com/c.mid',
+      'notes.txt',
+    ]);
+  });
+
+  it('rejects a playlist over the size or line cap', () => {
+    expect(parseM3u('x'.repeat(1_000_001)).error).toContain('too large');
+    const manyLines = Array.from({ length: M3U_MAX_LINES + 1 }, () => '#').join('\n');
+    expect(parseM3u(manyLines).error).toContain('too many lines');
+  });
+
+  it('matches by case-insensitive base name and keeps M3U order', () => {
+    const files = [picked('B.MID'), picked('a.midi')];
+    const { tracks } = parseM3u('#EXTM3U\na.midi\nb.mid\n');
+    const match = matchM3u(tracks, files);
+    expect(match.files.map((f) => f.name)).toEqual(['a.midi', 'B.MID']);
+    expect(match.missing).toEqual([]);
+    expect(match.extra).toEqual([]);
+  });
+
+  it('prefers an exact relative path over a duplicate base name', () => {
+    const files = [
+      picked('song.mid', 'Disc 1/song.mid'),
+      picked('song.mid', 'Disc 2/song.mid'),
+    ];
+    const { tracks } = parseM3u('Disc 2/song.mid\nDisc 1/song.mid\n');
+    const match = matchM3u(tracks, files);
+    expect(match.files.map((f) => f.webkitRelativePath)).toEqual([
+      'Disc 2/song.mid',
+      'Disc 1/song.mid',
+    ]);
+    expect(match.ambiguous).toEqual([]);
+  });
+
+  it('matches Windows and file:// references by base name', () => {
+    const files = [picked('a.mid')];
+    const { tracks } = parseM3u('C:\\Music\\a.mid\nfile:///C:/Other/a.mid\n');
+    const match = matchM3u(tracks, files);
+    expect(match.files).toEqual([files[0], files[0]]);
+    expect(match.missing).toEqual([]);
+    expect(match.extra).toEqual([]);
+  });
+
+  it('normalises Unicode and case when matching', () => {
+    const files = [picked('Café.mid')];
+    const { tracks } = parseM3u('CAFE\u0301.MID\n');
+    expect(matchM3u(tracks, files).files).toEqual([files[0]]);
+  });
+
+  it('reports missing references, extra selections and duplicate names', () => {
+    const files = [picked('a.mid'), picked('extra.mid'), picked('song.mid'), picked('song.mid')];
+    const { tracks } = parseM3u('a.mid\nmissing.mid\nsong.mid\nsong.mid\n');
+    const match = matchM3u(tracks, files);
+    expect(match.files).toEqual([files[0], files[2], files[3]]);
+    expect(match.missing).toEqual(['missing.mid']);
+    expect(match.extra).toEqual([files[1]]);
+    expect(match.ambiguous).toEqual(['song.mid']);
+  });
+
+  it('reuses one file when the playlist lists it more than once', () => {
+    const files = [picked('song.mid')];
+    const { tracks } = parseM3u('song.mid\nsong.mid\n');
+    const match = matchM3u(tracks, files);
+    expect(match.files).toEqual([files[0], files[0]]);
+    expect(match.extra).toEqual([]);
+    expect(match.ambiguous).toEqual([]);
   });
 });
 
@@ -468,6 +645,39 @@ describe('PlaylistPlayer', () => {
     expect(player.playlist.entries[0].durationSec).toBe(10);
     await player.flushPersistence();
     expect(makePlayer().playlist.entries.map((e) => e.name)).toEqual(['x']);
+  });
+
+  it('loads an M3U selection in playlist order and persists it', async () => {
+    player.add([file('old.mid')]);
+    await flush();
+    player.play();
+    await flush();
+
+    const selected = [file('b.mid'), file('a.mid')];
+    const { tracks } = parseM3u('#EXTM3U\n#EXTINF:2,a\na.mid\n#EXTINF:1,b\nb.mid\n');
+    const matched = matchM3u(tracks, selected);
+    expect(matched.files.map((f) => f.name)).toEqual(['a.mid', 'b.mid']);
+
+    expect(player.load(matched.files)).toEqual({ added: 2, rejected: [] });
+    expect(player.playlist.entries.map((e) => e.name)).toEqual(['a', 'b']);
+    expect(player.currentEntry()?.name).toBe('a');
+    expect(player.state).toBe('stopped');
+
+    await flush();
+    await player.flushPersistence();
+    expect(makePlayer().playlist.entries.map((e) => e.name)).toEqual(['a', 'b']);
+  });
+
+  it('keeps the existing playlist when an M3U selection matches nothing', () => {
+    player.add([file('a.mid')]);
+    const before = player.playlist.entries.map((e) => e.id);
+    const { tracks } = parseM3u('missing.mid\n');
+    const matched = matchM3u(tracks, [file('other.mid')]);
+    expect(matched.files).toEqual([]);
+
+    const result = player.load(matched.files);
+    expect(result).toEqual({ added: 0, rejected: [] });
+    expect(player.playlist.entries.map((e) => e.id)).toEqual(before);
   });
 
   it('keeps the existing playlist when Load selects nothing valid', () => {

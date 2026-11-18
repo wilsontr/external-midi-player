@@ -10,8 +10,21 @@
 
 import { AudioMonitor, CLIP_THRESHOLD_DB, DB_FLOOR } from './audioMonitor';
 import { MidiDevices } from './midiDevices';
-import { PlaylistPlayer, type PlaylistEntry } from './playlist';
-import { gmInstrumentName, type ChannelInstrument, type ChannelProgram } from './parser';
+import {
+  M3U_MAX_BYTES,
+  PlaylistPlayer,
+  buildM3u,
+  isPlaylistFileName,
+  matchM3u,
+  parseM3u,
+  type PlaylistEntry,
+} from './playlist';
+import {
+  gmInstrumentName,
+  isMidiFileName,
+  type ChannelInstrument,
+  type ChannelProgram,
+} from './parser';
 
 /** Formats seconds as m:ss, optionally with tenths (for the elapsed readout). */
 function formatTime(seconds: number, tenths = false): string {
@@ -155,13 +168,20 @@ export function createUi(root: HTMLElement): void {
       <section class="panel" data-testid="playlist-panel" aria-labelledby="playlist-heading">
         <h2 id="playlist-heading">Playlist</h2>
         <div class="drop-zone" data-testid="drop-zone">
-          <span>Drop .mid files here, or</span>
+          <span>Drop .mid files or an .m3u playlist here, or</span>
           <button type="button" class="compact" data-testid="add-files-button" aria-label="Add files" title="Add files">+</button>
           <button type="button" data-testid="load-files-button">Load files</button>
           <button type="button" data-testid="clear-playlist-button">Clear playlist</button>
+          <button type="button" data-testid="save-playlist-button" disabled>Save playlist</button>
+          <button type="button" data-testid="load-playlist-button">Load playlist</button>
           <input type="file" multiple accept=".mid,.midi" hidden data-testid="file-input" />
           <input type="file" multiple accept=".mid,.midi" hidden data-testid="load-file-input" />
+          <input type="file" multiple accept=".m3u,.m3u8,.mid,.midi" hidden data-testid="playlist-file-input" />
         </div>
+        <p class="hint" data-testid="playlist-file-hint">
+          Save playlist writes the order and file names as an .m3u8. To load one, select
+          the playlist and its .mid files together.
+        </p>
         <p data-testid="playlist-empty">No songs yet.</p>
         <ol class="playlist" aria-label="Playlist" data-testid="playlist"></ol>
       </section>
@@ -208,8 +228,17 @@ export function createUi(root: HTMLElement): void {
   const clearPlaylistButton = root.querySelector<HTMLButtonElement>(
     '[data-testid="clear-playlist-button"]',
   )!;
+  const savePlaylistButton = root.querySelector<HTMLButtonElement>(
+    '[data-testid="save-playlist-button"]',
+  )!;
+  const loadPlaylistButton = root.querySelector<HTMLButtonElement>(
+    '[data-testid="load-playlist-button"]',
+  )!;
   const fileInput = root.querySelector<HTMLInputElement>('[data-testid="file-input"]')!;
   const loadFileInput = root.querySelector<HTMLInputElement>('[data-testid="load-file-input"]')!;
+  const playlistFileInput = root.querySelector<HTMLInputElement>(
+    '[data-testid="playlist-file-input"]',
+  )!;
   const playlistEmpty = root.querySelector<HTMLElement>('[data-testid="playlist-empty"]')!;
   const playlistList = root.querySelector<HTMLOListElement>('[data-testid="playlist"]')!;
 
@@ -519,6 +548,7 @@ export function createUi(root: HTMLElement): void {
   function renderPlaylist(): void {
     const { entries, currentId } = player.playlist;
     playlistEmpty.hidden = entries.length > 0;
+    savePlaylistButton.disabled = entries.length === 0;
     const live = new Set(entries.map((e) => e.id));
     for (const [id, li] of rows) {
       if (!live.has(id)) {
@@ -649,7 +679,7 @@ export function createUi(root: HTMLElement): void {
     if (!hasFiles(event)) return;
     event.preventDefault();
     dropZone.classList.remove('drag-over');
-    addFiles(Array.from(event.dataTransfer?.files ?? []));
+    handleDroppedFiles(Array.from(event.dataTransfer?.files ?? []));
   });
   window.addEventListener('dragover', (event) => {
     if (hasFiles(event)) event.preventDefault();
@@ -681,6 +711,122 @@ export function createUi(root: HTMLElement): void {
     setStatus('Playlist cleared.');
   }
 
+  /** A short, screen-reader-friendly list; long M3U selections stay bounded. */
+  function summarizeList(items: string[]): string {
+    const shown = items.slice(0, 5);
+    const rest = items.length - shown.length;
+    return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
+  }
+
+  /** Downloads the current playlist as an M3U8 of names and order (T10). */
+  function savePlaylist(): void {
+    const entries = player.playlist.entries;
+    if (entries.length === 0) return;
+    const url = URL.createObjectURL(
+      new Blob([buildM3u(entries)], { type: 'audio/x-mpegurl' }),
+    );
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'midi-playlist.m3u8';
+    document.body.append(link);
+    link.click();
+    link.remove();
+    // Give the browser time to start the download before releasing the blob.
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setStatus(
+      `Saved ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'} to midi-playlist.m3u8.`,
+    );
+  }
+
+  /**
+   * Loads a playlist file plus the MIDI files it references. M3U references
+   * are names, not bytes, so the picker must contain both; matched files go
+   * through the ordinary Load path (replace, stop, persist).
+   */
+  async function loadPlaylist(files: File[]): Promise<void> {
+    const playlists = files.filter((f) => isPlaylistFileName(f.name));
+    const midiFiles = files.filter((f) => isMidiFileName(f.name));
+    if (playlists.length === 0) {
+      setStatus('Select an .m3u or .m3u8 playlist together with its .mid files.');
+      return;
+    }
+    if (playlists.length > 1) {
+      setStatus(`Select one playlist at a time (got ${playlists.length}).`);
+      return;
+    }
+    const playlistFile = playlists[0];
+    if (playlistFile.size > M3U_MAX_BYTES) {
+      setStatus(`${playlistFile.name}: playlist file is too large (over 1 MB).`);
+      return;
+    }
+    let text: string;
+    try {
+      text = await playlistFile.text();
+    } catch {
+      setStatus(`${playlistFile.name}: could not be read.`);
+      return;
+    }
+    const parsed = parseM3u(text);
+    if (parsed.error !== undefined) {
+      setStatus(`${playlistFile.name}: ${parsed.error}.`);
+      return;
+    }
+    const matched = matchM3u(parsed.tracks, midiFiles);
+
+    const parts: string[] = [];
+    if (matched.files.length === 0) {
+      if (parsed.tracks.length === 0) {
+        parts.push(`${playlistFile.name}: no MIDI file references found.`);
+      } else if (midiFiles.length === 0) {
+        parts.push(`${playlistFile.name} was selected without its MIDI files.`);
+      } else {
+        parts.push(`No files from ${playlistFile.name} matched the selection.`);
+      }
+      if (matched.missing.length > 0) {
+        parts.push(`Not found in the selection: ${summarizeList(matched.missing)}.`);
+      }
+      if (parsed.unsupported.length > 0) {
+        parts.push(`Skipped unsupported: ${summarizeList(parsed.unsupported)}.`);
+      }
+      parts.push('Playlist unchanged.');
+      setStatus(parts.join(' '));
+      return;
+    }
+
+    player.load(matched.files);
+    const total = parsed.tracks.length;
+    parts.push(
+      `Loaded ${matched.files.length} of ${total} ${total === 1 ? 'entry' : 'entries'} ` +
+        `from ${playlistFile.name} — playlist replaced.`,
+    );
+    if (matched.missing.length > 0) {
+      parts.push(`Not found in the selection: ${summarizeList(matched.missing)}.`);
+    }
+    if (parsed.unsupported.length > 0) {
+      parts.push(`Skipped unsupported: ${summarizeList(parsed.unsupported)}.`);
+    }
+    if (matched.ambiguous.length > 0) {
+      parts.push(`Duplicate file names matched in selection order: ${summarizeList(matched.ambiguous)}.`);
+    }
+    if (matched.extra.length > 0) {
+      parts.push(
+        `Ignored ${matched.extra.length} selected ${matched.extra.length === 1 ? 'file' : 'files'} ` +
+          `not in the playlist: ${summarizeList(matched.extra.map((f) => f.name))}.`,
+      );
+    }
+    setStatus(parts.join(' '));
+  }
+
+  /** Dropping a playlist (with or without its files) loads it; otherwise append. */
+  function handleDroppedFiles(files: File[]): void {
+    if (files.length === 0) return;
+    if (files.some((f) => isPlaylistFileName(f.name))) {
+      void loadPlaylist(files);
+      return;
+    }
+    addFiles(files);
+  }
+
   addFilesButton.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', () => {
     addFiles(Array.from(fileInput.files ?? []));
@@ -692,6 +838,13 @@ export function createUi(root: HTMLElement): void {
     loadFileInput.value = '';
   });
   clearPlaylistButton.addEventListener('click', clearPlaylist);
+  savePlaylistButton.addEventListener('click', savePlaylist);
+  loadPlaylistButton.addEventListener('click', () => playlistFileInput.click());
+  playlistFileInput.addEventListener('change', () => {
+    const files = Array.from(playlistFileInput.files ?? []);
+    playlistFileInput.value = '';
+    void loadPlaylist(files);
+  });
 
   function panic(): void {
     if (midi.selectedOutput() === null) {

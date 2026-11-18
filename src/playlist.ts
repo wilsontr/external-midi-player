@@ -147,6 +147,226 @@ export function createEntry(file: File): PlaylistEntry {
   };
 }
 
+// ---------------------------------------------------------------------------
+// M3U save / load (T10)
+// ---------------------------------------------------------------------------
+
+/**
+ * Limits for an imported playlist. M3U is untrusted text from disk, so the
+ * parser refuses anything pathological instead of building thousands of rows.
+ */
+export const M3U_MAX_BYTES = 1_000_000;
+export const M3U_MAX_LINES = 10_000;
+
+/** One file reference read from an M3U, with its optional EXTINF metadata. */
+export interface M3uTrack {
+  /** The path exactly as written in the file (after quote/scheme cleanup). */
+  reference: string;
+  title?: string;
+  durationSec?: number;
+}
+
+export interface M3uParseResult {
+  tracks: M3uTrack[];
+  /** URL and non-MIDI references, reported rather than fetched or loaded. */
+  unsupported: string[];
+  /** Set when the file is over the size or line cap; `tracks` is then empty. */
+  error?: string;
+}
+
+export interface M3uMatch {
+  /** Files in M3U order; repeated references reuse the same File. */
+  files: File[];
+  /** References with no selected file, in M3U order, de-duplicated. */
+  missing: string[];
+  /** Selected files the playlist never referenced. */
+  extra: File[];
+  /** Base names that resolved between several selected files. */
+  ambiguous: string[];
+}
+
+/** True for the two playlist extensions accepted by Load playlist. */
+export function isPlaylistFileName(name: string): boolean {
+  const n = name.toLowerCase();
+  return n.endsWith('.m3u') || n.endsWith('.m3u8');
+}
+
+/** Removes line breaks from a value that is written onto one M3U line. */
+function m3uLine(value: string): string {
+  return value.replace(/[\r\n]+/g, ' ').trim();
+}
+
+/**
+ * Serializes the playlist as M3U8 text: `#EXTM3U`, then an `#EXTINF` and the
+ * file name for each entry, in order. A browser keeps no path for a `File`,
+ * so the reference is the base file name — loading therefore needs the files
+ * themselves as well.
+ */
+export function buildM3u(entries: PlaylistEntry[]): string {
+  const lines = ['#EXTM3U'];
+  for (const entry of entries) {
+    const seconds =
+      entry.durationSec !== undefined && Number.isFinite(entry.durationSec)
+        ? Math.round(entry.durationSec)
+        : -1;
+    lines.push(`#EXTINF:${seconds},${m3uLine(entry.name || entry.file.name)}`);
+    lines.push(m3uLine(entry.file.name));
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+/** Scheme prefixes that mean "a remote resource", which this app never fetches. */
+const URL_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+/** `C:` / `c:/` is a Windows path, not a scheme. */
+const WINDOWS_DRIVE = /^[a-z]:/i;
+
+function stripQuotes(value: string): string {
+  if (value.length < 2) return value;
+  const quote = value[0];
+  if ((quote === '"' || quote === "'") && value[value.length - 1] === quote) {
+    return value.slice(1, -1).trim();
+  }
+  return value;
+}
+
+/**
+ * Parses M3U/M3U8 text. Tolerates a BOM, CRLF/LF, blank lines, comments, an
+ * optional `#EXTM3U`, EXTINF with or without a title, and quoted or Windows
+ * paths. URL and non-MIDI references are collected in `unsupported`; the app
+ * never fetches a reference.
+ */
+export function parseM3u(text: string): M3uParseResult {
+  if (text.length > M3U_MAX_BYTES) {
+    return {
+      tracks: [],
+      unsupported: [],
+      error: 'playlist file is too large (over 1 MB)',
+    };
+  }
+  const lines = text.replace(/^\uFEFF/, '').split(/\r\n|\r|\n/);
+  if (lines.length > M3U_MAX_LINES) {
+    return {
+      tracks: [],
+      unsupported: [],
+      error: `playlist file has too many lines (over ${M3U_MAX_LINES})`,
+    };
+  }
+
+  const tracks: M3uTrack[] = [];
+  const unsupported: string[] = [];
+  let pending: Pick<M3uTrack, 'title' | 'durationSec'> = {};
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line === '') continue;
+    if (line.startsWith('#')) {
+      if (/^#EXTINF:/i.test(line)) {
+        const info = line.slice(line.indexOf(':') + 1);
+        const comma = info.indexOf(',');
+        const lengthText = (comma >= 0 ? info.slice(0, comma) : info).trim();
+        const title = comma >= 0 ? info.slice(comma + 1).trim() : '';
+        const seconds = Number.parseFloat(lengthText);
+        pending = {
+          durationSec: Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined,
+          title: title === '' ? undefined : title,
+        };
+      }
+      // #EXTM3U, #EXT-X-* and every other comment carry no local file.
+      continue;
+    }
+
+    let reference = stripQuotes(line);
+    if (reference === '') continue;
+    if (/^file:\/{2,}/i.test(reference)) {
+      reference = reference.replace(/^file:\/{2,}/i, '');
+      // file:///C:/Music/a.mid → C:/Music/a.mid
+      if (/^\/[a-z]:/i.test(reference)) reference = reference.slice(1);
+      try {
+        reference = decodeURIComponent(reference);
+      } catch {
+        // A malformed escape is left as written; matching still uses the file name.
+      }
+    } else if (URL_SCHEME.test(reference) && !WINDOWS_DRIVE.test(reference)) {
+      unsupported.push(line);
+      pending = {};
+      continue;
+    }
+
+    const base = reference.replace(/\\/g, '/').split('/').pop() ?? '';
+    if (!isMidiFileName(base)) {
+      unsupported.push(line);
+      pending = {};
+      continue;
+    }
+    tracks.push({ reference, ...pending });
+    pending = {};
+  }
+
+  return { tracks, unsupported };
+}
+
+function normalizedPath(value: string): string {
+  return value
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '')
+    .replace(/\/{2,}/g, '/');
+}
+
+function fileNameOf(value: string): string {
+  const parts = value.replace(/\\/g, '/').split('/');
+  return parts[parts.length - 1] ?? '';
+}
+
+/**
+ * Resolves parsed references to selected files. An exact `webkitRelativePath`
+ * match wins; otherwise the base name is compared case-insensitively (NFC),
+ * so a playlist exported on one machine loads from a plain file picker on the
+ * next. Duplicate base names are assigned in selection order and reported.
+ */
+export function matchM3u(tracks: M3uTrack[], files: File[]): M3uMatch {
+  const used = new Set<number>();
+  const matched: File[] = [];
+  const missing: string[] = [];
+  const ambiguous: string[] = [];
+  const paths = files.map((f) => normalizedPath(f.webkitRelativePath || f.name));
+  const bases = files.map((f) => f.name.normalize('NFC').toLowerCase());
+
+  for (const track of tracks) {
+    const reference = normalizedPath(track.reference);
+    const base = fileNameOf(track.reference).normalize('NFC').toLowerCase();
+    let candidates = files
+      .map((file, index) => ({ file, index }))
+      .filter(({ index }) => paths[index] === reference);
+    if (candidates.length === 0) {
+      candidates = files
+        .map((file, index) => ({ file, index }))
+        .filter(({ index }) => bases[index] === base);
+    }
+    if (candidates.length === 0) {
+      if (!missing.includes(track.reference)) missing.push(track.reference);
+      continue;
+    }
+    if (candidates.length > 1) {
+      const name = fileNameOf(track.reference);
+      if (!ambiguous.includes(name)) ambiguous.push(name);
+    }
+    // Spread duplicate references over duplicate files; a single file is
+    // reused when the playlist lists it more than once.
+    const pick = candidates.find(({ index }) => !used.has(index)) ?? candidates[0];
+    used.add(pick.index);
+    matched.push(pick.file);
+  }
+
+  return {
+    files: matched,
+    missing,
+    extra: files.filter((_, index) => !used.has(index)),
+    ambiguous,
+  };
+}
+
 export function playlistReducer(state: PlaylistState, action: PlaylistAction): PlaylistState {
   switch (action.type) {
     case 'add': {

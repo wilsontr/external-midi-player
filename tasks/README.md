@@ -51,8 +51,9 @@ Rules:
 | T7 | [T7-software-synth-output.md](T7-software-synth-output.md) | After the MVP | 2–3 days | pending |
 | T8 | [T8-player-refinements.md](T8-player-refinements.md) | After the MVP | 3–4 days | done |
 | T9 | [T9-channel-instruments-card.md](T9-channel-instruments-card.md) | After the MVP | 1 day | done |
+| T10 | [T10-m3u-playlist-saving-loading.md](T10-m3u-playlist-saving-loading.md) | After the MVP | 0.5–1 day | done |
 
-Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8; R3 → T2, T3, T8, T9; R4 → T1; R5 → T2, T5, T7; R6, R7 → T3, T5, T8; R8 → T2; R9, R10 → T4, T8; R11 → T4, T5; R12 → T3, T8; R13 → T1, T3, T4.
+Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8, T10; R3 → T2, T3, T8, T9, T10; R4 → T1; R5 → T2, T5, T7; R6, R7 → T3, T5, T8; R8 → T2; R9, R10 → T4, T8; R11 → T4, T5; R12 → T3, T8; R13 → T1, T3, T4, T10.
 
 T6 is a delivery task: it carries no new functional requirement and exercises R1–R13 against the production HTTPS origin. It splits the deploy half out of milestone 5 so the GitHub Pages + CI work can be reviewed on its own.
 
@@ -61,6 +62,9 @@ T7 is a post-MVP enhancement; it adds no new R-ID. R5 is the timing bar if the c
 T8 is a post-MVP feature bundle: playlist/layout refinements plus timeline seeking and a panic-before-track-switch behavior. It cites the affected MVP requirements; seeking is a new post-MVP capability with no new R-ID.
 
 T9 is a post-MVP informational feature: a read-only card listing the channels and GM instruments of the song currently playing. It adds no new R-ID; the card extends R3 and is built only from the playback parse, so it is not persisted. It has no playback interaction by design.
+
+T10 is a post-MVP playlist interchange feature: it saves the current playlist as an M3U/M3U8 file and rebuilds the playlist from one, preserving order. It adds no new R-ID; it reuses R1's file selection, R2's ordering, R3's names/durations and R13's persistence. Because a browser cannot read original file paths, loading needs the MIDI files selected alongside the playlist, and the imported bytes are still copied into `localStorage`.
+
 
 ## Backlog (post-MVP, from "After the MVP")
 
