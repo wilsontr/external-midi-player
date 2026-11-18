@@ -29,13 +29,13 @@ The intended setup: the browser drives an external synth or sound module over US
 
 Both browsers support every API the MVP needs, but they differ in how permission is granted and how audio output is chosen. The app must be served over HTTPS (or `localhost` in development), since Web MIDI and `getUserMedia` only work in a secure context.
 
-| Capability | Chrome / Edge (desktop) | Firefox (desktop) |
-| --- | --- | --- |
-| Web MIDI output | Yes; permission prompt on `requestMIDIAccess()` | Yes (108+); first use triggers a site-permission add-on install prompt |
-| Timestamped `MIDIOutput.send()` | Yes | Yes |
-| Audio input via `getUserMedia` | Yes | Yes |
-| Device names in `enumerateDevices()` | After mic permission is granted | After mic permission is granted |
-| Choose audio output | `AudioContext.setSinkId()` or `HTMLMediaElement.setSinkId()` | `HTMLMediaElement.setSinkId()`; outputs exposed via `selectAudioOutput()` |
+| Capability                           | Chrome / Edge (desktop)                                      | Firefox (desktop)                                                         |
+| ------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| Web MIDI output                      | Yes; permission prompt on `requestMIDIAccess()`              | Yes (108+); first use triggers a site-permission add-on install prompt    |
+| Timestamped `MIDIOutput.send()`      | Yes                                                          | Yes                                                                       |
+| Audio input via `getUserMedia`       | Yes                                                          | Yes                                                                       |
+| Device names in `enumerateDevices()` | After mic permission is granted                              | After mic permission is granted                                           |
+| Choose audio output                  | `AudioContext.setSinkId()` or `HTMLMediaElement.setSinkId()` | `HTMLMediaElement.setSinkId()`; outputs exposed via `selectAudioOutput()` |
 
 Minimum supported versions are the current release and the one before it at launch. The app shows an unsupported-browser notice when `navigator.requestMIDIAccess` is missing.
 
@@ -43,21 +43,21 @@ Minimum supported versions are the current release and the one before it at laun
 
 Each requirement below is in scope for the MVP and has an acceptance check.
 
-| ID | Requirement | Acceptance check |
-| --- | --- | --- |
-| R1 | Add .mid/.midi files by file picker or drag-and-drop | 10 files dropped at once all appear, in drop order |
-| R2 | Reorder and remove playlist entries | Drag to reorder; remove button per row |
-| R3 | Show each entry's name and duration; reject unreadable files with a message | A corrupt file shows an error row and is skipped |
-| R4 | List all MIDI outputs and update the list when devices are plugged in or out | Unplugging a USB synth removes it within 1 s |
-| R5 | Play the selected entry to the chosen output with no audible timing drift | A 5-minute file ends within 50 ms of its computed duration |
-| R6 | Play, pause, resume, stop, next, previous | Pause and stop leave no hanging notes |
-| R7 | Auto-advance to the next entry; stop at the end of the list | Last song ends, transport returns to stopped |
-| R8 | Panic button | Sends all-notes-off and reset-controllers on all 16 channels |
-| R9 | List audio inputs and monitor the chosen one | Input is audible through the chosen output |
-| R10 | Monitor volume, mute, and a live level meter | Mute is on by default |
-| R11 | Choose the monitoring output device where supported | Falls back to the system default with a note |
-| R12 | Show playback position and elapsed / total time | Updates at least 10 times per second |
-| R13 | Persist the playlist, current entry, chosen devices and monitor settings | Reload restores the playlist, highlight, device choices, mute and volume |
+| ID  | Requirement                                                                  | Acceptance check                                                         |
+| --- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| R1  | Add .mid/.midi files by file picker or drag-and-drop                         | 10 files dropped at once all appear, in drop order                       |
+| R2  | Reorder and remove playlist entries                                          | Drag to reorder; remove button per row                                   |
+| R3  | Show each entry's name and duration; reject unreadable files with a message  | A corrupt file shows an error row and is skipped                         |
+| R4  | List all MIDI outputs and update the list when devices are plugged in or out | Unplugging a USB synth removes it within 1 s                             |
+| R5  | Play the selected entry to the chosen output with no audible timing drift    | A 5-minute file ends within 50 ms of its computed duration               |
+| R6  | Play, pause, resume, stop, next, previous                                    | Pause and stop leave no hanging notes                                    |
+| R7  | Auto-advance to the next entry; stop at the end of the list                  | Last song ends, transport returns to stopped                             |
+| R8  | Panic button                                                                 | Sends all-notes-off and reset-controllers on all 16 channels             |
+| R9  | List audio inputs and monitor the chosen one                                 | Input is audible through the chosen output                               |
+| R10 | Monitor volume, mute, and a live level meter                                 | Mute is on by default                                                    |
+| R11 | Choose the monitoring output device where supported                          | Falls back to the system default with a note                             |
+| R12 | Show playback position and elapsed / total time                              | Updates at least 10 times per second                                     |
+| R13 | Persist the playlist, current entry, chosen devices and monitor settings     | Reload restores the playlist, highlight, device choices, mute and volume |
 
 ## Architecture
 
@@ -190,14 +190,14 @@ Above the rack sits a printed, collapsible **Quick start** label. At 960 px and 
 
 1. **Quick start (printed label above the rack):** a short getting-started list (connect hardware → "Connect devices" → allow MIDI + microphone → choose MIDI output, audio input and output → load files), the unsupported-browser and Firefox onboarding notices, and the visible LCD-font credit line. The header is 18 px and the body 14 px, with 1 em of padding and 1 em under the header. A "Hide/Show quick start" toggle collapses the body; the header and toggle stay visible.
 2. **Unit 1 — front panel.**
-   - *Monitor strip:* the volume control as a rotary knob drawn over the existing range input (the input stays focusable, labelled and keyboard-operable), a latching **Mute** rubber key with a red LED, and the stereo input level as two vertical 12-segment LED ladders (green with the top three amber, plus a red clip LED in place of the old CLIP text). The level is exposed through the meter's accessible description rather than a visible numeric readout.
-   - *Main amber LCD:* song number, title, state (`PLAY` / `PAUSE` / `STOP`), elapsed time and length, the segmented seek bar, a static 16-part strip that marks the channels the playing song uses (from the same data as the part map, cleared on stop) and, on its bottom line, the single `aria-live` status region.
-   - *Keypad strip:* MIDI output picker as an LCD-styled select; previous, play/pause, next, stop and red-orange Panic rubber keys with silkscreen captions and a green/amber LED on Play; a red/green LED beside the "Connect devices" / "Retry" keys that trigger the MIDI and microphone permission prompts. On load the LCD starts with "Devices not connect", and the LED stays red until MIDI access is granted and an output is present.
+   - _Monitor strip:_ the volume control as a rotary knob drawn over the existing range input (the input stays focusable, labelled and keyboard-operable), a latching **Mute** rubber key with a red LED, and the stereo input level as two vertical 12-segment LED ladders (green with the top three amber, plus a red clip LED in place of the old CLIP text). The level is exposed through the meter's accessible description rather than a visible numeric readout.
+   - _Main amber LCD:_ song number, title, state (`PLAY` / `PAUSE` / `STOP`), elapsed time and length, the segmented seek bar, a static 16-part strip that marks the channels the playing song uses (from the same data as the part map, cleared on stop) and, on its bottom line, the single `aria-live` status region.
+   - _Keypad strip:_ MIDI output picker as an LCD-styled select; previous, play/pause, next, stop and red-orange Panic rubber keys with silkscreen captions and a green/amber LED on Play; a red/green LED beside the "Connect devices" / "Retry" keys that trigger the MIDI and microphone permission prompts. On load the LCD starts with "Devices not connected", and the LED stays red until MIDI access is granted and an output is present.
    - The app name is the unit's silkscreen brand line.
 3. **Unit 2 — expansion unit.**
-   - *Song list LCD:* playlist keys (`+` Add files, Load files, Clear playlist, Save playlist, Load playlist), a dashed "Drop .mid files on this unit" strip (dropping anywhere on unit 2 works), and numbered rows with name, duration right-aligned, status and row keys. The current song is an inverted row; rejected files are dimmed and struck through. Drag and move-button reordering, remove and select all keep their accessible names.
-   - *Part map LCD:* the currently playing file's MIDI channels with the General MIDI instrument each program change selects (channel 10 shown as drums), including program history and any bank select; empty until a song plays, with no per-note activity.
-   - *Audio routing:* input and output pickers and the latency readout, with the feedback warning, output-grant button and unsupported notes as amber-LED notices.
+   - _Song list LCD:_ playlist keys (`+` Add files, Load files, Clear playlist, Save playlist, Load playlist), a dashed "Drop .mid files on this unit" strip (dropping anywhere on unit 2 works), and numbered rows with name, duration right-aligned, status and row keys. The current song is an inverted row; rejected files are dimmed and struck through. Drag and move-button reordering, remove and select all keep their accessible names.
+   - _Part map LCD:_ the currently playing file's MIDI channels with the General MIDI instrument each program change selects (channel 10 shown as drums), including program history and any bank select; empty until a song plays, with no per-note activity.
+   - _Audio routing:_ input and output pickers and the latency readout, with the feedback warning, output-grant button and unsupported notes as amber-LED notices.
 
 Power and play state are shown by an LED plus `aria-pressed` or text, never colour alone; focus is a 2 px `--focus` ring, with a dashed LCD-ink outline on a focused song-list row. LCD ink meets 4.5:1 on the LCD background and the unlit-pixel grid is at or below 12 % opacity. Disabled keys are flat and unlit. Under `prefers-reduced-motion` nothing blinks or moves, though the meters still update.
 
@@ -209,17 +209,17 @@ Keyboard shortcuts: Space = play/pause, Esc = Panic, ←/→ = previous/next. St
 
 The biggest risks are Firefox's audio output routing and stuck notes on external gear; both have fallbacks.
 
-| Risk | Impact | Mitigation |
-| --- | --- | --- |
-| Firefox cannot set the output device on an `AudioContext` | Monitoring goes to the default output, or adds latency via `<audio>` | Use the `<audio>` + `setSinkId` path; default output as last resort |
-| Firefox's MIDI add-on prompt confuses users | Users cancel and see no devices | Explain the prompt before clicking "Connect devices"; show a retry |
-| Notes hang after pause, stop or disconnect | External synth drones | Track sounding notes; release them, plus CC64 = 0; Panic button |
-| Scheduled messages cannot be cancelled in Chrome | Up to 200 ms of notes play after pause | Keep look-ahead at 200 ms; release after the last queued event |
-| Background tabs throttle timers to 1 s | Gaps or bursts in playback | Run the scheduler tick in a Worker (implemented in T5); look-ahead covers short stalls |
-| Multichannel interfaces expose only 2 channels | Inputs above 1–2 unreachable | Document it; route the instrument to inputs 1–2 for the MVP |
-| Monitoring a mic through speakers | Feedback howl | Monitor starts muted; warning when input and output share a device |
-| Malformed or huge MIDI files | Parser throws or UI stalls | Parse in try/catch; mark entry as error; skip on auto-advance |
-| A virtual MIDI port loops back into the same synth | Doubled notes | Out of scope; documented in help text |
+| Risk                                                      | Impact                                                               | Mitigation                                                                             |
+| --------------------------------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Firefox cannot set the output device on an `AudioContext` | Monitoring goes to the default output, or adds latency via `<audio>` | Use the `<audio>` + `setSinkId` path; default output as last resort                    |
+| Firefox's MIDI add-on prompt confuses users               | Users cancel and see no devices                                      | Explain the prompt before clicking "Connect devices"; show a retry                     |
+| Notes hang after pause, stop or disconnect                | External synth drones                                                | Track sounding notes; release them, plus CC64 = 0; Panic button                        |
+| Scheduled messages cannot be cancelled in Chrome          | Up to 200 ms of notes play after pause                               | Keep look-ahead at 200 ms; release after the last queued event                         |
+| Background tabs throttle timers to 1 s                    | Gaps or bursts in playback                                           | Run the scheduler tick in a Worker (implemented in T5); look-ahead covers short stalls |
+| Multichannel interfaces expose only 2 channels            | Inputs above 1–2 unreachable                                         | Document it; route the instrument to inputs 1–2 for the MVP                            |
+| Monitoring a mic through speakers                         | Feedback howl                                                        | Monitor starts muted; warning when input and output share a device                     |
+| Malformed or huge MIDI files                              | Parser throws or UI stalls                                           | Parse in try/catch; mark entry as error; skip on auto-advance                          |
+| A virtual MIDI port loops back into the same synth        | Doubled notes                                                        | Out of scope; documented in help text                                                  |
 
 ## Testing
 

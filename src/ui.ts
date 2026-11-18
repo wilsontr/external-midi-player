@@ -9,8 +9,8 @@
  * See the design doc, "UI layout" and "MIDI output > Device access".
  */
 
-import { AudioMonitor, CLIP_THRESHOLD_DB, DB_FLOOR } from './audioMonitor';
-import { MidiDevices } from './midiDevices';
+import { AudioMonitor, CLIP_THRESHOLD_DB, DB_FLOOR } from "./audioMonitor";
+import { MidiDevices } from "./midiDevices";
 import {
   M3U_MAX_BYTES,
   PlaylistPlayer,
@@ -19,24 +19,26 @@ import {
   matchM3u,
   parseM3u,
   type PlaylistEntry,
-} from './playlist';
+} from "./playlist";
 import {
   gmInstrumentName,
   isMidiFileName,
   type ChannelInstrument,
   type ChannelProgram,
-} from './parser';
+} from "./parser";
 
 /** Formats seconds as m:ss, optionally with tenths (for the elapsed readout). */
 function formatTime(seconds: number, tenths = false): string {
   const clamped = Math.max(0, seconds);
   const whole = Math.floor(clamped);
   const m = Math.floor(whole / 60);
-  const sec = String(whole % 60).padStart(2, '0');
-  return tenths ? `${m}:${sec}.${Math.floor((clamped - whole) * 10)}` : `${m}:${sec}`;
+  const sec = String(whole % 60).padStart(2, "0");
+  return tenths
+    ? `${m}:${sec}.${Math.floor((clamped - whole) * 10)}`
+    : `${m}:${sec}`;
 }
 
-const ENTRY_DRAG_TYPE = 'application/x-midi-entry';
+const ENTRY_DRAG_TYPE = "application/x-midi-entry";
 
 /** Level LEDs per meter ladder; the red clip light is the twelfth segment. */
 const LADDER_SEGMENTS = 11;
@@ -53,14 +55,15 @@ const ICON = {
   next: '<path d="M15 5h3v14h-3zM4 5v14l11-7z"/>',
   up: '<path d="M12 4l7 8h-4v8h-6v-8H5z"/>',
   down: '<path d="M12 20l-7-8h4V4h6v8h4z"/>',
-  remove: '<path d="M8.5 6L12 9.5 15.5 6 18 8.5 14.5 12 18 15.5 15.5 18 12 14.5 8.5 18 6 15.5 9.5 12 6 8.5z"/>',
+  remove:
+    '<path d="M8.5 6L12 9.5 15.5 6 18 8.5 14.5 12 18 15.5 15.5 18 12 14.5 8.5 18 6 15.5 9.5 12 6 8.5z"/>',
 } as const;
 
 function icon(name: keyof typeof ICON): string {
   return (
     '<svg class="key-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
     ICON[name] +
-    '</svg>'
+    "</svg>"
   );
 }
 
@@ -70,11 +73,14 @@ function icon(name: keyof typeof ICON): string {
  * `data-level` (1 = bottom) and `data-lit`; the clip segment is toggled with
  * the `hidden` attribute so the CLIP test ID keeps working.
  */
-function meterLadder(side: 'left' | 'right'): string {
-  const clipTestId = side === 'left' ? ' data-testid="clip-indicator"' : '';
-  const levels = Array.from({ length: LADDER_SEGMENTS }, (_, i) => LADDER_SEGMENTS - i)
+function meterLadder(side: "left" | "right"): string {
+  const clipTestId = side === "left" ? ' data-testid="clip-indicator"' : "";
+  const levels = Array.from(
+    { length: LADDER_SEGMENTS },
+    (_, i) => LADDER_SEGMENTS - i,
+  )
     .map((level) => {
-      const kind = level > LADDER_SEGMENTS - 3 ? 'led-amber' : 'led-green';
+      const kind = level > LADDER_SEGMENTS - 3 ? "led-amber" : "led-green";
       return (
         '<span class="meter-slot"><span class="led ' +
         kind +
@@ -83,7 +89,7 @@ function meterLadder(side: 'left' | 'right'): string {
         '" data-lit="false"></span></span>'
       );
     })
-    .join('');
+    .join("");
   return (
     '<div class="ladder" data-testid="meter-' +
     side +
@@ -91,9 +97,9 @@ function meterLadder(side: 'left' | 'right'): string {
     '<span class="meter-slot meter-slot-clip">' +
     '<span class="led led-red led-clip"' +
     clipTestId +
-    ' hidden></span></span>' +
+    " hidden></span></span>" +
     levels +
-    '</div>'
+    "</div>"
   );
 }
 
@@ -108,9 +114,9 @@ function partStrip(): string {
       channel +
       '">' +
       channel +
-      '</li>'
+      "</li>"
     );
-  }).join('');
+  }).join("");
 }
 
 /**
@@ -214,11 +220,11 @@ export function createUi(root: HTMLElement): void {
               aria-valuetext="Left −∞ dBFS, Right −∞ dBFS"
             >
               <div class="ladder-group">
-                ${meterLadder('left')}
+                ${meterLadder("left")}
                 <span class="silk-caption" aria-hidden="true">L</span>
               </div>
               <div class="ladder-group">
-                ${meterLadder('right')}
+                ${meterLadder("right")}
                 <span class="silk-caption" aria-hidden="true">R</span>
               </div>
             </div>
@@ -266,20 +272,20 @@ export function createUi(root: HTMLElement): void {
             </div>
             <div class="keypad" data-testid="keypad" role="group" aria-label="Transport">
               <div class="key-cell">
-                <button type="button" class="rubber-key key-transport" data-testid="previous-button" aria-label="⏮ Previous">${icon('previous')}</button>
+                <button type="button" class="rubber-key key-transport" data-testid="previous-button" aria-label="⏮ Previous">${icon("previous")}</button>
                 <span class="silk-caption" aria-hidden="true">Prev</span>
               </div>
               <div class="key-cell key-cell-play" data-testid="play-key" data-state="stopped">
                 <span class="led led-play" data-testid="play-led" data-state="stopped" aria-hidden="true"></span>
-                <button type="button" class="rubber-key key-transport" data-testid="play-button" aria-label="▶ Play"><span class="key-glyph" data-testid="play-glyph">${icon('play')}</span></button>
+                <button type="button" class="rubber-key key-transport" data-testid="play-button" aria-label="▶ Play"><span class="key-glyph" data-testid="play-glyph">${icon("play")}</span></button>
                 <span class="silk-caption" data-testid="play-caption" aria-hidden="true">Play</span>
               </div>
               <div class="key-cell">
-                <button type="button" class="rubber-key key-transport" data-testid="next-button" aria-label="⏭ Next">${icon('next')}</button>
+                <button type="button" class="rubber-key key-transport" data-testid="next-button" aria-label="⏭ Next">${icon("next")}</button>
                 <span class="silk-caption" aria-hidden="true">Next</span>
               </div>
               <div class="key-cell">
-                <button type="button" class="rubber-key key-transport" data-testid="stop-button" aria-label="⏹ Stop">${icon('stop')}</button>
+                <button type="button" class="rubber-key key-transport" data-testid="stop-button" aria-label="⏹ Stop">${icon("stop")}</button>
                 <span class="silk-caption" aria-hidden="true">Stop</span>
               </div>
               <div class="key-cell key-cell-panic">
@@ -372,60 +378,146 @@ export function createUi(root: HTMLElement): void {
     </div>
   `;
 
-  const connectButton = root.querySelector<HTMLButtonElement>('[data-testid="connect-button"]')!;
-  const retryButton = root.querySelector<HTMLButtonElement>('[data-testid="retry-button"]')!;
-  const connectLed = root.querySelector<HTMLElement>('[data-testid="connect-led"]')!;
+  const connectButton = root.querySelector<HTMLButtonElement>(
+    '[data-testid="connect-button"]',
+  )!;
+  const retryButton = root.querySelector<HTMLButtonElement>(
+    '[data-testid="retry-button"]',
+  )!;
+  const connectLed = root.querySelector<HTMLElement>(
+    '[data-testid="connect-led"]',
+  )!;
   const quickstartToggle = root.querySelector<HTMLButtonElement>(
     '[data-testid="quickstart-toggle"]',
   )!;
-  const quickstartBody = root.querySelector<HTMLElement>('#quickstart-body')!;
-  const unsupportedNotice = root.querySelector<HTMLElement>('[data-testid="unsupported-notice"]')!;
-  const firefoxOnboarding = root.querySelector<HTMLElement>('[data-testid="firefox-onboarding"]')!;
-  const outputPicker = root.querySelector<HTMLSelectElement>('[data-testid="output-picker"]')!;
-  const playbackState = root.querySelector<HTMLElement>('[data-testid="playback-state"]')!;
-  const currentTitle = root.querySelector<HTMLElement>('[data-testid="current-title"]')!;
-  const playButton = root.querySelector<HTMLButtonElement>('[data-testid="play-button"]')!;
-  const stopButton = root.querySelector<HTMLButtonElement>('[data-testid="stop-button"]')!;
-  const previousButton = root.querySelector<HTMLButtonElement>('[data-testid="previous-button"]')!;
-  const nextButton = root.querySelector<HTMLButtonElement>('[data-testid="next-button"]')!;
-  const panicButton = root.querySelector<HTMLButtonElement>('[data-testid="panic-button"]')!;
+  const quickstartBody = root.querySelector<HTMLElement>("#quickstart-body")!;
+  const unsupportedNotice = root.querySelector<HTMLElement>(
+    '[data-testid="unsupported-notice"]',
+  )!;
+  const firefoxOnboarding = root.querySelector<HTMLElement>(
+    '[data-testid="firefox-onboarding"]',
+  )!;
+  const outputPicker = root.querySelector<HTMLSelectElement>(
+    '[data-testid="output-picker"]',
+  )!;
+  const playbackState = root.querySelector<HTMLElement>(
+    '[data-testid="playback-state"]',
+  )!;
+  const currentTitle = root.querySelector<HTMLElement>(
+    '[data-testid="current-title"]',
+  )!;
+  const playButton = root.querySelector<HTMLButtonElement>(
+    '[data-testid="play-button"]',
+  )!;
+  const stopButton = root.querySelector<HTMLButtonElement>(
+    '[data-testid="stop-button"]',
+  )!;
+  const previousButton = root.querySelector<HTMLButtonElement>(
+    '[data-testid="previous-button"]',
+  )!;
+  const nextButton = root.querySelector<HTMLButtonElement>(
+    '[data-testid="next-button"]',
+  )!;
+  const panicButton = root.querySelector<HTMLButtonElement>(
+    '[data-testid="panic-button"]',
+  )!;
   const timeline = root.querySelector<HTMLElement>('[data-testid="timeline"]')!;
-  const timelineFill = root.querySelector<HTMLElement>('[data-testid="timeline-fill"]')!;
-  const timeDisplay = root.querySelector<HTMLElement>('[data-testid="time-display"]')!;
-  const audioInputPicker = root.querySelector<HTMLSelectElement>('[data-testid="audio-input-picker"]')!;
-  const audioOutputPicker = root.querySelector<HTMLSelectElement>('[data-testid="audio-output-picker"]')!;
-  const audioOutputRow = root.querySelector<HTMLElement>('[data-testid="audio-output-row"]')!;
-  const audioOutputNote = root.querySelector<HTMLElement>('[data-testid="audio-output-note"]')!;
-  const grantOutputButton = root.querySelector<HTMLButtonElement>('[data-testid="grant-output-button"]')!;
-  const monitorUnavailable = root.querySelector<HTMLElement>('[data-testid="monitor-unavailable"]')!;
-  const muteButton = root.querySelector<HTMLButtonElement>('[data-testid="mute-button"]')!;
-  const volumeSlider = root.querySelector<HTMLInputElement>('[data-testid="volume-slider"]')!;
-  const volumeText = root.querySelector<HTMLElement>('[data-testid="volume-text"]')!;
+  const timelineFill = root.querySelector<HTMLElement>(
+    '[data-testid="timeline-fill"]',
+  )!;
+  const timeDisplay = root.querySelector<HTMLElement>(
+    '[data-testid="time-display"]',
+  )!;
+  const audioInputPicker = root.querySelector<HTMLSelectElement>(
+    '[data-testid="audio-input-picker"]',
+  )!;
+  const audioOutputPicker = root.querySelector<HTMLSelectElement>(
+    '[data-testid="audio-output-picker"]',
+  )!;
+  const audioOutputRow = root.querySelector<HTMLElement>(
+    '[data-testid="audio-output-row"]',
+  )!;
+  const audioOutputNote = root.querySelector<HTMLElement>(
+    '[data-testid="audio-output-note"]',
+  )!;
+  const grantOutputButton = root.querySelector<HTMLButtonElement>(
+    '[data-testid="grant-output-button"]',
+  )!;
+  const monitorUnavailable = root.querySelector<HTMLElement>(
+    '[data-testid="monitor-unavailable"]',
+  )!;
+  const muteButton = root.querySelector<HTMLButtonElement>(
+    '[data-testid="mute-button"]',
+  )!;
+  const volumeSlider = root.querySelector<HTMLInputElement>(
+    '[data-testid="volume-slider"]',
+  )!;
+  const volumeText = root.querySelector<HTMLElement>(
+    '[data-testid="volume-text"]',
+  )!;
   const meter = root.querySelector<HTMLElement>('[data-testid="meter"]')!;
   const levelLeds = {
-    left: [...root.querySelectorAll<HTMLElement>('[data-testid="meter-left"] .led[data-level]')],
-    right: [...root.querySelectorAll<HTMLElement>('[data-testid="meter-right"] .led[data-level]')],
+    left: [
+      ...root.querySelectorAll<HTMLElement>(
+        '[data-testid="meter-left"] .led[data-level]',
+      ),
+    ],
+    right: [
+      ...root.querySelectorAll<HTMLElement>(
+        '[data-testid="meter-right"] .led[data-level]',
+      ),
+    ],
   };
-  const clipLeds = [...root.querySelectorAll<HTMLElement>('.led-clip')];
+  const clipLeds = [...root.querySelectorAll<HTMLElement>(".led-clip")];
   const knob = root.querySelector<HTMLElement>('[data-testid="volume-knob"]')!;
   const muteLed = root.querySelector<HTMLElement>('[data-testid="mute-led"]')!;
-  const lcdState = root.querySelector<HTMLElement>('[data-testid="lcd-state"]')!;
-  const songNumber = root.querySelector<HTMLElement>('[data-testid="song-number"]')!;
+  const lcdState = root.querySelector<HTMLElement>(
+    '[data-testid="lcd-state"]',
+  )!;
+  const songNumber = root.querySelector<HTMLElement>(
+    '[data-testid="song-number"]',
+  )!;
   const playKey = root.querySelector<HTMLElement>('[data-testid="play-key"]')!;
   const playLed = root.querySelector<HTMLElement>('[data-testid="play-led"]')!;
-  const playGlyph = root.querySelector<HTMLElement>('[data-testid="play-glyph"]')!;
-  const playCaption = root.querySelector<HTMLElement>('[data-testid="play-caption"]')!;
-  const partCells = [...root.querySelectorAll<HTMLElement>('[data-testid="part-cell"]')];
-  const latencyReadout = root.querySelector<HTMLElement>('[data-testid="latency-readout"]')!;
-  const feedbackWarning = root.querySelector<HTMLElement>('[data-testid="feedback-warning"]')!;
-  const instrumentsCaption = root.querySelector<HTMLElement>('[data-testid="instruments-caption"]')!;
-  const instrumentsEmpty = root.querySelector<HTMLElement>('[data-testid="instruments-empty"]')!;
-  const instrumentList = root.querySelector<HTMLUListElement>('[data-testid="instrument-list"]')!;
-  const expansionUnit = root.querySelector<HTMLElement>('[data-testid="expansion-unit"]')!;
-  const songCount = root.querySelector<HTMLElement>('[data-testid="song-count"]')!;
-  const dropZone = root.querySelector<HTMLElement>('[data-testid="drop-zone"]')!;
-  const addFilesButton = root.querySelector<HTMLButtonElement>('[data-testid="add-files-button"]')!;
-  const loadFilesButton = root.querySelector<HTMLButtonElement>('[data-testid="load-files-button"]')!;
+  const playGlyph = root.querySelector<HTMLElement>(
+    '[data-testid="play-glyph"]',
+  )!;
+  const playCaption = root.querySelector<HTMLElement>(
+    '[data-testid="play-caption"]',
+  )!;
+  const partCells = [
+    ...root.querySelectorAll<HTMLElement>('[data-testid="part-cell"]'),
+  ];
+  const latencyReadout = root.querySelector<HTMLElement>(
+    '[data-testid="latency-readout"]',
+  )!;
+  const feedbackWarning = root.querySelector<HTMLElement>(
+    '[data-testid="feedback-warning"]',
+  )!;
+  const instrumentsCaption = root.querySelector<HTMLElement>(
+    '[data-testid="instruments-caption"]',
+  )!;
+  const instrumentsEmpty = root.querySelector<HTMLElement>(
+    '[data-testid="instruments-empty"]',
+  )!;
+  const instrumentList = root.querySelector<HTMLUListElement>(
+    '[data-testid="instrument-list"]',
+  )!;
+  const expansionUnit = root.querySelector<HTMLElement>(
+    '[data-testid="expansion-unit"]',
+  )!;
+  const songCount = root.querySelector<HTMLElement>(
+    '[data-testid="song-count"]',
+  )!;
+  const dropZone = root.querySelector<HTMLElement>(
+    '[data-testid="drop-zone"]',
+  )!;
+  const addFilesButton = root.querySelector<HTMLButtonElement>(
+    '[data-testid="add-files-button"]',
+  )!;
+  const loadFilesButton = root.querySelector<HTMLButtonElement>(
+    '[data-testid="load-files-button"]',
+  )!;
   const clearPlaylistButton = root.querySelector<HTMLButtonElement>(
     '[data-testid="clear-playlist-button"]',
   )!;
@@ -435,15 +527,25 @@ export function createUi(root: HTMLElement): void {
   const loadPlaylistButton = root.querySelector<HTMLButtonElement>(
     '[data-testid="load-playlist-button"]',
   )!;
-  const fileInput = root.querySelector<HTMLInputElement>('[data-testid="file-input"]')!;
-  const loadFileInput = root.querySelector<HTMLInputElement>('[data-testid="load-file-input"]')!;
+  const fileInput = root.querySelector<HTMLInputElement>(
+    '[data-testid="file-input"]',
+  )!;
+  const loadFileInput = root.querySelector<HTMLInputElement>(
+    '[data-testid="load-file-input"]',
+  )!;
   const playlistFileInput = root.querySelector<HTMLInputElement>(
     '[data-testid="playlist-file-input"]',
   )!;
-  const playlistEmpty = root.querySelector<HTMLElement>('[data-testid="playlist-empty"]')!;
-  const playlistList = root.querySelector<HTMLOListElement>('[data-testid="playlist"]')!;
+  const playlistEmpty = root.querySelector<HTMLElement>(
+    '[data-testid="playlist-empty"]',
+  )!;
+  const playlistList = root.querySelector<HTMLOListElement>(
+    '[data-testid="playlist"]',
+  )!;
 
-  const statusRegion = root.querySelector<HTMLElement>('[data-testid="status-region"]')!;
+  const statusRegion = root.querySelector<HTMLElement>(
+    '[data-testid="status-region"]',
+  )!;
   function setStatus(message: string): void {
     statusRegion.textContent = message;
   }
@@ -456,13 +558,13 @@ export function createUi(root: HTMLElement): void {
     onStatus: setStatus,
     onOutputsChanged: () => renderOutputs(),
     onSelectionChange: (id) => {
-      outputPicker.value = id ?? '';
+      outputPicker.value = id ?? "";
       // Switching outputs mid-song: release on the old one, don't carry over.
-      if (id !== null && player.state !== 'stopped') player.stop();
+      if (id !== null && player.state !== "stopped") player.stop();
     },
     onSelectedOutputLost: () => {
       player.outputLost();
-      setStatus('MIDI output disconnected - playback stopped.');
+      setStatus("MIDI output disconnected - playback stopped.");
     },
   });
 
@@ -476,15 +578,19 @@ export function createUi(root: HTMLElement): void {
     onStatus: setStatus,
   });
 
-  const STATE_TEXT = { stopped: 'Nothing playing.', playing: 'Playing', paused: 'Paused' };
-  const STATE_LCD = { stopped: 'STOP', playing: 'PLAY', paused: 'PAUSE' };
+  const STATE_TEXT = {
+    stopped: "Nothing playing.",
+    playing: "Playing",
+    paused: "Paused",
+  };
+  const STATE_LCD = { stopped: "STOP", playing: "PLAY", paused: "PAUSE" };
 
   function renderTransport(): void {
     const state = player.state;
-    const playing = state === 'playing';
-    playButton.setAttribute('aria-label', playing ? '⏸ Pause' : '▶ Play');
-    playCaption.textContent = playing ? 'Pause' : 'Play';
-    const glyph = icon(playing ? 'pause' : 'play');
+    const playing = state === "playing";
+    playButton.setAttribute("aria-label", playing ? "⏸ Pause" : "▶ Play");
+    playCaption.textContent = playing ? "Pause" : "Play";
+    const glyph = icon(playing ? "pause" : "play");
     if (playGlyph.innerHTML !== glyph) playGlyph.innerHTML = glyph;
     playKey.dataset.state = state;
     playLed.dataset.state = state;
@@ -496,9 +602,10 @@ export function createUi(root: HTMLElement): void {
     const index = entries.findIndex((entry) => entry.id === currentId);
     songNumber.textContent =
       index < 0
-        ? '--'
-        : `${String(index + 1).padStart(2, '0')}/${String(entries.length).padStart(2, '0')}`;
-    currentTitle.textContent = player.currentEntry()?.name ?? 'No song selected.';
+        ? "--"
+        : `${String(index + 1).padStart(2, "0")}/${String(entries.length).padStart(2, "0")}`;
+    currentTitle.textContent =
+      player.currentEntry()?.name ?? "No song selected.";
     updateProgress();
   }
 
@@ -506,26 +613,26 @@ export function createUi(root: HTMLElement): void {
   function describeProgram(channel: number, program: ChannelProgram): string {
     const bank =
       program.bankMsb === null && program.bankLsb === null
-        ? ''
+        ? ""
         : ` · bank ${program.bankMsb ?? 0}:${program.bankLsb ?? 0}`;
-    const suffix = `${bank}${program.fromFile ? '' : ' (default)'}`;
+    const suffix = `${bank}${program.fromFile ? "" : " (default)"}`;
     if (channel === 9) return `Drums · kit ${program.program + 1}${suffix}`;
     return `${gmInstrumentName(program.program)} · program ${program.program + 1}${suffix}`;
   }
 
   function createInstrumentRow(item: ChannelInstrument): HTMLLIElement {
-    const li = document.createElement('li');
-    li.className = 'instrument-row';
-    li.setAttribute('data-testid', 'instrument-row');
+    const li = document.createElement("li");
+    li.className = "instrument-row";
+    li.setAttribute("data-testid", "instrument-row");
     li.dataset.channel = String(item.channel + 1);
-    const channel = document.createElement('span');
-    channel.className = 'instrument-channel';
+    const channel = document.createElement("span");
+    channel.className = "instrument-channel";
     channel.textContent = `Channel ${item.channel + 1}`;
-    const detail = document.createElement('span');
-    detail.className = 'instrument-detail';
+    const detail = document.createElement("span");
+    detail.className = "instrument-detail";
     detail.textContent = item.programs
       .map((program) => describeProgram(item.channel, program))
-      .join(' > ');
+      .join(" > ");
     li.append(channel, detail);
     return li;
   }
@@ -539,30 +646,34 @@ export function createUi(root: HTMLElement): void {
   function renderInstruments(): void {
     const state = player.instrumentsState();
     const entry = player.currentEntry();
-    const caption = state.status === 'none' ? '' : (entry?.name ?? '');
-    instrumentsCaption.hidden = caption === '';
-    if (instrumentsCaption.textContent !== caption) instrumentsCaption.textContent = caption;
+    const caption = state.status === "none" ? "" : (entry?.name ?? "");
+    instrumentsCaption.hidden = caption === "";
+    if (instrumentsCaption.textContent !== caption)
+      instrumentsCaption.textContent = caption;
 
-    let empty = '';
+    let empty = "";
     let channels: ChannelInstrument[] = [];
-    if (state.status === 'none') {
-      empty = 'Play a song to see its MIDI channels and instruments.';
-    } else if (state.status === 'loading') {
-      empty = 'Reading instruments…';
+    if (state.status === "none") {
+      empty = "Play a song to see its MIDI channels and instruments.";
+    } else if (state.status === "loading") {
+      empty = "Reading instruments…";
     } else if (state.channels.length === 0) {
-      empty = 'This file has no channel events.';
+      empty = "This file has no channel events.";
     } else {
       channels = state.channels;
     }
-    instrumentsEmpty.hidden = empty === '';
-    if (instrumentsEmpty.textContent !== empty) instrumentsEmpty.textContent = empty;
+    instrumentsEmpty.hidden = empty === "";
+    if (instrumentsEmpty.textContent !== empty)
+      instrumentsEmpty.textContent = empty;
 
     instrumentList.hidden = channels.length === 0;
     const rows = channels.map(createInstrumentRow);
     const current = instrumentList.children;
     const unchanged =
       current.length === rows.length &&
-      rows.every((row, index) => current[index]?.textContent === row.textContent);
+      rows.every(
+        (row, index) => current[index]?.textContent === row.textContent,
+      );
     if (!unchanged) instrumentList.replaceChildren(...rows);
 
     // The part strip is the static 1-16 view of the same data: lit cells are
@@ -572,8 +683,11 @@ export function createUi(root: HTMLElement): void {
       const channel = Number(cell.dataset.channel);
       const on = used.has(channel);
       if (cell.dataset.used !== String(on)) cell.dataset.used = String(on);
-      const label = on ? `Channel ${channel}, used by this song` : `Channel ${channel}`;
-      if (cell.getAttribute('aria-label') !== label) cell.setAttribute('aria-label', label);
+      const label = on
+        ? `Channel ${channel}, used by this song`
+        : `Channel ${channel}`;
+      if (cell.getAttribute("aria-label") !== label)
+        cell.setAttribute("aria-label", label);
     }
   }
 
@@ -583,7 +697,10 @@ export function createUi(root: HTMLElement): void {
 
   /** The timeline is live only while playing or paused, and only once the duration is known. */
   function seekableNow(): boolean {
-    return (player.state === 'playing' || player.state === 'paused') && currentDuration() > 0;
+    return (
+      (player.state === "playing" || player.state === "paused") &&
+      currentDuration() > 0
+    );
   }
 
   let timelineSeekable = false;
@@ -596,12 +713,14 @@ export function createUi(root: HTMLElement): void {
     const ratio = totalSec > 0 ? position / totalSec : 0;
     timelineFill.style.width = `${ratio * 100}%`;
     const now = position.toFixed(1);
-    if (timeline.getAttribute('aria-valuenow') !== now) timeline.setAttribute('aria-valuenow', now);
+    if (timeline.getAttribute("aria-valuenow") !== now)
+      timeline.setAttribute("aria-valuenow", now);
     const max = totalSec.toFixed(1);
-    if (timeline.getAttribute('aria-valuemax') !== max) timeline.setAttribute('aria-valuemax', max);
+    if (timeline.getAttribute("aria-valuemax") !== max)
+      timeline.setAttribute("aria-valuemax", max);
     const text = `${formatTime(position, true)} of ${formatTime(totalSec)}`;
-    if (timeline.getAttribute('aria-valuetext') !== text) {
-      timeline.setAttribute('aria-valuetext', text);
+    if (timeline.getAttribute("aria-valuetext") !== text) {
+      timeline.setAttribute("aria-valuetext", text);
     }
   }
 
@@ -617,8 +736,8 @@ export function createUi(root: HTMLElement): void {
     if (seekable !== timelineSeekable) {
       timelineSeekable = seekable;
       timeline.tabIndex = seekable ? 0 : -1;
-      timeline.setAttribute('aria-disabled', String(!seekable));
-      timeline.classList.toggle('disabled', !seekable);
+      timeline.setAttribute("aria-disabled", String(!seekable));
+      timeline.classList.toggle("disabled", !seekable);
     }
     if (draggingTimeline) {
       // The drag preview owns the display until the pointer is released.
@@ -651,10 +770,13 @@ export function createUi(root: HTMLElement): void {
   function timelineSecondsAt(clientX: number): number {
     const rect = timeline.getBoundingClientRect();
     if (rect.width <= 0) return 0;
-    return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * currentDuration();
+    return (
+      Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) *
+      currentDuration()
+    );
   }
 
-  timeline.addEventListener('pointerdown', (event) => {
+  timeline.addEventListener("pointerdown", (event) => {
     if (!timelineSeekable || event.button !== 0) return;
     draggingTimeline = true;
     timeline.focus();
@@ -666,11 +788,11 @@ export function createUi(root: HTMLElement): void {
     previewSeek(timelineSecondsAt(event.clientX));
     event.preventDefault();
   });
-  timeline.addEventListener('pointermove', (event) => {
+  timeline.addEventListener("pointermove", (event) => {
     if (!draggingTimeline) return;
     previewSeek(timelineSecondsAt(event.clientX));
   });
-  timeline.addEventListener('pointerup', (event) => {
+  timeline.addEventListener("pointerup", (event) => {
     if (!draggingTimeline) return;
     draggingTimeline = false;
     try {
@@ -680,12 +802,12 @@ export function createUi(root: HTMLElement): void {
     }
     commitSeek(previewSeconds);
   });
-  timeline.addEventListener('pointercancel', () => {
+  timeline.addEventListener("pointercancel", () => {
     if (!draggingTimeline) return;
     draggingTimeline = false;
     updateProgress();
   });
-  timeline.addEventListener('keydown', (event) => {
+  timeline.addEventListener("keydown", (event) => {
     if (!timelineSeekable) return;
     const total = currentDuration();
     const position = draggingTimeline
@@ -693,22 +815,22 @@ export function createUi(root: HTMLElement): void {
       : Math.max(0, Math.min(total, player.position()));
     let next: number;
     switch (event.key) {
-      case 'ArrowLeft':
+      case "ArrowLeft":
         next = position - 1;
         break;
-      case 'ArrowRight':
+      case "ArrowRight":
         next = position + 1;
         break;
-      case 'PageDown':
+      case "PageDown":
         next = position - 10;
         break;
-      case 'PageUp':
+      case "PageUp":
         next = position + 10;
         break;
-      case 'Home':
+      case "Home":
         next = 0;
         break;
-      case 'End':
+      case "End":
         next = total;
         break;
       default:
@@ -722,9 +844,9 @@ export function createUi(root: HTMLElement): void {
   const rows = new Map<string, HTMLLIElement>();
 
   function createRow(id: string): HTMLLIElement {
-    const li = document.createElement('li');
-    li.className = 'playlist-row';
-    li.setAttribute('data-testid', 'playlist-row');
+    const li = document.createElement("li");
+    li.className = "playlist-row";
+    li.setAttribute("data-testid", "playlist-row");
     li.dataset.id = id;
     li.draggable = true;
     li.innerHTML = `
@@ -734,10 +856,10 @@ export function createUi(root: HTMLElement): void {
       <span class="entry-duration" data-testid="entry-duration"></span>
       <span class="entry-status" data-testid="entry-status"></span>
       <span class="entry-buttons">
-        <button type="button" class="row-key" data-action="play">${icon('play')}</button>
-        <button type="button" class="row-key" data-action="up">${icon('up')}</button>
-        <button type="button" class="row-key" data-action="down">${icon('down')}</button>
-        <button type="button" class="row-key" data-action="remove">${icon('remove')}</button>
+        <button type="button" class="row-key" data-action="play">${icon("play")}</button>
+        <button type="button" class="row-key" data-action="up">${icon("up")}</button>
+        <button type="button" class="row-key" data-action="down">${icon("down")}</button>
+        <button type="button" class="row-key" data-action="remove">${icon("remove")}</button>
       </span>`;
     return li;
   }
@@ -754,29 +876,38 @@ export function createUi(root: HTMLElement): void {
     };
     // Row numbers are derived from the order, so add/load/remove/reorder and a
     // reload all renumber consistently.
-    set('entry-number', String(index + 1));
-    set('entry-name', entry.name);
+    set("entry-number", String(index + 1));
+    set("entry-name", entry.name);
     set(
-      'entry-duration',
+      "entry-duration",
       entry.durationSec === undefined
-        ? entry.status === 'error'
-          ? '-'
-          : '…'
+        ? entry.status === "error"
+          ? "-"
+          : "…"
         : formatTime(entry.durationSec),
     );
-    set('entry-status', entry.status === 'error' ? `Error: ${entry.error ?? 'unreadable'}` : 'Ready');
+    set(
+      "entry-status",
+      entry.status === "error"
+        ? `Error: ${entry.error ?? "unreadable"}`
+        : "Ready",
+    );
     li.dataset.status = entry.status;
-    li.classList.toggle('current', isCurrent);
-    if (isCurrent) li.setAttribute('aria-current', 'true');
-    else li.removeAttribute('aria-current');
+    li.classList.toggle("current", isCurrent);
+    if (isCurrent) li.setAttribute("aria-current", "true");
+    else li.removeAttribute("aria-current");
     const label = (action: string, text: string): void => {
-      li.querySelector(`[data-action="${action}"]`)!.setAttribute('aria-label', `${text} ${entry.name}`);
+      li.querySelector(`[data-action="${action}"]`)!.setAttribute(
+        "aria-label",
+        `${text} ${entry.name}`,
+      );
     };
-    label('play', 'Play');
-    label('up', 'Move up');
-    label('down', 'Move down');
-    label('remove', 'Remove');
-    li.querySelector<HTMLButtonElement>('[data-action="play"]')!.disabled = entry.status === 'error';
+    label("play", "Play");
+    label("up", "Move up");
+    label("down", "Move down");
+    label("remove", "Remove");
+    li.querySelector<HTMLButtonElement>('[data-action="play"]')!.disabled =
+      entry.status === "error";
   }
 
   /** Keyed reconcile: rows are reused so focus and drag state survive updates. */
@@ -784,7 +915,7 @@ export function createUi(root: HTMLElement): void {
     const { entries, currentId } = player.playlist;
     playlistEmpty.hidden = entries.length > 0;
     savePlaylistButton.disabled = entries.length === 0;
-    const count = `${entries.length} ${entries.length === 1 ? 'song' : 'songs'}`;
+    const count = `${entries.length} ${entries.length === 1 ? "song" : "songs"}`;
     if (songCount.textContent !== count) songCount.textContent = count;
     const live = new Set(entries.map((e) => e.id));
     for (const [id, li] of rows) {
@@ -814,19 +945,19 @@ export function createUi(root: HTMLElement): void {
     if (files.length === 0) return;
     const { added, rejected } = player.add(files);
     const parts: string[] = [];
-    if (added > 0) parts.push(`Added ${added} file${added === 1 ? '' : 's'}.`);
+    if (added > 0) parts.push(`Added ${added} file${added === 1 ? "" : "s"}.`);
     if (rejected.length > 0) {
       parts.push(
-        `Rejected ${rejected.length} file${rejected.length === 1 ? '' : 's'} (not .mid or .midi): ${rejected.join(', ')}`,
+        `Rejected ${rejected.length} file${rejected.length === 1 ? "" : "s"} (not .mid or .midi): ${rejected.join(", ")}`,
       );
     }
-    setStatus(parts.join(' '));
+    setStatus(parts.join(" "));
   }
 
-  playlistList.addEventListener('click', (event) => {
+  playlistList.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
-    const button = target.closest<HTMLButtonElement>('button[data-action]');
-    const li = target.closest<HTMLLIElement>('li');
+    const button = target.closest<HTMLButtonElement>("button[data-action]");
+    const li = target.closest<HTMLLIElement>("li");
     if (!li) return;
     const id = li.dataset.id!;
     if (!button) {
@@ -836,15 +967,15 @@ export function createUi(root: HTMLElement): void {
     }
     const index = entryIndex(id);
     switch (button.dataset.action) {
-      case 'play':
+      case "play":
         player.playEntry(id);
         break;
-      case 'remove':
+      case "remove":
         player.remove(id);
         break;
-      case 'up':
-      case 'down': {
-        const toIndex = button.dataset.action === 'up' ? index - 1 : index + 1;
+      case "up":
+      case "down": {
+        const toIndex = button.dataset.action === "up" ? index - 1 : index + 1;
         if (toIndex < 0 || toIndex >= player.playlist.entries.length) break;
         player.move(id, toIndex);
         // Moving the row in the DOM drops focus; put it back on the same button.
@@ -857,32 +988,35 @@ export function createUi(root: HTMLElement): void {
   // Drag to reorder (internal rows only; external files are handled below).
   let draggedId: string | null = null;
   function clearDropMarks(): void {
-    for (const li of rows.values()) li.classList.remove('drop-before', 'drop-after');
+    for (const li of rows.values())
+      li.classList.remove("drop-before", "drop-after");
   }
-  playlistList.addEventListener('dragstart', (event) => {
-    const li = (event.target as HTMLElement).closest<HTMLLIElement>('li');
+  playlistList.addEventListener("dragstart", (event) => {
+    const li = (event.target as HTMLElement).closest<HTMLLIElement>("li");
     if (!li || !event.dataTransfer) return;
     draggedId = li.dataset.id!;
     event.dataTransfer.setData(ENTRY_DRAG_TYPE, draggedId);
-    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.effectAllowed = "move";
   });
-  playlistList.addEventListener('dragover', (event) => {
+  playlistList.addEventListener("dragover", (event) => {
     if (draggedId === null) return;
     event.preventDefault();
     clearDropMarks();
-    const li = (event.target as HTMLElement).closest<HTMLLIElement>('li');
+    const li = (event.target as HTMLElement).closest<HTMLLIElement>("li");
     if (!li) return;
     const rect = li.getBoundingClientRect();
-    li.classList.add(event.clientY > rect.top + rect.height / 2 ? 'drop-after' : 'drop-before');
+    li.classList.add(
+      event.clientY > rect.top + rect.height / 2 ? "drop-after" : "drop-before",
+    );
   });
-  playlistList.addEventListener('drop', (event) => {
+  playlistList.addEventListener("drop", (event) => {
     if (draggedId === null) return;
     event.preventDefault();
     const id = draggedId;
     draggedId = null;
     clearDropMarks();
     const from = entryIndex(id);
-    const li = (event.target as HTMLElement).closest<HTMLLIElement>('li');
+    const li = (event.target as HTMLElement).closest<HTMLLIElement>("li");
     let to: number;
     if (!li) {
       to = player.playlist.entries.length - 1;
@@ -894,7 +1028,7 @@ export function createUi(root: HTMLElement): void {
     }
     if (from >= 0) player.move(id, to);
   });
-  playlistList.addEventListener('dragend', () => {
+  playlistList.addEventListener("dragend", () => {
     draggedId = null;
     clearDropMarks();
   });
@@ -902,27 +1036,27 @@ export function createUi(root: HTMLElement): void {
   // File drops: anywhere on the expansion unit; stray drops elsewhere must not
   // navigate away.
   const hasFiles = (event: DragEvent): boolean =>
-    Array.from(event.dataTransfer?.types ?? []).includes('Files');
-  expansionUnit.addEventListener('dragover', (event) => {
+    Array.from(event.dataTransfer?.types ?? []).includes("Files");
+  expansionUnit.addEventListener("dragover", (event) => {
     if (!hasFiles(event)) return;
     event.preventDefault();
-    dropZone.classList.add('drag-over');
+    dropZone.classList.add("drag-over");
   });
-  expansionUnit.addEventListener('dragleave', (event) => {
+  expansionUnit.addEventListener("dragleave", (event) => {
     if (!expansionUnit.contains(event.relatedTarget as Node | null)) {
-      dropZone.classList.remove('drag-over');
+      dropZone.classList.remove("drag-over");
     }
   });
-  expansionUnit.addEventListener('drop', (event) => {
+  expansionUnit.addEventListener("drop", (event) => {
     if (!hasFiles(event)) return;
     event.preventDefault();
-    dropZone.classList.remove('drag-over');
+    dropZone.classList.remove("drag-over");
     handleDroppedFiles(Array.from(event.dataTransfer?.files ?? []));
   });
-  window.addEventListener('dragover', (event) => {
+  window.addEventListener("dragover", (event) => {
     if (hasFiles(event)) event.preventDefault();
   });
-  window.addEventListener('drop', (event) => {
+  window.addEventListener("drop", (event) => {
     if (hasFiles(event)) event.preventDefault();
   });
 
@@ -930,30 +1064,33 @@ export function createUi(root: HTMLElement): void {
     if (files.length === 0) return;
     const { added, rejected } = player.load(files);
     const parts: string[] = [];
-    if (added > 0) parts.push(`Loaded ${added} file${added === 1 ? '' : 's'} - playlist replaced.`);
+    if (added > 0)
+      parts.push(
+        `Loaded ${added} file${added === 1 ? "" : "s"} - playlist replaced.`,
+      );
     if (rejected.length > 0) {
       parts.push(
-        `Rejected ${rejected.length} file${rejected.length === 1 ? '' : 's'} (not .mid or .midi): ${rejected.join(', ')}`,
+        `Rejected ${rejected.length} file${rejected.length === 1 ? "" : "s"} (not .mid or .midi): ${rejected.join(", ")}`,
       );
     }
-    if (added === 0) parts.push('Playlist unchanged.');
-    setStatus(parts.join(' '));
+    if (added === 0) parts.push("Playlist unchanged.");
+    setStatus(parts.join(" "));
   }
 
   function clearPlaylist(): void {
     if (player.playlist.entries.length === 0) {
-      setStatus('The playlist is already empty.');
+      setStatus("The playlist is already empty.");
       return;
     }
     player.clear();
-    setStatus('Playlist cleared.');
+    setStatus("Playlist cleared.");
   }
 
   /** A short, screen-reader-friendly list; long M3U selections stay bounded. */
   function summarizeList(items: string[]): string {
     const shown = items.slice(0, 5);
     const rest = items.length - shown.length;
-    return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
+    return rest > 0 ? `${shown.join(", ")} and ${rest} more` : shown.join(", ");
   }
 
   /** Downloads the current playlist as an M3U8 of names and order (T10). */
@@ -961,18 +1098,18 @@ export function createUi(root: HTMLElement): void {
     const entries = player.playlist.entries;
     if (entries.length === 0) return;
     const url = URL.createObjectURL(
-      new Blob([buildM3u(entries)], { type: 'audio/x-mpegurl' }),
+      new Blob([buildM3u(entries)], { type: "audio/x-mpegurl" }),
     );
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = url;
-    link.download = 'midi-playlist.m3u8';
+    link.download = "midi-playlist.m3u8";
     document.body.append(link);
     link.click();
     link.remove();
     // Give the browser time to start the download before releasing the blob.
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     setStatus(
-      `Saved ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'} to midi-playlist.m3u8.`,
+      `Saved ${entries.length} ${entries.length === 1 ? "entry" : "entries"} to midi-playlist.m3u8.`,
     );
   }
 
@@ -988,7 +1125,9 @@ export function createUi(root: HTMLElement): void {
     const playlists = files.filter((f) => isPlaylistFileName(f.name));
     const midiFiles = files.filter((f) => isMidiFileName(f.name));
     if (playlists.length === 0) {
-      setStatus('Select an .m3u or .m3u8 playlist together with its .mid files.');
+      setStatus(
+        "Select an .m3u or .m3u8 playlist together with its .mid files.",
+      );
       return;
     }
     if (playlists.length > 1) {
@@ -997,7 +1136,9 @@ export function createUi(root: HTMLElement): void {
     }
     const playlistFile = playlists[0];
     if (playlistFile.size > M3U_MAX_BYTES) {
-      setStatus(`${playlistFile.name}: playlist file is too large (over 1 MB).`);
+      setStatus(
+        `${playlistFile.name}: playlist file is too large (over 1 MB).`,
+      );
       return;
     }
     let text: string;
@@ -1022,50 +1163,62 @@ export function createUi(root: HTMLElement): void {
       } else if (midiFiles.length === 0 && existingFiles.length === 0) {
         parts.push(`${playlistFile.name} was selected without its MIDI files.`);
       } else if (midiFiles.length === 0) {
-        parts.push(`No files from ${playlistFile.name} matched the current playlist.`);
+        parts.push(
+          `No files from ${playlistFile.name} matched the current playlist.`,
+        );
       } else {
-        parts.push(`No files from ${playlistFile.name} matched the selection or the current playlist.`);
+        parts.push(
+          `No files from ${playlistFile.name} matched the selection or the current playlist.`,
+        );
       }
       if (matched.missing.length > 0) {
-        parts.push(`Not found in the selection or playlist: ${summarizeList(matched.missing)}.`);
+        parts.push(
+          `Not found in the selection or playlist: ${summarizeList(matched.missing)}.`,
+        );
       }
       if (parsed.unsupported.length > 0) {
-        parts.push(`Skipped unsupported: ${summarizeList(parsed.unsupported)}.`);
+        parts.push(
+          `Skipped unsupported: ${summarizeList(parsed.unsupported)}.`,
+        );
       }
       parts.push(
-        'Select the playlist together with its .mid files, or add those files first. Playlist unchanged.',
+        "Select the playlist together with its .mid files, or add those files first. Playlist unchanged.",
       );
-      setStatus(parts.join(' '));
+      setStatus(parts.join(" "));
       return;
     }
 
     player.load(matched.files);
     const total = parsed.tracks.length;
     parts.push(
-      `Loaded ${matched.files.length} of ${total} ${total === 1 ? 'entry' : 'entries'} ` +
+      `Loaded ${matched.files.length} of ${total} ${total === 1 ? "entry" : "entries"} ` +
         `from ${playlistFile.name} - playlist replaced.`,
     );
     if (matched.fromPlaylist > 0) {
       parts.push(
-        `Used ${matched.fromPlaylist} ${matched.fromPlaylist === 1 ? 'file' : 'files'} already in the playlist.`,
+        `Used ${matched.fromPlaylist} ${matched.fromPlaylist === 1 ? "file" : "files"} already in the playlist.`,
       );
     }
     if (matched.missing.length > 0) {
-      parts.push(`Not found in the selection or playlist: ${summarizeList(matched.missing)}.`);
+      parts.push(
+        `Not found in the selection or playlist: ${summarizeList(matched.missing)}.`,
+      );
     }
     if (parsed.unsupported.length > 0) {
       parts.push(`Skipped unsupported: ${summarizeList(parsed.unsupported)}.`);
     }
     if (matched.ambiguous.length > 0) {
-      parts.push(`Duplicate file names matched in selection order: ${summarizeList(matched.ambiguous)}.`);
+      parts.push(
+        `Duplicate file names matched in selection order: ${summarizeList(matched.ambiguous)}.`,
+      );
     }
     if (matched.extra.length > 0) {
       parts.push(
-        `Ignored ${matched.extra.length} selected ${matched.extra.length === 1 ? 'file' : 'files'} ` +
+        `Ignored ${matched.extra.length} selected ${matched.extra.length === 1 ? "file" : "files"} ` +
           `not in the playlist: ${summarizeList(matched.extra.map((f) => f.name))}.`,
       );
     }
-    setStatus(parts.join(' '));
+    setStatus(parts.join(" "));
   }
 
   /** Dropping a playlist (with or without its files) loads it; otherwise append. */
@@ -1078,58 +1231,64 @@ export function createUi(root: HTMLElement): void {
     addFiles(files);
   }
 
-  addFilesButton.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', () => {
+  addFilesButton.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
     addFiles(Array.from(fileInput.files ?? []));
-    fileInput.value = '';
+    fileInput.value = "";
   });
-  loadFilesButton.addEventListener('click', () => loadFileInput.click());
-  loadFileInput.addEventListener('change', () => {
+  loadFilesButton.addEventListener("click", () => loadFileInput.click());
+  loadFileInput.addEventListener("change", () => {
     loadFiles(Array.from(loadFileInput.files ?? []));
-    loadFileInput.value = '';
+    loadFileInput.value = "";
   });
-  clearPlaylistButton.addEventListener('click', clearPlaylist);
-  savePlaylistButton.addEventListener('click', savePlaylist);
-  loadPlaylistButton.addEventListener('click', () => playlistFileInput.click());
-  playlistFileInput.addEventListener('change', () => {
+  clearPlaylistButton.addEventListener("click", clearPlaylist);
+  savePlaylistButton.addEventListener("click", savePlaylist);
+  loadPlaylistButton.addEventListener("click", () => playlistFileInput.click());
+  playlistFileInput.addEventListener("change", () => {
     const files = Array.from(playlistFileInput.files ?? []);
-    playlistFileInput.value = '';
+    playlistFileInput.value = "";
     void loadPlaylist(files);
   });
 
   function panic(): void {
     if (midi.selectedOutput() === null) {
       player.stop();
-      setStatus('Select a MIDI output first.');
+      setStatus("Select a MIDI output first.");
       return;
     }
     player.panic();
-    setStatus('Panic: all notes off sent on all 16 channels.');
+    setStatus("Panic: all notes off sent on all 16 channels.");
   }
 
-  playButton.addEventListener('click', () => player.togglePlay());
-  stopButton.addEventListener('click', () => player.stop());
-  previousButton.addEventListener('click', () => player.previous());
-  nextButton.addEventListener('click', () => player.next());
-  panicButton.addEventListener('click', panic);
+  playButton.addEventListener("click", () => player.togglePlay());
+  stopButton.addEventListener("click", () => player.stop());
+  previousButton.addEventListener("click", () => player.previous());
+  nextButton.addEventListener("click", () => player.next());
+  panicButton.addEventListener("click", panic);
 
-  document.addEventListener('keydown', (event) => {
-    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+  document.addEventListener("keydown", (event) => {
+    if (
+      event.defaultPrevented ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey
+    )
+      return;
     const target = event.target as HTMLElement | null;
     const tag = target?.tagName;
-    const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
-    if (event.key === 'Escape') {
+    const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+    if (event.key === "Escape") {
       event.preventDefault();
       panic();
     } else if (typing) {
       return;
-    } else if (event.key === ' ' && tag !== 'BUTTON') {
+    } else if (event.key === " " && tag !== "BUTTON") {
       event.preventDefault();
       player.togglePlay();
-    } else if (event.key === 'ArrowLeft') {
+    } else if (event.key === "ArrowLeft") {
       event.preventDefault();
       player.previous();
-    } else if (event.key === 'ArrowRight') {
+    } else if (event.key === "ArrowRight") {
       event.preventDefault();
       player.next();
     }
@@ -1145,18 +1304,18 @@ export function createUi(root: HTMLElement): void {
    */
   function renderConnectionLed(): void {
     const connected = midi.connected && midi.listOutputs().length > 0;
-    connectLed.dataset.state = connected ? 'connected' : 'disconnected';
+    connectLed.dataset.state = connected ? "connected" : "disconnected";
   }
 
   /** (Re)build the picker from the current output list. */
   function renderOutputs(): void {
     const outputs = midi.listOutputs();
     outputPicker.replaceChildren(
-      new Option('Select an output…', ''),
+      new Option("Select an output…", ""),
       ...outputs.map((o) => new Option(`${o.name} (${o.manufacturer})`, o.id)),
     );
     outputPicker.disabled = false;
-    outputPicker.value = midi.selectedId() ?? '';
+    outputPicker.value = midi.selectedId() ?? "";
     renderConnectionLed();
   }
 
@@ -1171,17 +1330,17 @@ export function createUi(root: HTMLElement): void {
   /** (Re)build both audio pickers from the monitor's device lists. */
   function renderAudioDevices(): void {
     audioInputPicker.replaceChildren(
-      new Option('Select an input…', ''),
+      new Option("Select an input…", ""),
       ...monitor.inputs().map((d) => new Option(d.label, d.id)),
     );
-    audioInputPicker.value = monitor.selectedInput ?? '';
+    audioInputPicker.value = monitor.selectedInput ?? "";
     audioInputPicker.disabled = !audioReady;
 
-    const hasOutputChoice = monitor.routing !== 'default';
+    const hasOutputChoice = monitor.routing !== "default";
     audioOutputRow.hidden = !hasOutputChoice;
     audioOutputNote.hidden = hasOutputChoice;
     audioOutputPicker.replaceChildren(
-      new Option('System default', ''),
+      new Option("System default", ""),
       ...monitor.outputs().map((d) => new Option(d.label, d.id)),
     );
     audioOutputPicker.value = monitor.selectedOutput;
@@ -1195,7 +1354,9 @@ export function createUi(root: HTMLElement): void {
     const shared = monitor.sharesDevice();
     feedbackWarning.hidden = !shared;
     if (shared && !warningShown) {
-      setStatus('Warning: the monitoring input and output are the same device - feedback is possible.');
+      setStatus(
+        "Warning: the monitoring input and output are the same device - feedback is possible.",
+      );
     }
     warningShown = shared;
   }
@@ -1203,16 +1364,16 @@ export function createUi(root: HTMLElement): void {
   /** Mirrors the monitor's mute/volume (restored from storage) into the controls. */
   function renderMonitorControls(): void {
     const muted = monitor.muted;
-    muteButton.setAttribute('aria-pressed', String(muted));
+    muteButton.setAttribute("aria-pressed", String(muted));
     // The key caption stays "Mute"; the old visible label is kept as the
     // accessible name so the control's name does not change in the reskin.
-    muteButton.setAttribute('aria-label', muted ? '🔇 Muted' : '🔊 Monitoring');
+    muteButton.setAttribute("aria-label", muted ? "🔇 Muted" : "🔊 Monitoring");
     muteLed.dataset.lit = String(muted);
     const percent = Math.round(monitor.volume * 100);
     volumeSlider.value = String(percent);
     volumeText.textContent = `${percent}%`;
     // The knob is pure CSS: its rotation follows the range input's value.
-    knob.style.setProperty('--turn', String(percent / 100));
+    knob.style.setProperty("--turn", String(percent / 100));
   }
 
   /** Lights the bottom `lit` segments of one ladder; 1 is the bottom segment. */
@@ -1225,7 +1386,8 @@ export function createUi(root: HTMLElement): void {
     }
   }
 
-  const formatDb = (db: number): string => (db <= DB_FLOOR ? '−∞' : db.toFixed(1).replace('-', '−'));
+  const formatDb = (db: number): string =>
+    db <= DB_FLOOR ? "−∞" : db.toFixed(1).replace("-", "−");
   let clipUntil = 0;
   let meterDescribedAt = -Infinity;
 
@@ -1238,10 +1400,13 @@ export function createUi(root: HTMLElement): void {
     if (now - meterDescribedAt < 100) return;
     meterDescribedAt = now;
     const text = `Left ${formatDb(left)} dBFS, Right ${formatDb(right)} dBFS`;
-    if (meter.getAttribute('aria-valuetext') !== text) {
-      meter.setAttribute('aria-valuetext', text);
+    if (meter.getAttribute("aria-valuetext") !== text) {
+      meter.setAttribute("aria-valuetext", text);
       const loudest = Math.min(0, Math.max(DB_FLOOR, Math.max(left, right)));
-      meter.setAttribute('aria-valuenow', String(Math.round(loudest * 10) / 10));
+      meter.setAttribute(
+        "aria-valuenow",
+        String(Math.round(loudest * 10) / 10),
+      );
     }
   }
 
@@ -1259,45 +1424,46 @@ export function createUi(root: HTMLElement): void {
     const latency = monitor.latencyMs();
     const latencyText =
       latency === null
-        ? 'Browser latency: —'
+        ? "Browser latency: —"
         : `Browser latency: ${latency.toFixed(1)} ms (excludes interface and driver buffering)`;
-    if (latencyReadout.textContent !== latencyText) latencyReadout.textContent = latencyText;
+    if (latencyReadout.textContent !== latencyText)
+      latencyReadout.textContent = latencyText;
     requestAnimationFrame(meterFrame);
   }
 
-  audioInputPicker.addEventListener('change', () => {
+  audioInputPicker.addEventListener("change", () => {
     const requested = audioInputPicker.value || null;
     void monitor.selectInput(requested).then((selected) => {
       // A failed open leaves the picker showing a device that is not monitored;
       // put it back on whatever is actually captured. Skip this if the user has
       // already picked another device while this one was opening.
-      if (!selected && audioInputPicker.value === (requested ?? '')) {
-        audioInputPicker.value = monitor.selectedInput ?? '';
+      if (!selected && audioInputPicker.value === (requested ?? "")) {
+        audioInputPicker.value = monitor.selectedInput ?? "";
       }
       updateFeedbackWarning();
     });
   });
-  audioOutputPicker.addEventListener('change', () => {
+  audioOutputPicker.addEventListener("change", () => {
     void monitor.selectOutput(audioOutputPicker.value).then(() => {
       audioOutputPicker.value = monitor.selectedOutput;
       updateFeedbackWarning();
     });
   });
-  grantOutputButton.addEventListener('click', () => {
+  grantOutputButton.addEventListener("click", () => {
     void monitor.grantOutput().then(() => renderAudioDevices());
   });
-  muteButton.addEventListener('click', () => {
+  muteButton.addEventListener("click", () => {
     monitor.setMuted(!monitor.muted);
     renderMonitorControls();
   });
-  volumeSlider.addEventListener('input', () => {
+  volumeSlider.addEventListener("input", () => {
     monitor.setVolume(Number(volumeSlider.value) / 100);
     renderMonitorControls();
   });
 
   if (!monitor.supported) {
     monitorUnavailable.hidden = false;
-    setStatus('Audio monitoring is unavailable in this browser.');
+    setStatus("Audio monitoring is unavailable in this browser.");
   }
   renderAudioDevices();
   renderMonitorControls();
@@ -1321,31 +1487,37 @@ export function createUi(root: HTMLElement): void {
         const count = midi.listOutputs().length;
         parts.push(
           count > 0
-            ? `Connected - ${count} MIDI output${count === 1 ? '' : 's'} found.`
-            : 'Connected - no MIDI outputs found yet.',
+            ? `Connected - ${count} MIDI output${count === 1 ? "" : "s"} found.`
+            : "Connected - no MIDI outputs found yet.",
         );
       } else {
-        parts.push('MIDI access denied or cancelled.');
+        parts.push("MIDI access denied or cancelled.");
       }
-      parts.push(micGranted ? 'Microphone access granted.' : 'Microphone permission not granted.');
-      setStatus(parts.join(' '));
+      parts.push(
+        micGranted
+          ? "Microphone access granted."
+          : "Microphone permission not granted.",
+      );
+      setStatus(parts.join(" "));
 
       if (midiGranted) {
         firefoxOnboarding.hidden = true;
         if (midi.listOutputs().length === 0) {
           retryButton.hidden = false;
-          retryButton.textContent = 'Refresh';
+          retryButton.textContent = "Refresh";
         }
       } else {
         // Denied/cancelled (or unsupported): offer the retry path.
         retryButton.hidden = false;
-        retryButton.textContent = 'Retry';
+        retryButton.textContent = "Retry";
       }
     } catch {
       renderConnectionLed();
-      setStatus('Connecting devices failed - click "Connect devices" to retry.');
+      setStatus(
+        'Connecting devices failed - click "Connect devices" to retry.',
+      );
       retryButton.hidden = false;
-      retryButton.textContent = 'Retry';
+      retryButton.textContent = "Retry";
     } finally {
       connectButton.disabled = false;
     }
@@ -1353,36 +1525,38 @@ export function createUi(root: HTMLElement): void {
 
   function handlePickerChange(event: Event): void {
     const value = (event.target as HTMLSelectElement).value;
-    if (value !== '') midi.select(value);
+    if (value !== "") midi.select(value);
   }
 
-  connectButton.addEventListener('click', () => {
+  connectButton.addEventListener("click", () => {
     void connectDevices();
   });
-  retryButton.addEventListener('click', () => {
+  retryButton.addEventListener("click", () => {
     void connectDevices();
   });
-  outputPicker.addEventListener('change', handlePickerChange);
+  outputPicker.addEventListener("change", handlePickerChange);
 
-  if (typeof navigator.requestMIDIAccess !== 'function') {
+  if (typeof navigator.requestMIDIAccess !== "function") {
     // Show a notice instead of a broken UI (ticket T1) and announce it in the
     // single aria-live region (ticket T5).
     unsupportedNotice.hidden = false;
     connectButton.disabled = true;
     setStatus(
-      'This browser does not support Web MIDI. Use a current desktop version of Chrome, Edge, or Firefox.',
+      "This browser does not support Web MIDI. Use a current desktop version of Chrome, Edge, or Firefox.",
     );
   } else {
     // Explain the add-on permission prompt *before* the first click.
     if (isFirefox()) firefoxOnboarding.hidden = false;
     // Until the user connects, the LCD spells out the device state.
-    setStatus('Devices not connect');
+    setStatus("Devices not connected");
   }
 
-  quickstartToggle.addEventListener('click', () => {
-    const expand = quickstartToggle.getAttribute('aria-expanded') !== 'true';
-    quickstartToggle.setAttribute('aria-expanded', String(expand));
-    quickstartToggle.textContent = expand ? 'Hide quick start' : 'Show quick start';
+  quickstartToggle.addEventListener("click", () => {
+    const expand = quickstartToggle.getAttribute("aria-expanded") !== "true";
+    quickstartToggle.setAttribute("aria-expanded", String(expand));
+    quickstartToggle.textContent = expand
+      ? "Hide quick start"
+      : "Show quick start";
     quickstartBody.hidden = !expand;
   });
 
