@@ -1170,6 +1170,55 @@ button:disabled {
   outline-offset: 2px;
 }
 
+/*
+ * Below the three-column faceplate the monitor card spans the full width, so
+ * its controls read left-to-right like the rest of the front panel instead of
+ * stacking down a narrow column. The card only gets the row treatment at the
+ * widths where the card itself is a row; the 190 px desktop column keeps the
+ * stacked layout. The level meter anchors the right edge, balancing the
+ * controls grouped on the left.
+ */
+@media (max-width: 959px) {
+  .strip-monitor {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 10px 24px;
+  }
+
+  .strip-monitor > .silk-label {
+    align-self: center;
+    margin: 0;
+  }
+
+  .knob-section,
+  .mute-section {
+    margin: 0;
+  }
+
+  .mute-section {
+    margin-bottom: 8px;
+  }
+
+  .strip-monitor .meter {
+    margin: 0 0 0 auto;
+  }
+}
+
+/* Very narrow screens: the card title keeps its own line, the controls fit
+   side by side (knob, mute key, L/R ladders). */
+@media (max-width: 600px) {
+  .strip-monitor {
+    gap: 8px 14px;
+    padding: 8px;
+  }
+
+  .strip-monitor > .silk-label {
+    flex-basis: 100%;
+    align-self: flex-start;
+  }
+}
+
 /* ------------------------------------------------------------- narrow screens */
 
 @media (max-width: 480px) {

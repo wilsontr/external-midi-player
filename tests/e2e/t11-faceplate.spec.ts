@@ -369,6 +369,40 @@ test.describe("T11 — half-rack faceplate", () => {
     expect(led!.y + led!.height).toBeLessThanOrEqual(play!.y);
   });
 
+  test("the monitor card lays its controls in a row when the faceplate stacks", async ({
+    page,
+  }) => {
+    await setup(page);
+    const bounds = () =>
+      Promise.all(
+        [
+          '[data-testid="monitor-panel"]',
+          '[data-testid="volume-knob"]',
+          '[data-testid="mute-button"]',
+          ".meter",
+        ].map((selector) => page.locator(selector).boundingBox()),
+      );
+
+    // Below the three-column faceplate the card spans the width, so the knob,
+    // mute key and meter sit side by side with the meter on the right edge.
+    await page.setViewportSize({ width: 800, height: 900 });
+    const [panel, knob, mute, meter] = await bounds();
+    expect(knob!.x + knob!.width).toBeLessThanOrEqual(mute!.x);
+    expect(mute!.x + mute!.width).toBeLessThanOrEqual(meter!.x);
+    expect(meter!.x + meter!.width).toBeGreaterThan(
+      panel!.x + panel!.width - 15,
+    );
+    // Same row, not stacked: the mute key sits inside the knob's vertical span.
+    expect(mute!.y).toBeGreaterThan(knob!.y);
+    expect(mute!.y).toBeLessThan(knob!.y + knob!.height);
+
+    // The 190 px desktop column keeps the stacked layout.
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const [, wideKnob, wideMute, wideMeter] = await bounds();
+    expect(wideMute!.y).toBeGreaterThan(wideKnob!.y);
+    expect(wideMeter!.y).toBeGreaterThan(wideMute!.y);
+  });
+
   test("dropping anywhere on the expansion unit still adds files", async ({
     page,
   }) => {
