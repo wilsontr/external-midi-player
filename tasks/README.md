@@ -49,18 +49,20 @@ Rules:
 | T5 | [T5-hardening.md](T5-hardening.md) | Hardening and deploy | 1 day | done |
 | T6 | [T6-github-pages-deploy.md](T6-github-pages-deploy.md) | Hardening and deploy | 0.5 day | pending |
 | T7 | [T7-software-synth-output.md](T7-software-synth-output.md) | After the MVP | 2–3 days | pending |
+| T8 | [T8-player-refinements.md](T8-player-refinements.md) | After the MVP | 3–4 days | pending |
 
-Requirement coverage (per task `Requirements` field): R1, R2 → T3; R3 → T2, T3; R4 → T1; R5 → T2, T5, T7; R6, R7 → T3, T5; R8 → T2; R9, R10 → T4; R11 → T4, T5; R12 → T3; R13 → T1, T3, T4.
+Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8; R3 → T2, T3, T8; R4 → T1; R5 → T2, T5, T7; R6, R7 → T3, T5, T8; R8 → T2; R9, R10 → T4, T8; R11 → T4, T5; R12 → T3, T8; R13 → T1, T3, T4.
 
 T6 is a delivery task: it carries no new functional requirement and exercises R1–R13 against the production HTTPS origin. It splits the deploy half out of milestone 5 so the GitHub Pages + CI work can be reviewed on its own.
 
 T7 is a post-MVP enhancement; it adds no new R-ID. R5 is the timing bar if the chosen option becomes a playback output. Its first acceptance criterion is the engine/integration decision.
 
+T8 is a post-MVP feature bundle: playlist/layout refinements plus timeline seeking and a panic-before-track-switch behavior. It cites the affected MVP requirements; seeking is a new post-MVP capability with no new R-ID.
+
 ## Backlog (post-MVP, from "After the MVP")
 
 Not tracked as tasks yet; each would become its own task file if scheduled.
 
-- Seek within a song, restoring program changes and controllers (1–2 days)
 - Upgrade playlist persistence from localStorage to IndexedDB for very large playlists (0.5 day)
 - Tempo change, A–B looping, per-channel mute and remapping (2–4 days)
 - Record the monitored input to WAV (1 day)

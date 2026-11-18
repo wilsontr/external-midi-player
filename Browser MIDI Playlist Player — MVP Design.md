@@ -237,7 +237,7 @@ The MVP is about 4.5 developer-days for one experienced front-end developer, bui
 
 ### After the MVP
 
-- Seek within a song, restoring program changes and controllers at the new position (1–2 days).
+- Player and playlist refinements (T8): seek with program/controller restoration, compact add/load/clear, row numbering, responsive two-column layout, startup mute policy and panic before track changes (3–4 days).
 - Upgrade playlist persistence from `localStorage` to IndexedDB for very large playlists (0.5 day).
 - Tempo change, A–B looping, per-channel mute and remapping (2–4 days).
 - Record the monitored input to WAV (1 day).
