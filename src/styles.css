@@ -92,6 +92,8 @@ body {
 
 body {
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-weight: 400;
+  letter-spacing: 0;
   color: var(--silk);
   background-color: var(--chassis-deep);
   background-image: radial-gradient(circle at 50% 0, var(--page-glow), transparent 68%);
@@ -163,8 +165,8 @@ body {
 .brand-name {
   margin: 0;
   font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
+  font-weight: 400;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: var(--silk);
 }
@@ -172,8 +174,8 @@ body {
 .brand-model {
   margin: 0;
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  font-weight: 400;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: var(--silk-dim);
 }
@@ -259,8 +261,8 @@ body {
   margin: 0 0 6px;
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  font-weight: 400;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: var(--silk-dim);
 }
@@ -268,8 +270,8 @@ body {
 .silk-caption {
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-weight: 400;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: var(--silk-dim);
   white-space: nowrap;
@@ -278,14 +280,14 @@ body {
 .silk-hint {
   margin: 0;
   font-size: 11px;
-  letter-spacing: 0.03em;
+  letter-spacing: 0;
   color: var(--silk-faint);
 }
 
 .silk-readout {
   margin: 8px 0 4px;
   font-size: 11px;
-  letter-spacing: 0.03em;
+  letter-spacing: 0;
   color: var(--silk-dim);
 }
 
@@ -547,6 +549,13 @@ body {
   outline-offset: 3px;
 }
 
+/* The mute key sits on the same centre line as the knob and the LED ladders. */
+.mute-section {
+  display: flex;
+  justify-content: center;
+  margin: 4px 0 8px;
+}
+
 /* ------------------------------------------------------------------- keys */
 
 button {
@@ -571,8 +580,8 @@ button:disabled {
   padding: 6px 12px;
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-weight: 400;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: var(--key-ink);
   background: linear-gradient(180deg, var(--key-hi), var(--key) 45%, var(--key-lo));
@@ -617,7 +626,6 @@ button:disabled {
 .compact {
   min-width: 2.25em;
   padding: 4px 8px;
-  font-weight: 700;
 }
 
 .key-transport {
@@ -653,7 +661,9 @@ button:disabled {
 .keypad {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  /* Bottom-aligned keys: the play key's LED then sits in the space above it
+     instead of pushing that key down against its neighbours. */
+  align-items: flex-end;
   gap: 8px;
   margin: 4px 0;
 }

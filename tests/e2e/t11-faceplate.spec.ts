@@ -200,15 +200,17 @@ test.describe('T11 — half-rack faceplate', () => {
           family: style.fontFamily,
           size: parseFloat(style.fontSize),
           transform: style.textTransform,
-          spacing: parseFloat(style.letterSpacing),
+          spacing: style.letterSpacing,
           weight: style.fontWeight,
         };
       });
     expect(silk.family).toMatch(/^"?Helvetica Neue"?, Helvetica, Arial, sans-serif$/);
     expect(silk.size).toBeGreaterThanOrEqual(11);
     expect(silk.transform).toBe('uppercase');
-    expect(silk.spacing).toBeGreaterThan(0);
-    expect(Number(silk.weight)).toBeGreaterThanOrEqual(700);
+    // Every Helvetica Neue faceplate style is regular weight and untracked
+    // (`letter-spacing: 0` computes to `normal` in Chromium).
+    expect(silk.spacing === 'normal' || parseFloat(silk.spacing) === 0).toBe(true);
+    expect(Number(silk.weight)).toBe(400);
 
     const lcd = await page.getByTestId('current-title').evaluate((el) => {
       const style = getComputedStyle(el);
@@ -248,6 +250,43 @@ test.describe('T11 — half-rack faceplate', () => {
       getComputedStyle(el.closest('.lcd')!).backgroundColor,
     ]);
     expect(contrastRatio(ink, background)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test('monitor controls share a centre line and transport keys sit level', async ({ page }) => {
+    await setup(page);
+
+    const centres = await Promise.all(
+      ['[data-testid="volume-knob"]', '[data-testid="mute-button"]', '.meter'].map((selector) =>
+        page.locator(selector).evaluate((el) => {
+          const box = el.getBoundingClientRect();
+          return box.left + box.width / 2;
+        }),
+      ),
+    );
+    // Mute is centred under the knob and over the LED ladders.
+    for (const centre of centres) expect(Math.abs(centre - centres[0]!)).toBeLessThan(1);
+
+    const boxes = await page
+      .locator('[data-testid="keypad"] .key-cell > button')
+      .evaluateAll((buttons) =>
+        buttons.map((el) => {
+          const box = el.getBoundingClientRect();
+          return { top: box.top, bottom: box.top + box.height };
+        }),
+      );
+    expect(boxes).toHaveLength(5);
+    // The play key's LED occupies the space above it, so it no longer pushes
+    // that key down: all four first-row buttons share a top and bottom edge.
+    for (const index of [0, 2, 3]) {
+      expect(boxes[1]!.top).toBeCloseTo(boxes[index]!.top, 0);
+      expect(boxes[1]!.bottom).toBeCloseTo(boxes[index]!.bottom, 0);
+    }
+
+    const [led, play] = await Promise.all([
+      page.getByTestId('play-led').boundingBox(),
+      page.getByTestId('play-button').boundingBox(),
+    ]);
+    expect(led!.y + led!.height).toBeLessThanOrEqual(play!.y);
   });
 
   test('dropping anywhere on the expansion unit still adds files', async ({ page }) => {
