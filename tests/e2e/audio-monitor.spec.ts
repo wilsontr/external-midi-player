@@ -238,7 +238,9 @@ test.describe('T4 — audio monitoring', () => {
     await page.getByTestId('audio-output-picker').selectOption('out1');
 
     await expect(page.getByTestId('feedback-warning')).toBeVisible();
-    await expect(page.getByTestId('status-region')).toContainText('same device');
+    // The warning box is the only notice: the LCD status line stays for
+    // device and file status.
+    await expect(page.getByTestId('status-region')).not.toContainText('same device');
   });
 
   test('audio devices, mute and volume survive a reload', async ({ page }) => {

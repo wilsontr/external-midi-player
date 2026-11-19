@@ -1734,7 +1734,6 @@ export function createUi(root: HTMLElement): void {
     onInputLost: () => renderAudioDevices(),
   });
   let audioReady = false;
-  let warningShown = false;
 
   /** (Re)build both audio pickers from the monitor's device lists. */
   function renderAudioDevices(): void {
@@ -1760,14 +1759,10 @@ export function createUi(root: HTMLElement): void {
   }
 
   function updateFeedbackWarning(): void {
+    // The panel notice below the audio pickers is the only feedback warning:
+    // the LCD status line stays reserved for device and file status.
     const shared = monitor.sharesDevice();
     feedbackWarning.hidden = !shared;
-    if (shared && !warningShown) {
-      setStatus(
-        "Warning: the monitoring input and output are the same device - feedback is possible.",
-      );
-    }
-    warningShown = shared;
   }
 
   /** Mirrors the monitor's mute/volume (restored from storage) into the controls. */
