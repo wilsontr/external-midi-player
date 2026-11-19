@@ -11,7 +11,11 @@
 
 import { AudioMonitor, CLIP_THRESHOLD_DB, DB_FLOOR } from "./audioMonitor";
 import { MidiDevices } from "./midiDevices";
-import { SoftwareSynth, SYNTH_OUTPUT_ID, SYNTH_OUTPUT_NAME } from "./synthOutput";
+import {
+  SoftwareSynth,
+  SYNTH_OUTPUT_ID,
+  SYNTH_OUTPUT_NAME,
+} from "./synthOutput";
 // The first-run sample (T12). `?url` keeps the emitted URL base-aware and
 // content-hashed, so it works from a GitHub Pages subpath (T6).
 import sampleSongUrl from "./assets/debussy-poissons-dor.mid?url";
@@ -205,7 +209,7 @@ export function createUi(root: HTMLElement): void {
           </p>
           <div class="info-foot">
           <div class="info-credits">
-          <p class="font-credit" data-testid="player-credit">Player by Trevor Wilson</p>
+          <p class="font-credit" data-testid="player-credit">Player by <a href="https://github.com/wilsontr">Trevor Wilson</a></p>
           <p class="font-credit">
             LCD font:
             <a href="http://fontstruct.com/fontstructions/show/664062" rel="license noopener" target="_blank">Graph 35+ pix</a>
@@ -635,9 +639,7 @@ export function createUi(root: HTMLElement): void {
   const metadataDialog = root.querySelector<HTMLDialogElement>(
     '[data-testid="metadata-dialog"]',
   )!;
-  const metadataTitle = root.querySelector<HTMLElement>(
-    "#metadata-title",
-  )!;
+  const metadataTitle = root.querySelector<HTMLElement>("#metadata-title")!;
   const metadataFilename = root.querySelector<HTMLElement>(
     '[data-testid="metadata-filename"]',
   )!;
@@ -788,7 +790,10 @@ export function createUi(root: HTMLElement): void {
   }
 
   /** Stable key for one channel's live program, used to skip no-op re-renders. */
-  function programKey(item: ChannelInstrument, program: ChannelProgram): string {
+  function programKey(
+    item: ChannelInstrument,
+    program: ChannelProgram,
+  ): string {
     return `${item.channel}:${program.program}:${program.bankMsb ?? ""}:${
       program.bankLsb ?? ""
     }:${program.fromFile ? 1 : 0}`;
@@ -809,7 +814,10 @@ export function createUi(root: HTMLElement): void {
   /** Channels (1-16) the playing song uses, for the part cells' labels. */
   let usedChannels = new Set<number>();
 
-  function createInstrumentRow(item: ChannelInstrument, program: ChannelProgram): HTMLLIElement {
+  function createInstrumentRow(
+    item: ChannelInstrument,
+    program: ChannelProgram,
+  ): HTMLLIElement {
     const li = document.createElement("li");
     li.className = "instrument-row";
     li.setAttribute("data-testid", "instrument-row");
@@ -864,7 +872,9 @@ export function createUi(root: HTMLElement): void {
     lastInstrumentsSignature = channels
       .map((item, index) => programKey(item, live[index]))
       .join("|");
-    const rows = channels.map((item, index) => createInstrumentRow(item, live[index]));
+    const rows = channels.map((item, index) =>
+      createInstrumentRow(item, live[index]),
+    );
     const current = instrumentList.children;
     const unchanged =
       current.length === rows.length &&
@@ -893,8 +903,7 @@ export function createUi(root: HTMLElement): void {
    */
   function renderActivity(): void {
     const active =
-      player.state === "playing" &&
-      player.instrumentsState().status === "ready"
+      player.state === "playing" && player.instrumentsState().status === "ready"
         ? player.activeChannels()
         : null;
     for (const cell of partCells) {
@@ -1127,7 +1136,9 @@ export function createUi(root: HTMLElement): void {
           : "…"
         : formatTime(entry.durationSec),
     );
-    const status = li.querySelector<HTMLElement>('[data-testid="entry-status"]')!;
+    const status = li.querySelector<HTMLElement>(
+      '[data-testid="entry-status"]',
+    )!;
     const error = entry.status === "error";
     status.hidden = !error;
     set("entry-status", error ? "ERR" : "");
@@ -1151,7 +1162,8 @@ export function createUi(root: HTMLElement): void {
     label("metadata", "Metadata for");
     label("remove", "Remove");
     const disabled = entry.status === "error";
-    li.querySelector<HTMLButtonElement>('[data-action="play"]')!.disabled = disabled;
+    li.querySelector<HTMLButtonElement>('[data-action="play"]')!.disabled =
+      disabled;
     li.querySelector<HTMLButtonElement>('[data-action="metadata"]')!.disabled =
       disabled;
   }
@@ -1165,7 +1177,10 @@ export function createUi(root: HTMLElement): void {
       renderedCurrentId = currentId;
       selectedId = currentId;
     }
-    if (selectedId !== null && !entries.some((entry) => entry.id === selectedId)) {
+    if (
+      selectedId !== null &&
+      !entries.some((entry) => entry.id === selectedId)
+    ) {
       selectedId = currentId;
     }
     playlistEmpty.hidden = entries.length > 0;
@@ -1191,7 +1206,13 @@ export function createUi(root: HTMLElement): void {
         li = createRow(entry.id);
         rows.set(entry.id, li);
       }
-      updateRow(li, entry, entry.id === currentId, entry.id === selectedId, index);
+      updateRow(
+        li,
+        entry,
+        entry.id === currentId,
+        entry.id === selectedId,
+        index,
+      );
       if (playlistList.children[index] !== li) {
         playlistList.insertBefore(li, playlistList.children[index] ?? null);
       }
@@ -1259,7 +1280,9 @@ export function createUi(root: HTMLElement): void {
    * the transport.
    */
   async function openMetadata(id: string): Promise<void> {
-    const entry = player.playlist.entries.find((candidate) => candidate.id === id);
+    const entry = player.playlist.entries.find(
+      (candidate) => candidate.id === id,
+    );
     if (entry === undefined || entry.status === "error") return;
     metadataEntryId = id;
     metadataReadToken += 1;
@@ -1274,7 +1297,9 @@ export function createUi(root: HTMLElement): void {
     showMetadataMessage("Reading metadata…");
     const result = await player.metadataFor(id);
     if (token !== metadataReadToken || !metadataDialog.open) return;
-    const current = player.playlist.entries.find((candidate) => candidate.id === id);
+    const current = player.playlist.entries.find(
+      (candidate) => candidate.id === id,
+    );
     if (current === undefined) {
       metadataDialog.close();
       return;
@@ -1692,7 +1717,9 @@ export function createUi(root: HTMLElement): void {
       ...outputs.map((o) => new Option(`${o.name} (${o.manufacturer})`, o.id)),
       // The software synth needs no permission and no hardware, so it is
       // offered (and the picker enabled) before Connect devices is pressed.
-      ...(synth.supported ? [new Option(SYNTH_OUTPUT_NAME, SYNTH_OUTPUT_ID)] : []),
+      ...(synth.supported
+        ? [new Option(SYNTH_OUTPUT_NAME, SYNTH_OUTPUT_ID)]
+        : []),
     );
     outputPicker.disabled = false;
     // Selecting the built-in synth only happens when it is supported, so the
@@ -1923,11 +1950,7 @@ export function createUi(root: HTMLElement): void {
       const parts: string[] = [];
       if (midiGranted) {
         const count = midi.listOutputs().length;
-        parts.push(
-          count > 0
-            ? "Connected."
-            : "Connected, no MIDI outputs.",
-        );
+        parts.push(count > 0 ? "Connected." : "Connected, no MIDI outputs.");
       } else {
         parts.push("MIDI access denied or cancelled.");
       }
@@ -2035,9 +2058,7 @@ export function createUi(root: HTMLElement): void {
   /** Applies the disclosure, optionally remembering the choice. */
   function setQuickstartExpanded(expand: boolean, persist: boolean): void {
     quickstartToggle.setAttribute("aria-expanded", String(expand));
-    quickstartToggle.textContent = expand
-      ? "Hide info"
-      : "Show info";
+    quickstartToggle.textContent = expand ? "Hide info" : "Show info";
     quickstartBody.hidden = !expand;
     if (!persist) return;
     try {
