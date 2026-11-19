@@ -38,6 +38,7 @@ Show a song's `Track Name` instead of its file name when the file provides a mea
 - [x] Metadata and the resolved title survive a reload; an existing stored playlist without metadata still restores and is reparsed in the background; an entry whose metadata is already known is not reparsed; malformed stored metadata is ignored safely.
 - [x] Opening the viewer for an entry whose metadata is not ready shows a loading state, then the values or an error, without changing playback.
 - [x] Long and numerous values scroll inside the dialog at 360 px and 1280 px, Japanese glyphs render through a CJK fallback, and the page has no horizontal scroll.
+- [x] The main LCD title is clamped to two lines with an ellipsis, and the metadata table keeps a clear gap between the track-number and value columns at desktop and 360 px.
 - [x] `npx vitest run`, `npx playwright test` and `npx tsc --noEmit` pass; the design doc, README and task index are updated; no new runtime dependency is added.
 
 ## Notes
@@ -61,3 +62,4 @@ Show a song's `Track Name` instead of its file name when the file provides a mea
 - **M3U split.** `#EXTINF` uses the display name; the following path line keeps `file.name`. Import matching is unchanged and still keyed on file names.
 - **Dialog details.** Native `showModal` supplies the modal semantics and focus return; Close, Escape and a backdrop click dismiss it. The global key handler returns while the dialog is open, so Escape cannot reach Panic. The CJK fallback is scoped to the title, row name, Instruments caption and dialog text, so the T11 LCD-font assertion keeps its pixel-first stack (updated only to allow the fallbacks).
 - **Verification.** `tests/e2e/metadata.spec.ts` has eight cases in Chromium and Firefox (title/fields, fallbacks, Escape and transport, backdrop and shortcuts, literal HTML, reload, M3U, 360 px). The dialog was also checked against the real `bgaregga1.mid` at 1280 px and 360 px, and the bundled Stanford sample at 1280 px.
+- **Follow-up (2026-11-19).** The main LCD title is clamped to two lines with an ellipsis; the 360 px check asserts `-webkit-line-clamp: 2` and a height within two line-heights. The metadata table's track-number column is 5.5 rem with a 24 px column gap (5 rem / 18 px at 360 px), and the E2E checks the computed gap at both widths.

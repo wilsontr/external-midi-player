@@ -145,6 +145,12 @@ test.describe('T20 — track metadata titles and viewer', () => {
     );
     await expect(page.getByTestId('metadata-copyrights')).toContainText('(C)RAIZING');
     await expect(page.getByTestId('metadata-empty-text-events')).toBeHidden();
+    const columnGap = await page
+      .getByTestId('metadata-track-names')
+      .locator('li')
+      .first()
+      .evaluate((el) => parseFloat(getComputedStyle(el).columnGap));
+    expect(columnGap).toBeGreaterThanOrEqual(24);
 
     await page.getByTestId('metadata-close').click();
     await expect(dialog(page)).toBeHidden();
@@ -328,8 +334,25 @@ test.describe('T20 — track metadata titles and viewer', () => {
     await page.setViewportSize({ width: 360, height: 800 });
     await metadataButton(page).click();
     await expect(dialog(page)).toBeVisible();
+    const titleMetrics = await page.getByTestId('current-title').evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        clamp: Number.parseInt(style.webkitLineClamp, 10),
+        height: el.clientHeight,
+        lineHeight: Number.parseFloat(style.lineHeight),
+      };
+    });
+    expect(titleMetrics.clamp).toBe(2);
+    expect(titleMetrics.height).toBeLessThanOrEqual(titleMetrics.lineHeight * 2 + 1);
+
     const box = await dialog(page).boundingBox();
     expect(box).not.toBeNull();
+    const narrowGap = await page
+      .getByTestId('metadata-track-names')
+      .locator('li')
+      .first()
+      .evaluate((el) => parseFloat(getComputedStyle(el).columnGap));
+    expect(narrowGap).toBeGreaterThanOrEqual(18);
     expect(box!.x).toBeGreaterThanOrEqual(0);
     expect(box!.x + box!.width).toBeLessThanOrEqual(360.5);
     expect(

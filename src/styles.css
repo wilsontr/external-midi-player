@@ -349,13 +349,20 @@ body {
 }
 
 .lcd-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  max-height: 2.3em;
   margin: 6px 0;
+  overflow: hidden;
   font-family: 'Graph 35 Pix', 'Courier New', 'Hiragino Sans', 'Noto Sans JP',
     'Noto Sans CJK JP', monospace;
   font-size: 32px;
   line-height: 1.15;
   min-height: 1.15em;
   overflow-wrap: anywhere;
+  text-overflow: ellipsis;
 }
 
 .lcd-seek {
@@ -1131,8 +1138,8 @@ button:disabled {
 
 .metadata-row {
   display: grid;
-  grid-template-columns: 5.25rem minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 24px;
   padding: 4px 0;
   border-bottom: 1px dotted var(--lcd-ghost);
 }
@@ -1164,8 +1171,8 @@ button:disabled {
 
 @media (max-width: 480px) {
   .metadata-row {
-    grid-template-columns: 4.75rem minmax(0, 1fr);
-    gap: 10px;
+    grid-template-columns: 5rem minmax(0, 1fr);
+    gap: 18px;
   }
 }
 

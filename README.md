@@ -125,10 +125,11 @@ origin stays cleared, exactly as locally.
   has a usable one (trimmed, non-empty, not `untitled`); otherwise they keep
   the file name without its extension. Only the first track's (`Track 1` in
   the viewer) name may name the song; if it has no usable `Track Name`, every
-  later track is ignored and the file name is used. The
-  `Track Name`, `Text Event` and `Copyright Notice` values are decoded per
-  value as UTF-8, ISO-2022-JP, Shift_JIS, EUC-JP or Windows-1252, so
-  Stanford-style Text Events and Japanese titles read correctly. Every healthy
+  later track is ignored and the file name is used. The main LCD title is
+  clamped to two lines with an ellipsis, so a long title cannot push the seek
+  bar down. The `Track Name`, `Text Event` and `Copyright Notice` values are
+  decoded per value as UTF-8, ISO-2022-JP, Shift_JIS, EUC-JP or Windows-1252,
+  so Stanford-style Text Events and Japanese titles read correctly. Every healthy
   row's info key opens an amber LCD dialog listing all three fields with their
   track numbers; Close, Esc or a backdrop click dismisses it and returns focus
   to the key. While it is open the transport shortcuts — including Esc = Panic
