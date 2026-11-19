@@ -279,7 +279,7 @@ The MVP is about 4.5 developer-days for one experienced front-end developer, bui
 - Upgrade playlist persistence from `localStorage` to IndexedDB for very large playlists (0.5 day).
 - Tempo change, A–B looping, per-channel mute and remapping (2–4 days).
 - Record the monitored input to WAV (1 day).
-- A built-in SoundFont synth as an alternative output (2–3 days; tracked as T7, with the engine decision as its first step).
+- Built-in SoundFont synth (T7): SpessaSynth behind the normal output picker, so a playlist plays audibly with no MIDI hardware. The scheduler is unchanged — its future-timestamped `MIDIOutput.send()` calls are translated onto the `AudioContext` clock and applied by the synth's processor at the right render quantum, so no JS timer is involved. The engine and the bundled GeneralUser GS SF3 (~8.4 MB, Licence v2.0) load only when the output is picked, and the production CSP allows `'wasm-unsafe-eval'` for the SF3 decoder (Apache-2.0 engine dependencies).
 - Installable offline app (0.5 day).
 
 ### Open questions

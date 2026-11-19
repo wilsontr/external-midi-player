@@ -48,7 +48,7 @@ Rules:
 | T4 | [T4-audio-monitoring.md](T4-audio-monitoring.md) | Audio monitoring | 1 day | done |
 | T5 | [T5-hardening.md](T5-hardening.md) | Hardening and deploy | 1 day | done |
 | T6 | [T6-github-pages-deploy.md](T6-github-pages-deploy.md) | Hardening and deploy | 0.5 day | done |
-| T7 | [T7-software-synth-output.md](T7-software-synth-output.md) | After the MVP | 2–3 days | pending |
+| T7 | [T7-software-synth-output.md](T7-software-synth-output.md) | After the MVP | 2–3 days | done |
 | T8 | [T8-player-refinements.md](T8-player-refinements.md) | After the MVP | 3–4 days | done |
 | T9 | [T9-channel-instruments-card.md](T9-channel-instruments-card.md) | After the MVP | 1 day | done |
 | T10 | [T10-m3u-playlist-saving-loading.md](T10-m3u-playlist-saving-loading.md) | After the MVP | 0.5–1 day | done |
@@ -66,7 +66,7 @@ Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8, T10, T1
 
 T6 is a delivery task: it carries no new functional requirement and exercises R1–R13 against the production HTTPS origin. It splits the deploy half out of milestone 5 so the GitHub Pages + CI work can be reviewed on its own.
 
-T7 is a post-MVP enhancement; it adds no new R-ID. R5 is the timing bar if the chosen option becomes a playback output. Its first acceptance criterion is the engine/integration decision.
+T7 shipped as an embedded SpessaSynth output (Apache-2.0) behind the existing MIDI output picker, with a timestamp-preserving `MIDIOutput` adapter so `scheduler.ts` is untouched: Web MIDI timestamps are translated to `AudioContext` time and the engine's processor applies each message at the right render quantum, so no JS timer is involved (R5). It adds no new R-ID. The bundled GeneralUser GS SF3 (8.4 MB, Licence v2.0) and the engine chunk load only when the built-in synth is picked.
 
 T8 is a post-MVP feature bundle: playlist/layout refinements plus timeline seeking and a panic-before-track-switch behavior. It cites the affected MVP requirements; seeking is a new post-MVP capability with no new R-ID.
 

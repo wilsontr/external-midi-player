@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@tonejs/midi": "^2.0.28",
-    "midi-file": "^1.2.4"
+    "midi-file": "^1.2.4",
+    "spessasynth_lib": "^4.4.8"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",

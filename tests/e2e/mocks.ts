@@ -43,6 +43,11 @@ export const DEFAULT_AUDIO_OUTPUTS: AudioDeviceMock[] = [
 
 export interface MidiMockOptions {
   audio?: AudioMockOptions;
+  /**
+   * Set false to leave the real `AudioContext` in place (default true). The
+   * built-in synth spec needs a real worklet, so it mocks Web MIDI only.
+   */
+  mockAudio?: boolean;
   outputs?: Array<{ id: string; name: string; manufacturer: string }>;
   /** requestMIDIAccess rejects (permission prompt cancelled/denied). */
   failRequest?: boolean;
@@ -55,6 +60,7 @@ export async function mockDevices(
   options: MidiMockOptions = {},
 ): Promise<void> {
   const { outputs = [], failRequest = false, noRequest = false } = options;
+  const mockAudio = options.mockAudio !== false;
   const audio = {
     inputs: DEFAULT_AUDIO_INPUTS,
     outputs: DEFAULT_AUDIO_OUTPUTS,
@@ -67,7 +73,7 @@ export async function mockDevices(
   } as Required<Omit<AudioMockOptions, 'selectAudioOutput'>> &
     Pick<AudioMockOptions, 'selectAudioOutput'>;
   await page.addInitScript(
-    ({ outputs, failRequest, noRequest, audio }) => {
+    ({ outputs, failRequest, noRequest, mockAudio, audio }) => {
       const make = (id: string, name: string, manufacturer: string) => ({
         id,
         name,
@@ -118,128 +124,130 @@ export async function mockDevices(
           return Promise.resolve(access);
         });
       }
-      /**
-       * Exposes `window.__mockAudio`: `level` (peak per channel the analysers
-       * report), `constraints` (every non-trivial getUserMedia request),
-       * `stopped` (tracks stopped), `gain` (the live gain value), `contextSinks` /
-       * `elementSinks` (every setSinkId call), `ctxOptions`, and
-       * `setDevices(inputs, outputs)` to hot-plug devices.
-       */
-      let inputs = audio.inputs;
-      let outputsAudio = audio.outputs;
-      const mock = {
-        level: [0, 0],
-        constraints: [] as unknown[],
-        stopped: 0,
-        gain: null as null | { gain: { value: number } },
-        contextSinks: [] as string[],
-        elementSinks: [] as string[],
-        ctxOptions: null as unknown,
-        setDevices(newInputs: typeof inputs, newOutputs: typeof outputsAudio) {
-          inputs = newInputs;
-          outputsAudio = newOutputs;
-          mediaDevices.ondevicechange?.();
-        },
-      };
-      (window as any).__mockAudio = mock;
-
-      const mediaDevices: any = {
-        ondevicechange: null,
-        getUserMedia: (constraints: any) => {
-          if (constraints?.audio === true) {
-            (window as any).__mockMidi.calls.mic += 1;
-          } else {
-            mock.constraints.push(constraints);
-            const wanted = constraints?.audio?.deviceId?.exact;
-            if (audio.failInputs.includes(wanted)) {
-              return Promise.reject(new DOMException('device vanished', 'NotAllowedError'));
-            }
-          }
-          const track = {
-            stop: () => {
-              mock.stopped += 1;
-            },
-            getSettings: () => ({ channelCount: 2 }),
-            addEventListener: () => {},
-          };
-          return Promise.resolve({ getTracks: () => [track], getAudioTracks: () => [track] });
-        },
-        enumerateDevices: () =>
-          Promise.resolve([
-            ...inputs.map((d) => ({ kind: 'audioinput', deviceId: d.id, label: d.label, groupId: d.groupId })),
-            ...outputsAudio.map((d) => ({ kind: 'audiooutput', deviceId: d.id, label: d.label, groupId: d.groupId })),
-          ]),
-      };
-      if (audio.selectAudioOutput) {
-        const granted = audio.selectAudioOutput;
-        mediaDevices.selectAudioOutput = () =>
-          Promise.resolve({ deviceId: granted.id, label: granted.label });
-      }
-      Object.defineProperty(nav, 'mediaDevices', { configurable: true, value: mediaDevices });
-
-      class FakeAudioContext {
-        baseLatency = 0.01;
-        outputLatency = 0.02;
-        destination = {};
-        private analysers = 0;
-        constructor(opts: unknown) {
-          mock.ctxOptions = opts;
-        }
-        resume() {
-          return Promise.resolve();
-        }
-        close() {
-          return Promise.resolve();
-        }
-        createGain() {
-          const node = { gain: { value: 1 }, connect() {} };
-          mock.gain = node;
-          return node;
-        }
-        createAnalyser() {
-          const channel = this.analysers++ % 2;
-          return {
-            fftSize: 2048,
-            getFloatTimeDomainData(buf: Float32Array) {
-              buf.fill(0);
-              buf[0] = mock.level[channel];
-            },
-          };
-        }
-        createChannelSplitter() {
-          return { connect() {}, disconnect() {} };
-        }
-        createMediaStreamSource() {
-          return { connect() {}, disconnect() {} };
-        }
-        createMediaStreamDestination() {
-          return { stream: new MediaStream(), connect() {} };
-        }
-      }
-      if (audio.contextSinkId) {
-        (FakeAudioContext.prototype as any).setSinkId = (id: string) => {
-          mock.contextSinks.push(id);
-          if (audio.failSinkIds.includes(id)) {
-            return Promise.reject(new DOMException('sink not granted', 'NotAllowedError'));
-          }
-          return Promise.resolve();
+      if (mockAudio) {
+        /**
+         * Exposes `window.__mockAudio`: `level` (peak per channel the analysers
+         * report), `constraints` (every non-trivial getUserMedia request),
+         * `stopped` (tracks stopped), `gain` (the live gain value), `contextSinks` /
+         * `elementSinks` (every setSinkId call), `ctxOptions`, and
+         * `setDevices(inputs, outputs)` to hot-plug devices.
+         */
+        let inputs = audio.inputs;
+        let outputsAudio = audio.outputs;
+        const mock = {
+          level: [0, 0],
+          constraints: [] as unknown[],
+          stopped: 0,
+          gain: null as null | { gain: { value: number } },
+          contextSinks: [] as string[],
+          elementSinks: [] as string[],
+          ctxOptions: null as unknown,
+          setDevices(newInputs: typeof inputs, newOutputs: typeof outputsAudio) {
+            inputs = newInputs;
+            outputsAudio = newOutputs;
+            mediaDevices.ondevicechange?.();
+          },
         };
-      }
-      (window as any).AudioContext = FakeAudioContext;
-      Object.defineProperty(HTMLMediaElement.prototype, 'setSinkId', {
-        configurable: true,
-        writable: true,
-        value: audio.elementSinkId
-          ? (id: string) => {
-              mock.elementSinks.push(id);
-              if (audio.failSinkIds.includes(id)) {
-                return Promise.reject(new DOMException('sink not granted', 'NotAllowedError'));
+        (window as any).__mockAudio = mock;
+
+        const mediaDevices: any = {
+          ondevicechange: null,
+          getUserMedia: (constraints: any) => {
+            if (constraints?.audio === true) {
+              (window as any).__mockMidi.calls.mic += 1;
+            } else {
+              mock.constraints.push(constraints);
+              const wanted = constraints?.audio?.deviceId?.exact;
+              if (audio.failInputs.includes(wanted)) {
+                return Promise.reject(new DOMException('device vanished', 'NotAllowedError'));
               }
-              return Promise.resolve();
             }
-          : undefined,
-      });
+            const track = {
+              stop: () => {
+                mock.stopped += 1;
+              },
+              getSettings: () => ({ channelCount: 2 }),
+              addEventListener: () => {},
+            };
+            return Promise.resolve({ getTracks: () => [track], getAudioTracks: () => [track] });
+          },
+          enumerateDevices: () =>
+            Promise.resolve([
+              ...inputs.map((d) => ({ kind: 'audioinput', deviceId: d.id, label: d.label, groupId: d.groupId })),
+              ...outputsAudio.map((d) => ({ kind: 'audiooutput', deviceId: d.id, label: d.label, groupId: d.groupId })),
+            ]),
+        };
+        if (audio.selectAudioOutput) {
+          const granted = audio.selectAudioOutput;
+          mediaDevices.selectAudioOutput = () =>
+            Promise.resolve({ deviceId: granted.id, label: granted.label });
+        }
+        Object.defineProperty(nav, 'mediaDevices', { configurable: true, value: mediaDevices });
+
+        class FakeAudioContext {
+          baseLatency = 0.01;
+          outputLatency = 0.02;
+          destination = {};
+          private analysers = 0;
+          constructor(opts: unknown) {
+            mock.ctxOptions = opts;
+          }
+          resume() {
+            return Promise.resolve();
+          }
+          close() {
+            return Promise.resolve();
+          }
+          createGain() {
+            const node = { gain: { value: 1 }, connect() {} };
+            mock.gain = node;
+            return node;
+          }
+          createAnalyser() {
+            const channel = this.analysers++ % 2;
+            return {
+              fftSize: 2048,
+              getFloatTimeDomainData(buf: Float32Array) {
+                buf.fill(0);
+                buf[0] = mock.level[channel];
+              },
+            };
+          }
+          createChannelSplitter() {
+            return { connect() {}, disconnect() {} };
+          }
+          createMediaStreamSource() {
+            return { connect() {}, disconnect() {} };
+          }
+          createMediaStreamDestination() {
+            return { stream: new MediaStream(), connect() {} };
+          }
+        }
+        if (audio.contextSinkId) {
+          (FakeAudioContext.prototype as any).setSinkId = (id: string) => {
+            mock.contextSinks.push(id);
+            if (audio.failSinkIds.includes(id)) {
+              return Promise.reject(new DOMException('sink not granted', 'NotAllowedError'));
+            }
+            return Promise.resolve();
+          };
+        }
+        (window as any).AudioContext = FakeAudioContext;
+        Object.defineProperty(HTMLMediaElement.prototype, 'setSinkId', {
+          configurable: true,
+          writable: true,
+          value: audio.elementSinkId
+            ? (id: string) => {
+                mock.elementSinks.push(id);
+                if (audio.failSinkIds.includes(id)) {
+                  return Promise.reject(new DOMException('sink not granted', 'NotAllowedError'));
+                }
+                return Promise.resolve();
+              }
+            : undefined,
+        });
+      }
     },
-    { outputs, failRequest, noRequest, audio },
+    { outputs, failRequest, noRequest, mockAudio, audio },
   );
 }

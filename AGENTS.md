@@ -6,8 +6,8 @@ Browser-based MIDI playlist player: plays .mid files out to external MIDI hardwa
 - Tasks: `tasks/` — one file per milestone T1–T5, fixed schema. Read `tasks/README.md` first; build in order T1 → T5.
 
 ## Project
-- Stack: TypeScript, Vite (static build), `@tonejs/midi` + `midi-file` (the two runtime dependencies), Web MIDI + Web Audio.
-- Modules (one per architecture box, created in T1–T4): `src/midiDevices.ts`, `src/parser.ts`, `src/scheduler.ts`, `src/playlist.ts`, `src/audioMonitor.ts`, `src/ui.ts`.
+- Stack: TypeScript, Vite (static build), `@tonejs/midi` + `midi-file` + `spessasynth_lib` (the runtime dependencies; the synth engine is T7 and loads lazily), Web MIDI + Web Audio.
+- Modules (one per architecture box, created in T1–T4): `src/midiDevices.ts`, `src/parser.ts`, `src/scheduler.ts`, `src/playlist.ts`, `src/audioMonitor.ts`, `src/ui.ts`; plus `src/synthOutput.ts` for the built-in synth (T7), which is additive and leaves the scheduler untouched.
 - Tests: Vitest (unit), Playwright (e2e, Chromium + Firefox, mocked `requestMIDIAccess`/`getUserMedia`).
 - Browsers: desktop Chrome/Edge and Firefox, current + previous releases. Must be served over HTTPS or `localhost` (secure context).
 
@@ -41,6 +41,6 @@ A task is complete when ALL pass:
 - Always run subagents serially — never in parallel. The coding model host bogs down under concurrent model requests; run one subagent at a time.
 
 ## Boundaries
-- ✅ Always: serve over HTTPS/localhost; verify against the task's acceptance criteria; keep runtime dependencies to `@tonejs/midi` + `midi-file`
+- ✅ Always: serve over HTTPS/localhost; verify against the task's acceptance criteria; keep runtime dependencies to the approved set — `@tonejs/midi`, `midi-file`, and `spessasynth_lib` for the built-in synth
 - ⚠️ Ask first: adding a runtime dependency, changing the module split, adding UI panels
 - 🚫 Never: add a backend, schedule notes with JS timers, commit secrets

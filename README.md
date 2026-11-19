@@ -8,9 +8,8 @@ Vite + TypeScript app, no backend.
 
 - Design (source of truth):
   [`Browser MIDI Playlist Player — MVP Design.md`](docs/Browser%20MIDI%20Playlist%20Player%20%E2%80%94%20MVP%20Design.md)
-- Milestones: [`tasks/`](tasks/README.md) — T1–T6, T8–T11 and T13–T19 are
-  complete; T7 (software synth output) and T12 (first-run sample song) are
-  pending.
+- Milestones: [`tasks/`](tasks/README.md) — T1–T11 and T13–T19 are complete;
+  T12 (first-run sample song) is pending.
 
 ## Quickstart
 
@@ -107,6 +106,7 @@ origin stays cleared, exactly as locally.
 | `src/midiDevices.ts` | Web MIDI access, output listing, hot-plug, remembering the selected output by name |
 | `src/parser.ts` | Parse `.mid` files into flat, time-sorted event lists (tempo map, channels preserved) |
 | `src/scheduler.ts` | Look-ahead scheduler with future-timestamped `MIDIOutput.send()`, note tracking and Panic |
+| `src/synthOutput.ts` | Built-in SpessaSynth output: the bundled GeneralUser GS bank, and a `MIDIOutput` that renders the scheduler's timestamped messages at audio time |
 | `src/playlist.ts` | Playlist entries, load/clear, transport state, background duration parse, auto-advance, seek forwarding, Panic-before-track-switch |
 | `src/audioMonitor.ts` | Audio input capture, gain/mute, stereo level meter with an accessible dBFS description, output routing, latency |
 | `src/ui.ts` | Half-rack faceplate markup (two units), knob/LED/part-strip wiring, Connect devices flow (MIDI + mic prompts), seekable timeline, single aria-live status region |
@@ -147,6 +147,15 @@ origin stays cleared, exactly as locally.
   `#monitor-volume` range input remains the control and the single source of
   truth: clicking the knob focuses it, the arrow/Home/End keys and the focus
   ring still work, and only its native pointer behaviour is replaced.
+- **Built-in synth (T7):** the MIDI output picker also offers **Built-in
+  synth**, which plays through SpessaSynth inside the page and needs no
+  hardware or permission — it is selectable before Connect devices is pressed.
+  Picking it loads the engine and the bundled GeneralUser GS SoundFont (about
+  8.4 MB, fetched once) and only then selects it, so Play can never start
+  against a half-loaded instrument; the status line reports loading and
+  failure. It is an ordinary output otherwise: the same scheduler, pause, stop,
+  next/previous, seek and Panic, and only one output (synth or hardware) is
+  selected at a time. The bank is not remembered across reloads.
 - **Song start (T13, T14):** a fresh start sends the file's tick-0 setup
   (program and bank changes, controllers, pitch bend, channel pressure)
   before the clock starts, spread across a 250 ms start lead but never faster
@@ -176,6 +185,22 @@ a format conversion of the original TTF. Both files, their unchanged
 `license.txt` and the archive's `readme.txt` ship together in `public/fonts/`;
 see [`public/fonts/README.md`](public/fonts/README.md) for the full attribution.
 The licence covers the font files only, not the application code.
+
+`src/assets/GeneralUserGS.sf3` is **GeneralUser GS 2.0.3 BETA** by S. Christian
+Collins, licensed under the author's
+[GeneralUser GS Licence v2.0](https://github.com/mrbumpy409/GeneralUser-GS/blob/main/documentation/LICENSE.txt)
+(free to use and modify in software projects; redistribution of a local copy
+with attribution is permitted — the same licence text is embedded in the
+bank's `ICMT` chunk). It is the SF3 (Vorbis-compressed) build published with
+SpessaSynth's demo, 8,423,728 bytes, `sha256 e2ed326f…97bc66c`. The author's
+licence notes that the provenance of some samples is not fully documented; it
+covers the SoundFont asset only, not the application code.
+
+The built-in synth engine is [`spessasynth_lib`](https://github.com/spessasus/spessasynth_lib)
+4.4.8 and `spessasynth_core` 4.4.10 (both Apache-2.0, with `fflate` MIT and
+`stb-vorbis` Apache-2.0), loaded only when the built-in synth is selected.
+The production CSP allows `'wasm-unsafe-eval'` for its SF3 decoder; it does not
+allow JavaScript `eval`.
 
 ## UI skin notes (T11)
 

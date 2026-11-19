@@ -5,6 +5,12 @@ import { defineConfig, type Plugin } from 'vite';
  * `vite build` so dev-mode HMR (inline modules, websockets) keeps working.
  * The app's scripts, styles, the scheduler Worker and the LCD font served from
  * `public/fonts/` are all same-origin (T11).
+ *
+ * `'wasm-unsafe-eval'` is for the built-in synth (T7): SpessaSynth decodes the
+ * SF3 SoundFont's Vorbis-compressed samples with a WebAssembly module, and
+ * Chrome/Firefox refuse `WebAssembly.compile` under a bare `'self'`. The token
+ * allows WebAssembly only — it does not enable JavaScript `eval` — and every
+ * module it runs is still fetched from this origin.
  */
 const contentSecurityPolicy: Plugin = {
   name: 'inject-content-security-policy',
@@ -12,7 +18,7 @@ const contentSecurityPolicy: Plugin = {
   transformIndexHtml(html) {
     const policy = [
       "default-src 'self'",
-      "script-src 'self'",
+      "script-src 'self' 'wasm-unsafe-eval'",
       "style-src 'self'",
       "worker-src 'self'",
       "connect-src 'self'",

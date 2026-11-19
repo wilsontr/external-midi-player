@@ -11,6 +11,7 @@
 
 import { AudioMonitor, CLIP_THRESHOLD_DB, DB_FLOOR } from "./audioMonitor";
 import { MidiDevices } from "./midiDevices";
+import { SoftwareSynth, SYNTH_OUTPUT_ID, SYNTH_OUTPUT_NAME } from "./synthOutput";
 import {
   M3U_MAX_BYTES,
   PlaylistPlayer,
@@ -562,6 +563,8 @@ export function createUi(root: HTMLElement): void {
     return /firefox/i.test(navigator.userAgent);
   }
 
+  const synth = new SoftwareSynth({ onStatus: setStatus });
+
   const midi = new MidiDevices({
     onStatus: setStatus,
     onOutputsChanged: () => renderOutputs(),
@@ -576,8 +579,12 @@ export function createUi(root: HTMLElement): void {
     },
   });
 
+  /** Whichever output is currently chosen: the built-in synth wins when picked. */
+  const selectedOutput = (): MIDIOutput | null =>
+    synth.selectedOutput() ?? midi.selectedOutput();
+
   const player = new PlaylistPlayer({
-    getOutput: () => midi.selectedOutput(),
+    getOutput: selectedOutput,
     onChange: () => {
       renderTransport();
       renderPlaylist();
@@ -1325,7 +1332,7 @@ export function createUi(root: HTMLElement): void {
   });
 
   function panic(): void {
-    if (midi.selectedOutput() === null) {
+    if (selectedOutput() === null) {
       player.stop();
       setStatus("Select a MIDI output first.");
       return;
@@ -1377,19 +1384,25 @@ export function createUi(root: HTMLElement): void {
    * for assistive tech.
    */
   function renderConnectionLed(): void {
-    const connected = midi.connected && midi.listOutputs().length > 0;
+    const connected =
+      synth.isSelected() || (midi.connected && midi.listOutputs().length > 0);
     connectLed.dataset.state = connected ? "connected" : "disconnected";
   }
 
-  /** (Re)build the picker from the current output list. */
+  /** (Re)build the picker from the current output list plus the built-in synth. */
   function renderOutputs(): void {
     const outputs = midi.listOutputs();
     outputPicker.replaceChildren(
       new Option("Select an output…", ""),
       ...outputs.map((o) => new Option(`${o.name} (${o.manufacturer})`, o.id)),
+      // The software synth needs no permission and no hardware, so it is
+      // offered (and the picker enabled) before Connect devices is pressed.
+      ...(synth.supported ? [new Option(SYNTH_OUTPUT_NAME, SYNTH_OUTPUT_ID)] : []),
     );
     outputPicker.disabled = false;
-    outputPicker.value = midi.selectedId() ?? "";
+    // Selecting the built-in synth only happens when it is supported, so the
+    // value always matches an option in the list.
+    outputPicker.value = synth.selectedId() ?? midi.selectedId() ?? "";
     renderConnectionLed();
   }
 
@@ -1594,6 +1607,9 @@ export function createUi(root: HTMLElement): void {
   }
   renderAudioDevices();
   renderMonitorControls();
+  // The built-in synth needs no permission, so it is in the picker from the
+  // start; MIDI devices join it once Connect devices has been pressed.
+  renderOutputs();
   requestAnimationFrame(meterFrame);
 
   async function connectDevices(): Promise<void> {
@@ -1650,8 +1666,42 @@ export function createUi(root: HTMLElement): void {
     }
   }
 
+  /**
+   * Picking the built-in synth loads its SoundFont first (about 8.4 MB) and
+   * only then takes over as the selected output, so playback can never start
+   * against a half-loaded instrument.
+   */
+  let synthLoading = false;
+  async function chooseBuiltInSynth(): Promise<void> {
+    if (synthLoading) return;
+    synthLoading = true;
+    outputPicker.disabled = true;
+    setStatus("Loading the built-in synth…");
+    try {
+      await synth.prepare();
+      // One output at a time: a hardware selection left in place would come
+      // back the moment the synth were deselected.
+      midi.clear();
+      synth.select();
+      if (player.state !== "stopped") player.stop();
+      setStatus("Built-in synth ready.");
+    } catch (error) {
+      synth.deselect();
+      const detail = error instanceof Error ? error.message : String(error);
+      setStatus(`The built-in synth could not start: ${detail}`);
+    } finally {
+      synthLoading = false;
+      renderOutputs();
+    }
+  }
+
   function handlePickerChange(event: Event): void {
     const value = (event.target as HTMLSelectElement).value;
+    if (value === SYNTH_OUTPUT_ID) {
+      void chooseBuiltInSynth();
+      return;
+    }
+    synth.deselect();
     if (value !== "") midi.select(value);
   }
 

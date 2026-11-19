@@ -108,6 +108,17 @@ export class MidiDevices {
     this.options.onSelectionChange(id);
   }
 
+  /**
+   * Drops the selection without touching the remembered device name. Used
+   * when another kind of output (the built-in synth) takes over, so exactly
+   * one output is ever selected.
+   */
+  clear(): void {
+    if (this.currentSelection === null) return;
+    this.currentSelection = null;
+    this.options.onSelectionChange(null);
+  }
+
   /** The live MIDIOutput for the selection, once access is granted. */
   selectedOutput(): MIDIOutput | null {
     if (!this.access || !this.currentSelection) return null;
