@@ -19,6 +19,7 @@ import {
   M3U_MAX_BYTES,
   PlaylistPlayer,
   buildM3u,
+  entryDisplayName,
   isPlaylistFileName,
   matchM3u,
   parseM3u,
@@ -30,6 +31,7 @@ import {
   programAt,
   type ChannelInstrument,
   type ChannelProgram,
+  type SongMetadata,
 } from "./parser";
 
 /** Formats seconds as m:ss, optionally with tenths (for the elapsed readout). */
@@ -91,6 +93,7 @@ const ICON = {
   next: '<path d="M15 5h3v14h-3zM4 5v14l11-7z"/>',
   remove:
     '<path d="M8.5 6L12 9.5 15.5 6 18 8.5 14.5 12 18 15.5 15.5 18 12 14.5 8.5 18 6 15.5 9.5 12 6 8.5z"/>',
+  info: '<path d="M11 10h2v9h-2zM11 5h2v2h-2z"/>',
 } as const;
 
 function icon(name: keyof typeof ICON): string {
@@ -408,6 +411,43 @@ export function createUi(root: HTMLElement): void {
         </div>
       </section>
     </div>
+    <dialog
+      class="lcd metadata-dialog"
+      data-testid="metadata-dialog"
+      aria-labelledby="metadata-title"
+    >
+      <header class="metadata-head">
+        <span class="lcd-tag">Metadata</span>
+        <h2 class="metadata-heading" id="metadata-title">Song metadata</h2>
+        <p class="metadata-filename" data-testid="metadata-filename"></p>
+      </header>
+      <div class="metadata-body" data-testid="metadata-body">
+        <p class="metadata-status" data-testid="metadata-status" hidden></p>
+        <div class="metadata-sections" data-testid="metadata-sections">
+          <section class="metadata-field" aria-labelledby="metadata-tracknames-heading">
+            <h3 class="lcd-tag" id="metadata-tracknames-heading">Track Name</h3>
+            <ol class="metadata-list" data-testid="metadata-track-names"></ol>
+            <p class="metadata-empty" data-testid="metadata-empty-track-names" hidden>None recorded.</p>
+          </section>
+          <section class="metadata-field" aria-labelledby="metadata-text-heading">
+            <h3 class="lcd-tag" id="metadata-text-heading">Text Event</h3>
+            <ol class="metadata-list" data-testid="metadata-text-events"></ol>
+            <p class="metadata-empty" data-testid="metadata-empty-text-events" hidden>None recorded.</p>
+          </section>
+          <section class="metadata-field" aria-labelledby="metadata-copyright-heading">
+            <h3 class="lcd-tag" id="metadata-copyright-heading">Copyright Notice</h3>
+            <ol class="metadata-list" data-testid="metadata-copyrights"></ol>
+            <p class="metadata-empty" data-testid="metadata-empty-copyrights" hidden>None recorded.</p>
+          </section>
+        </div>
+        <p class="metadata-truncated" data-testid="metadata-truncated" hidden>
+          Some values are not shown because this file has more metadata than the viewer keeps.
+        </p>
+      </div>
+      <footer class="metadata-foot">
+        <button type="button" class="rubber-key key-small" data-testid="metadata-close">Close</button>
+      </footer>
+    </dialog>
   `;
 
   const connectButton = root.querySelector<HTMLButtonElement>(
@@ -572,6 +612,59 @@ export function createUi(root: HTMLElement): void {
   const playlistList = root.querySelector<HTMLOListElement>(
     '[data-testid="playlist"]',
   )!;
+  const metadataDialog = root.querySelector<HTMLDialogElement>(
+    '[data-testid="metadata-dialog"]',
+  )!;
+  const metadataTitle = root.querySelector<HTMLElement>(
+    "#metadata-title",
+  )!;
+  const metadataFilename = root.querySelector<HTMLElement>(
+    '[data-testid="metadata-filename"]',
+  )!;
+  const metadataBody = root.querySelector<HTMLElement>(
+    '[data-testid="metadata-body"]',
+  )!;
+  const metadataStatus = root.querySelector<HTMLElement>(
+    '[data-testid="metadata-status"]',
+  )!;
+  const metadataSections = root.querySelector<HTMLElement>(
+    '[data-testid="metadata-sections"]',
+  )!;
+  const metadataTruncated = root.querySelector<HTMLElement>(
+    '[data-testid="metadata-truncated"]',
+  )!;
+  const metadataClose = root.querySelector<HTMLButtonElement>(
+    '[data-testid="metadata-close"]',
+  )!;
+  const metadataFields = [
+    {
+      key: "trackNames" as const,
+      list: root.querySelector<HTMLOListElement>(
+        '[data-testid="metadata-track-names"]',
+      )!,
+      empty: root.querySelector<HTMLElement>(
+        '[data-testid="metadata-empty-track-names"]',
+      )!,
+    },
+    {
+      key: "textEvents" as const,
+      list: root.querySelector<HTMLOListElement>(
+        '[data-testid="metadata-text-events"]',
+      )!,
+      empty: root.querySelector<HTMLElement>(
+        '[data-testid="metadata-empty-text-events"]',
+      )!,
+    },
+    {
+      key: "copyrights" as const,
+      list: root.querySelector<HTMLOListElement>(
+        '[data-testid="metadata-copyrights"]',
+      )!,
+      empty: root.querySelector<HTMLElement>(
+        '[data-testid="metadata-empty-copyrights"]',
+      )!,
+    },
+  ];
 
   const statusRegion = root.querySelector<HTMLElement>(
     '[data-testid="status-region"]',
@@ -648,8 +741,10 @@ export function createUi(root: HTMLElement): void {
       index < 0
         ? "--"
         : `${String(index + 1).padStart(2, "0")}/${String(entries.length).padStart(2, "0")}`;
-    currentTitle.textContent =
-      player.currentEntry()?.name ?? "No song selected.";
+    const current = player.currentEntry();
+    currentTitle.textContent = current
+      ? entryDisplayName(current)
+      : "No song selected.";
     updateProgress();
     // A new song starting clears a stale Panic line; other status messages
     // (errors, device loss, file rejections) are left alone.
@@ -716,7 +811,8 @@ export function createUi(root: HTMLElement): void {
   function renderInstruments(): void {
     const state = player.instrumentsState();
     const entry = player.currentEntry();
-    const caption = state.status === "none" ? "" : (entry?.name ?? "");
+    const caption =
+      state.status === "none" || entry === null ? "" : entryDisplayName(entry);
     instrumentsCaption.hidden = caption === "";
     if (instrumentsCaption.textContent !== caption)
       instrumentsCaption.textContent = caption;
@@ -932,6 +1028,10 @@ export function createUi(root: HTMLElement): void {
   let selectedId: string | null = null;
   /** Last `currentId` renderPlaylist saw, to notice playback moving. */
   let renderedCurrentId: string | null = null;
+  /** The entry whose metadata the dialog is showing, if any (T20). */
+  let metadataEntryId: string | null = null;
+  /** Invalidates an in-flight metadata read when the dialog closes/reopens. */
+  let metadataReadToken = 0;
 
   function createRow(id: string): HTMLLIElement {
     const li = document.createElement("li");
@@ -947,6 +1047,7 @@ export function createUi(root: HTMLElement): void {
       <span class="entry-status" data-testid="entry-status"></span>
       <span class="entry-buttons">
         <button type="button" class="row-key" data-action="play">${icon("play")}</button>
+        <button type="button" class="row-key" data-action="metadata" data-testid="metadata-button" title="Metadata">${icon("info")}</button>
         <button type="button" class="row-key" data-action="remove">${icon("remove")}</button>
       </span>`;
     return li;
@@ -966,7 +1067,8 @@ export function createUi(root: HTMLElement): void {
     // Row numbers are derived from the order, so add/load/remove/reorder and a
     // reload all renumber consistently.
     set("entry-number", String(index + 1));
-    set("entry-name", entry.name);
+    const displayName = entryDisplayName(entry);
+    set("entry-name", displayName);
     set(
       "entry-duration",
       entry.durationSec === undefined
@@ -992,13 +1094,16 @@ export function createUi(root: HTMLElement): void {
     const label = (action: string, text: string): void => {
       li.querySelector(`[data-action="${action}"]`)!.setAttribute(
         "aria-label",
-        `${text} ${entry.name}`,
+        `${text} ${displayName}`,
       );
     };
     label("play", "Play");
+    label("metadata", "Metadata for");
     label("remove", "Remove");
-    li.querySelector<HTMLButtonElement>('[data-action="play"]')!.disabled =
-      entry.status === "error";
+    const disabled = entry.status === "error";
+    li.querySelector<HTMLButtonElement>('[data-action="play"]')!.disabled = disabled;
+    li.querySelector<HTMLButtonElement>('[data-action="metadata"]')!.disabled =
+      disabled;
   }
 
   /** Keyed reconcile: rows are reused so focus and drag state survive updates. */
@@ -1017,6 +1122,12 @@ export function createUi(root: HTMLElement): void {
     savePlaylistButton.disabled = entries.length === 0;
     const count = `${entries.length} ${entries.length === 1 ? "song" : "songs"}`;
     if (songCount.textContent !== count) songCount.textContent = count;
+    if (
+      metadataEntryId !== null &&
+      !entries.some((entry) => entry.id === metadataEntryId)
+    ) {
+      metadataDialog.close();
+    }
     const live = new Set(entries.map((e) => e.id));
     for (const [id, li] of rows) {
       if (!live.has(id)) {
@@ -1040,6 +1151,98 @@ export function createUi(root: HTMLElement): void {
   function entryIndex(id: string): number {
     return player.playlist.entries.findIndex((e) => e.id === id);
   }
+
+  /** Replaces one metadata list with `Track N` + decoded text rows. */
+  function renderMetadataValues(
+    list: HTMLOListElement,
+    values: SongMetadata["trackNames"],
+  ): void {
+    const rows = values.map((value) => {
+      const li = document.createElement("li");
+      li.className = "metadata-row";
+      li.dataset.track = String(value.track + 1);
+      const track = document.createElement("span");
+      track.className = "metadata-track";
+      track.textContent = `Track ${value.track + 1}`;
+      const text = document.createElement("span");
+      text.className = "metadata-value";
+      // Metadata is untrusted text: never innerHTML.
+      text.textContent = value.text;
+      li.append(track, text);
+      return li;
+    });
+    list.replaceChildren(...rows);
+  }
+
+  /** Fills the dialog for a loaded entry. */
+  function renderMetadata(entry: PlaylistEntry, metadata: SongMetadata): void {
+    metadataTitle.textContent = entryDisplayName(entry);
+    metadataFilename.textContent = entry.file.name;
+    for (const field of metadataFields) {
+      const values = metadata[field.key];
+      renderMetadataValues(field.list, values);
+      field.empty.hidden = values.length > 0;
+    }
+    metadataTruncated.hidden = !metadata.truncated;
+    metadataStatus.hidden = true;
+    metadataStatus.textContent = "";
+    metadataSections.hidden = false;
+    metadataBody.setAttribute("aria-busy", "false");
+  }
+
+  /** Loading or error state: no field sections, one message in the body. */
+  function showMetadataMessage(message: string): void {
+    metadataSections.hidden = true;
+    metadataTruncated.hidden = true;
+    metadataStatus.hidden = false;
+    metadataStatus.textContent = message;
+    metadataBody.setAttribute(
+      "aria-busy",
+      message === "Reading metadata…" ? "true" : "false",
+    );
+  }
+
+  /**
+   * Opens the metadata dialog for one entry. A stored summary renders at once;
+   * a legacy row without one shows a loading line while `metadataFor` parses
+   * (or reuses the background queue's in-flight parse). Opening never touches
+   * the transport.
+   */
+  async function openMetadata(id: string): Promise<void> {
+    const entry = player.playlist.entries.find((candidate) => candidate.id === id);
+    if (entry === undefined || entry.status === "error") return;
+    metadataEntryId = id;
+    metadataReadToken += 1;
+    const token = metadataReadToken;
+    metadataTitle.textContent = entryDisplayName(entry);
+    metadataFilename.textContent = entry.file.name;
+    if (!metadataDialog.open) metadataDialog.showModal();
+    if (entry.metadata !== undefined) {
+      renderMetadata(entry, entry.metadata);
+      return;
+    }
+    showMetadataMessage("Reading metadata…");
+    const result = await player.metadataFor(id);
+    if (token !== metadataReadToken || !metadataDialog.open) return;
+    const current = player.playlist.entries.find((candidate) => candidate.id === id);
+    if (current === undefined) {
+      metadataDialog.close();
+      return;
+    }
+    if (result.status === "ok") renderMetadata(current, result.metadata);
+    else showMetadataMessage(`Could not read metadata: ${result.message}`);
+  }
+
+  metadataClose.addEventListener("click", () => metadataDialog.close());
+  metadataDialog.addEventListener("click", (event) => {
+    // A click on the backdrop targets the dialog itself; clicks on the panel
+    // bubble from a child.
+    if (event.target === metadataDialog) metadataDialog.close();
+  });
+  metadataDialog.addEventListener("close", () => {
+    metadataEntryId = null;
+    metadataReadToken += 1;
+  });
 
   function addFiles(files: File[]): void {
     if (files.length === 0) return;
@@ -1075,6 +1278,9 @@ export function createUi(root: HTMLElement): void {
     switch (button.dataset.action) {
       case "play":
         player.playEntry(id);
+        break;
+      case "metadata":
+        void openMetadata(id);
         break;
       case "remove":
         player.remove(id);
@@ -1375,6 +1581,9 @@ export function createUi(root: HTMLElement): void {
   panicButton.addEventListener("click", panic);
 
   document.addEventListener("keydown", (event) => {
+    // The modal owns Escape/Space/arrows while it is open. In particular, Esc
+    // must close the viewer, not reach the global Panic shortcut below.
+    if (metadataDialog.open) return;
     if (
       event.defaultPrevented ||
       event.ctrlKey ||

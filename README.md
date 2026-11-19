@@ -8,7 +8,7 @@ Vite + TypeScript app, no backend.
 
 - Design (source of truth):
   [`Browser MIDI Playlist Player — MVP Design.md`](docs/Browser%20MIDI%20Playlist%20Player%20%E2%80%94%20MVP%20Design.md)
-- Milestones: [`tasks/`](tasks/README.md) — T1–T19 are complete.
+- Milestones: [`tasks/`](tasks/README.md) — T1–T20 are complete.
 
 ## Quickstart
 
@@ -120,6 +120,20 @@ origin stays cleared, exactly as locally.
 - **Startup mute policy (T8, intentional):** a fresh profile starts with
   monitoring muted (R10 feedback safety); later visits restore the saved
   mute/volume instead of forcing mute.
+- **Track metadata (T20):** the song list, LCD title, Instruments caption,
+  row-key names and the M3U `#EXTINF` title use the file's `Track Name` when it
+  has a usable one (trimmed, non-empty, not `untitled`); otherwise they keep
+  the file name without its extension. Track 0's name wins, and a title on
+  track 1 is used only when track 0 has no `Track Name` event at all. The
+  `Track Name`, `Text Event` and `Copyright Notice` values are decoded per
+  value as UTF-8, ISO-2022-JP, Shift_JIS, EUC-JP or Windows-1252, so
+  Stanford-style Text Events and Japanese titles read correctly. Every healthy
+  row's info key opens an amber LCD dialog listing all three fields with their
+  track numbers; Close, Esc or a backdrop click dismisses it and returns focus
+  to the key. While it is open the transport shortcuts — including Esc = Panic
+  — are suspended. Metadata is persisted with the playlist and old stored rows
+  are reparsed for it in the background; the original file name stays the M3U
+  path and storage identity.
 - **Instruments card (T16):** the card lists the channels the playing file
   uses and shows the program in effect at the current playback position, so a
   mid-song program change updates its row; pausing or seeking shows the

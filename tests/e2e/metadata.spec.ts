@@ -1,0 +1,341 @@
+import { test, expect, type Page } from '@playwright/test';
+import { blankPlaylist, mockDevices } from './mocks';
+
+const JUNO = { id: 'o1', name: 'Juno-106', manufacturer: 'Roland' };
+const STORAGE_KEY = 'external-midi-player.playlist';
+
+/** Node's Buffer is read off `globalThis` so this file needs no @types/node. */
+const nodeBuffer = (
+  globalThis as unknown as { Buffer: { from(data: Uint8Array): unknown } }
+).Buffer;
+
+function vlq(n: number): number[] {
+  const out = [n & 0x7f];
+  let value = n;
+  while ((value >>= 7) > 0) out.unshift((value & 0x7f) | 0x80);
+  return out;
+}
+
+const u32 = (n: number) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+const ascii = (text: string): number[] =>
+  Array.from(text, (char) => char.charCodeAt(0) & 0xff);
+
+/** A meta event at the current position (delta 0). */
+function meta(type: number, data: number[]): number[] {
+  return [0x00, 0xff, type, ...vlq(data.length), ...data];
+}
+
+/** One held note, so the file has a duration and can be played. */
+function notes(seconds = 8, channel = 0): number[] {
+  const ticks = Math.round(seconds * 960);
+  return [
+    0x00,
+    0x90 | channel,
+    60,
+    100,
+    ...vlq(ticks),
+    0x80 | channel,
+    60,
+    0,
+  ];
+}
+
+/** Format-1 SMF at 480 PPQ / 120 BPM; every track gets an end-of-track. */
+function smf(tracks: number[][]): number[] {
+  const chunks: number[] = [];
+  for (const track of tracks) {
+    const body = [...track, 0x00, 0xff, 0x2f, 0x00];
+    chunks.push(
+      0x4d,
+      0x54,
+      0x72,
+      0x6b, // MTrk
+      ...u32(body.length),
+      ...body,
+    );
+  }
+  return [
+    0x4d,
+    0x54,
+    0x68,
+    0x64, // MThd
+    ...u32(6),
+    0,
+    1,
+    (tracks.length >> 8) & 255,
+    tracks.length & 255,
+    0x01,
+    0xe0,
+    ...chunks,
+  ];
+}
+
+interface TestFile {
+  name: string;
+  bytes: number[];
+}
+
+/** Track 0 carries a Shift_JIS title, a copyright and a Text Event. */
+function japaneseFile(): TestFile {
+  // "Battle Garegga " + Shift_JIS 並木学.
+  const title = [...ascii('Battle Garegga '), 0x95, 0xc0, 0x96, 0xd8, 0x8a, 0x77];
+  return {
+    name: 'bgaregga1.mid',
+    bytes: smf([
+      [
+        ...meta(0x03, title),
+        ...meta(0x02, ascii('(C)RAIZING')),
+        ...meta(0x01, ascii('@DRUID:\t\tjh696my0069')),
+        ...meta(0x01, ascii('@ROLL_TYPE:\t\twelte-red')),
+      ],
+      notes(8, 0),
+    ]),
+  };
+}
+
+const titleOfJapaneseFile = 'Battle Garegga 並木学';
+
+async function setup(page: Page): Promise<void> {
+  await blankPlaylist(page);
+  await mockDevices(page, { outputs: [JUNO] });
+  await page.goto('/');
+  await page.getByTestId('connect-button').click();
+  await page.getByTestId('output-picker').selectOption('o1');
+}
+
+async function addFiles(page: Page, files: TestFile[]): Promise<void> {
+  await page.getByTestId('file-input').setInputFiles(
+    files.map((file) => ({
+      name: file.name,
+      mimeType: 'audio/midi',
+      buffer: nodeBuffer.from(new Uint8Array(file.bytes)) as never,
+    })),
+  );
+}
+
+const row = (page: Page, index = 0) => page.getByTestId('playlist-row').nth(index);
+const rowName = (page: Page, index = 0) => page.getByTestId('entry-name').nth(index);
+const metadataButton = (page: Page, index = 0) =>
+  row(page, index).getByTestId('metadata-button');
+const dialog = (page: Page) => page.getByTestId('metadata-dialog');
+
+test.describe('T20 — track metadata titles and viewer', () => {
+  test('shows the decoded Track Name and lists all three metadata fields', async ({ page }) => {
+    await setup(page);
+    await addFiles(page, [japaneseFile()]);
+
+    await expect(rowName(page)).toHaveText(titleOfJapaneseFile);
+    await expect(page.getByTestId('current-title')).toHaveText(titleOfJapaneseFile);
+    await expect(row(page)).toHaveAttribute('aria-current', 'true');
+
+    await metadataButton(page).click();
+    await expect(dialog(page)).toBeVisible();
+    await expect(dialog(page)).toHaveAttribute('aria-labelledby', 'metadata-title');
+    await expect(page.locator('#metadata-title')).toHaveText(titleOfJapaneseFile);
+    await expect(page.getByTestId('metadata-filename')).toHaveText('bgaregga1.mid');
+
+    const trackNames = page.getByTestId('metadata-track-names');
+    await expect(trackNames).toContainText('Track 1');
+    await expect(trackNames).toContainText(titleOfJapaneseFile);
+    await expect(page.getByTestId('metadata-text-events')).toContainText(
+      '@DRUID:\t\tjh696my0069',
+    );
+    await expect(page.getByTestId('metadata-text-events')).toContainText(
+      '@ROLL_TYPE:\t\twelte-red',
+    );
+    await expect(page.getByTestId('metadata-copyrights')).toContainText('(C)RAIZING');
+    await expect(page.getByTestId('metadata-empty-text-events')).toBeHidden();
+
+    await page.getByTestId('metadata-close').click();
+    await expect(dialog(page)).toBeHidden();
+    await expect(metadataButton(page)).toBeFocused();
+  });
+
+  test('falls back to the filename for untitled and to track 1 when track 0 has no name', async ({
+    page,
+  }) => {
+    await setup(page);
+    await addFiles(page, [
+      {
+        name: 'green-brinstar.mid',
+        bytes: smf([
+          [...meta(0x03, ascii('untitled'))],
+          [...meta(0x03, ascii('Voice 2'))],
+          notes(8, 0),
+        ]),
+      },
+      {
+        name: 'sonic-2.mid',
+        bytes: smf([
+          notes(8, 0),
+          [...meta(0x03, ascii('Chemical Plant'))],
+        ]),
+      },
+    ]);
+
+    await expect(rowName(page, 0)).toHaveText('green-brinstar');
+    await expect(rowName(page, 1)).toHaveText('Chemical Plant');
+
+    // The viewer still shows the literal "untitled" value; only the title falls back.
+    await metadataButton(page, 0).click();
+    await expect(page.getByTestId('metadata-track-names')).toContainText('untitled');
+    await expect(page.getByTestId('metadata-track-names')).toContainText('Voice 2');
+    await expect(page.getByTestId('metadata-empty-copyrights')).toBeVisible();
+    await page.getByTestId('metadata-close').click();
+    await expect(dialog(page)).toBeHidden();
+  });
+
+  test('Escape closes the viewer without panicking and leaves playback running', async ({
+    page,
+  }) => {
+    await setup(page);
+    await addFiles(page, [japaneseFile()]);
+    await expect(rowName(page)).toHaveText(titleOfJapaneseFile);
+
+    await page.getByTestId('play-button').click();
+    await expect(page.getByTestId('playback-state')).toHaveAttribute('data-state', 'playing');
+
+    await metadataButton(page).click();
+    await expect(dialog(page)).toBeVisible();
+    // Opening the viewer must not pause the transport.
+    await expect(page.getByTestId('playback-state')).toHaveAttribute('data-state', 'playing');
+
+    await page.keyboard.press('Escape');
+    await expect(dialog(page)).toBeHidden();
+    await expect(metadataButton(page)).toBeFocused();
+    await expect(page.getByTestId('status-region')).not.toContainText('Panic');
+    await expect(page.getByTestId('playback-state')).toHaveAttribute('data-state', 'playing');
+    const sent = await page.evaluate(() =>
+      (window as unknown as { __mockMidi: { sent: Array<{ bytes: number[] }> } }).__mockMidi.sent.map(
+        (message) => message.bytes,
+      ),
+    );
+    expect(sent.some((bytes) => bytes[0] === 0xfb)).toBe(false);
+  });
+
+  test('the backdrop closes the viewer and transport shortcuts stay inert while it is open', async ({
+    page,
+  }) => {
+    await setup(page);
+    await addFiles(page, [japaneseFile()]);
+    await expect(rowName(page)).toHaveText(titleOfJapaneseFile);
+    const current = await page.getByTestId('current-title').textContent();
+
+    await metadataButton(page).click();
+    await expect(dialog(page)).toBeVisible();
+    await page.keyboard.press('ArrowRight');
+    await expect(dialog(page)).toBeVisible();
+    await expect(page.getByTestId('current-title')).toHaveText(current!);
+    await expect(page.getByTestId('playback-state')).toHaveAttribute('data-state', 'stopped');
+
+    await page.mouse.click(5, 5);
+    await expect(dialog(page)).toBeHidden();
+    await expect(metadataButton(page)).toBeFocused();
+  });
+
+  test('renders Text Events as text, never as HTML', async ({ page }) => {
+    await setup(page);
+    await addFiles(page, [
+      {
+        name: 'literal.mid',
+        bytes: smf([
+          [...meta(0x03, ascii('Literal Test'))],
+          [...meta(0x01, ascii('<img src=x onerror="window.__pwned=1">'))],
+          notes(8),
+        ]),
+      },
+    ]);
+    await expect(rowName(page)).toHaveText('Literal Test');
+    await metadataButton(page).click();
+    await expect(page.getByTestId('metadata-text-events')).toContainText(
+      '<img src=x onerror="window.__pwned=1">',
+    );
+    await expect(dialog(page).locator('img')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as { __pwned?: unknown }).__pwned)).toBeUndefined();
+  });
+
+  test('persists the title and metadata across a reload', async ({ page }) => {
+    await setup(page);
+    await addFiles(page, [japaneseFile()]);
+    await expect(rowName(page)).toHaveText(titleOfJapaneseFile);
+
+    await expect
+      .poll(() =>
+        page.evaluate((key) => {
+          const raw = localStorage.getItem(key);
+          if (raw === null) return null;
+          const payload = JSON.parse(raw) as {
+            entries?: Array<{ metadata?: { title?: string | null } }>;
+          };
+          return payload.entries?.[0]?.metadata?.title ?? null;
+        }, STORAGE_KEY),
+      )
+      .toBe(titleOfJapaneseFile);
+
+    await page.reload();
+    await expect(rowName(page)).toHaveText(titleOfJapaneseFile);
+    await metadataButton(page).click();
+    await expect(page.getByTestId('metadata-text-events')).toContainText(
+      '@DRUID:\t\tjh696my0069',
+    );
+    await page.getByTestId('metadata-close').click();
+  });
+
+  test('writes the Track Name to EXTINF but keeps the file name as the M3U path', async ({
+    page,
+  }) => {
+    await setup(page);
+    await addFiles(page, [japaneseFile()]);
+    await expect(rowName(page)).toHaveText(titleOfJapaneseFile);
+
+    await page.evaluate(() => {
+      const original = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = (object: Blob | MediaSource) => {
+        (window as unknown as { __savedPlaylistBlob?: Blob }).__savedPlaylistBlob =
+          object as Blob;
+        return original(object);
+      };
+    });
+    await page.getByTestId('save-playlist-button').click();
+    const text = await page.evaluate(async () => {
+      const blob = (window as unknown as { __savedPlaylistBlob?: Blob })
+        .__savedPlaylistBlob;
+      return blob ? blob.text() : '';
+    });
+    expect(text).toContain(`#EXTINF:8,${titleOfJapaneseFile}`);
+    expect(text).toContain('\nbgaregga1.mid\n');
+  });
+
+  test('fits the LCD viewer at 360 px without horizontal page scroll', async ({ page }) => {
+    await setup(page);
+    const longTitle =
+      'A Very Long Track Name That Must Wrap At Three Hundred And Sixty Pixels Without Overflowing';
+    const manyTextEvents = Array.from({ length: 24 }, (_, index) =>
+      meta(0x01, ascii(`Line ${index + 1}: ${'x'.repeat(72)}`)),
+    );
+    await addFiles(page, [
+      {
+        name: 'wide.mid',
+        bytes: smf([
+          [...meta(0x03, ascii(longTitle)), ...manyTextEvents.flat()],
+          notes(8),
+        ]),
+      },
+    ]);
+    await expect(rowName(page)).toHaveText(longTitle);
+
+    await page.setViewportSize({ width: 360, height: 800 });
+    await metadataButton(page).click();
+    await expect(dialog(page)).toBeVisible();
+    const box = await dialog(page).boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(360.5);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth + 1,
+      ),
+    ).toBe(true);
+    await page.getByTestId('metadata-close').click();
+  });
+});

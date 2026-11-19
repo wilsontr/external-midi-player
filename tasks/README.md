@@ -61,8 +61,9 @@ Rules:
 | T17 | [T17-slim-playlist-rows.md](T17-slim-playlist-rows.md) | After the MVP | 0.25 day | done |
 | T18 | [T18-selection-playing-markers.md](T18-selection-playing-markers.md) | After the MVP | 0.25 day | done |
 | T19 | [T19-ableton-volume-knob-drag.md](T19-ableton-volume-knob-drag.md) | After the MVP | 0.5 day | done |
+| T20 | [T20-track-metadata-titles-and-viewer.md](T20-track-metadata-titles-and-viewer.md) | After the MVP | 1–1.5 days | done |
 
-Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8, T10, T15, T17, T18; R3 → T2, T3, T8, T9, T10, T12, T15, T16, T17, T18; R4 → T1; R5 → T2, T5, T7, T13, T14; R6, R7 → T3, T5, T8; R8 → T2; R9 → T4, T8, T15; R10 → T4, T8, T15, T19; R11 → T4, T5; R12 → T3, T8, T15; R13 → T1, T3, T4, T10, T12.
+Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8, T10, T15, T17, T18; R3 → T2, T3, T8, T9, T10, T12, T15, T16, T17, T18, T20; R4 → T1; R5 → T2, T5, T7, T13, T14; R6, R7 → T3, T5, T8; R8 → T2; R9 → T4, T8, T15; R10 → T4, T8, T15, T19; R11 → T4, T5; R12 → T3, T8, T15; R13 → T1, T3, T4, T10, T12, T20.
 
 T6 is a delivery task: it carries no new functional requirement and exercises R1–R13 against the production HTTPS origin. It splits the deploy half out of milestone 5 so the GitHub Pages + CI work can be reviewed on its own.
 
@@ -77,6 +78,8 @@ T10 is a post-MVP playlist interchange feature: it saves the current playlist as
 T11 is a post-MVP presentation task: it reskins the player as a 90s half-rack module (amber dot-matrix LCDs, rubber keys with LEDs, Helvetica Neue silkscreen labels) and regroups the existing panels into two rack units. It adds no new R-ID and changes no playback behaviour; every control, test ID and accessible name stays. Live per-channel note activity in the 16-part strip is deliberately left for a follow-up.
 
 T12 is a post-MVP first-run convenience: it ships one small General MIDI file and seeds the playlist with it only when the playlist store has never been written, so a new visitor can press Play before selecting any files. It adds no new R-ID and reuses the ordinary add/persist path, so Clear playlist stays clear across reloads and M3U load/save semantics are unchanged.
+
+T20 is a post-MVP metadata task: it reads the SMF `Track Name`, `Text Event` and `Copyright Notice` metas, decodes them as UTF-8, Shift_JIS, EUC-JP, ISO-2022-JP or Windows-1252, uses a usable `Track Name` as the displayed song title, and adds a per-row viewer that lists all three fields on an LCD-style dialog. It cites R3 and R13; the file name remains the identity for persistence and M3U paths, and playback timing is untouched.
 
 T19 is a post-MVP interaction refinement: the monitor volume knob changes on a relative vertical drag (up increases, down decreases, Shift for fine steps) like a DAW knob, instead of the native horizontal range drag under the cap. It cites R10, keeps the range input for keyboard and assistive technology, and changes no stored data or audio behaviour.
 

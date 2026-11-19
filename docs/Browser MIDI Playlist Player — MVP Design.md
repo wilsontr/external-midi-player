@@ -113,8 +113,9 @@ The playlist is an ordered list of `File` objects, kept in memory while the app 
 PlaylistEntry {
   id: string            // crypto.randomUUID()
   file: File
-  name: string          // file.name without extension
+  name: string          // file.name without extension (display fallback)
   durationSec?: number  // filled in by a background parse
+  metadata?: SongMetadata // Track Name / Text Event / Copyright values (T20)
   status: 'ready' | 'error'
   error?: string
 }
@@ -123,7 +124,10 @@ PlaylistEntry {
 **Behaviour**
 
 - Files are accepted by extension (.mid, .midi) and by the `MThd` header check during parsing.
-- After adding, entries are parsed one at a time in the background to fill in durations; parsed data is then discarded to save memory.
+- After adding, entries are parsed one at a time in the background to fill in durations; parsed data is then discarded to save memory. The same pass retains the file's `Track Name`, `Text Event` and `Copyright Notice` values and the title resolved from them, because those are small (T20).
+- **Display name (T20):** a row, the LCD title, the Instruments caption, the row keys' accessible names and the M3U `#EXTINF` title use the file's usable `Track Name`; the file name without its extension is the fallback. "Usable" means trimmed, non-empty and not `untitled` (case-insensitive). Track 0's name is the sequence name; if track 0 has no `Track Name` event at all, the first named track is used. The original file name remains the identity for `localStorage`, M3U path lines and file matching.
+- **Text encodings (T20):** the three text metas are detected per value as UTF-8 (with or without BOM), ISO-2022-JP, Shift_JIS, EUC-JP or Windows-1252, using the browser's `TextDecoder`; this is what makes the Stanford files' `Text Event`s and Shift_JIS titles readable. Empty values are omitted and retained metadata is capped so a pathological file cannot bloat storage or the DOM.
+- **Metadata viewer (T20):** every healthy row has a metadata key that opens a modal LCD dialog listing every retained `Track Name`, `Text Event` and `Copyright Notice` with its track number, in file order. Values are inserted as text only. Close, Escape and a backdrop click dismiss it and return focus to the key; while it is open the global transport shortcuts (including Esc = Panic) are suspended. Opening or closing it never changes playback.
 - The current entry is highlighted. A single click selects a row: while stopped the selection is the entry that plays next (highlight, LCD title and Play target), and while playing or paused the selected row carries the dotted outline while the playing row keeps its highlight and title. Starting playback (Play key, double-click, next/previous or auto-advance) selects that row too, so it shows the highlight with the dotted outline on top; a single click on another row moves only the selection. Double-clicking a row, or its Play key, plays that entry from the start.
 - Auto-advance moves to the next `ready` entry, skipping `error` entries, with a fixed 1 s gap so external synths finish their release tails.
 - Removing the playing entry stops playback. Reordering during playback keeps the current song playing.
@@ -133,7 +137,7 @@ PlaylistEntry {
 
 **Persistence**
 
-- The playlist (file bytes, names, durations, order and the current entry) lives in `localStorage`; the current entry is the "position in the playlist" that is restored.
+- The playlist (file bytes, names, durations, metadata, order and the current entry) lives in `localStorage`; the current entry is the "position in the playlist" that is restored. Metadata is optional in the stored shape, so playlists written before T20 restore and are reparsed in the background for it.
 - The selected MIDI output is remembered by name (T1). The audio input and output are remembered by device id, falling back to a unique device label when an id has rotated; mute and volume are stored too.
 - Playlist writes are debounced; the small audio settings are written immediately. Stored data is versioned, corrupt data is ignored, and storage failures (quota, private mode) leave the session working without persistence.
 - On reload the playlist and current entry are shown immediately; the MIDI output is reselected on "Connect devices" and the audio devices after the microphone permission is granted. Playback always returns stopped, never mid-song.
@@ -197,8 +201,9 @@ Above the rack sits a printed, collapsible **Quick start** label. At 960 px and 
    - _Keypad strip:_ MIDI output, audio input and audio output pickers as LCD-styled selects (the audio pair sits directly under the MIDI output, with the Firefox output-grant key and the feedback/output notices); previous, play/pause, next, stop and red-orange Panic rubber keys with silkscreen captions and a green/amber LED on Play; a red/green LED beside the "Connect devices" / "Retry" keys that trigger the MIDI and microphone permission prompts. On load the LCD starts with "Devices not connected", and the LED stays red until MIDI access is granted and an output is present.
    - The app name is the unit's silkscreen brand line.
 3. **Unit 2 — expansion unit.**
-   - _Song list LCD:_ playlist keys (`+` Add files, Load files, Clear playlist, Save playlist, Load playlist), a dashed "Drop .mid files on this unit" strip (dropping anywhere on unit 2 works), and numbered rows with the name, duration right-aligned, an `ERR` badge on rejected rows and Play/remove row keys (healthy rows carry no status text). The current song is an inverted row; rejected files are dimmed and struck through, with the full error kept in the badge tooltip and the status region. Drag to reorder; the row's Play and remove keys keep their accessible names.
+   - _Song list LCD:_ playlist keys (`+` Add files, Load files, Clear playlist, Save playlist, Load playlist), a dashed "Drop .mid files on this unit" strip (dropping anywhere on unit 2 works), and numbered rows with the display name (the file's Track Name when usable, otherwise its file name), duration right-aligned, an `ERR` badge on rejected rows and Play/metadata/remove row keys (healthy rows carry no status text). The current song is an inverted row; rejected files are dimmed and struck through, with the full error kept in the badge tooltip and the status region. Drag to reorder; the row keys keep their accessible names.
    - _Part map LCD:_ the currently playing file's MIDI channels with the General MIDI instrument in effect at the current playback position (channel 10 shown as drums, bank select when present). The channels are listed from the start; each row updates when the file's program changes play and follows pause and seek. Empty until a song plays, with no per-note activity.
+   - _Metadata dialog (T20):_ a modal LCD panel with the display name and original file name, then three sections — Track Name, Text Event, Copyright Notice — listing every retained value as `Track N` plus decoded text, or "None recorded.". The body scrolls, long values and unbroken Japanese strings wrap, and a truncation note appears when the cap applied. It is a native `<dialog>` with `aria-labelledby`, a Close key, Escape and backdrop dismissal, and a CJK font fallback for metadata values.
 
 Power and play state are shown by an LED plus `aria-pressed` or text, never colour alone; focus is a 2 px `--focus` ring on the focused control, and a selected song-list row carries a dashed LCD-ink outline (the playing highlight can sit under it). LCD ink meets 4.5:1 on the LCD background and the unlit-pixel grid is at or below 12 % opacity. Disabled keys are flat and unlit. Under `prefers-reduced-motion` nothing blinks or moves, though the meters still update.
 
@@ -235,6 +240,7 @@ Automated tests cover parsing and scheduling logic; device behaviour is checked 
 - Scheduler seek: old notes released, the MIDI state at the target re-sent (program/bank, controllers, pitch bend, channel pressure), notes before the target not re-struck, paused seeks stay paused, stopped seeks ignored, and the resumed clock anchored after the delivered tail.
 - Scheduler timing stress: a dense five-minute event list driven by a jittered tick loop — exact timestamps inside the look-ahead, bounded lateness after a 500 ms stall, no past timestamps and no drift.
 - Playlist reducer: add, replace (Load) and clear, remove, reorder, auto-advance skipping error entries, and moving the highlight off a failed current entry.
+- Metadata (T20): ASCII/UTF-8/Shift_JIS/EUC-JP/ISO-2022-JP/Windows-1252 fixtures, including `並木学` and `©`; the track-0/fallback title rules; track indices; the retention cap; the viewer's on-demand, cached and shared parse; metadata persistence and legacy/malformed stored metadata.
 - Persistence: playlist and audio settings save/restore, corrupt data ignored, storage failures handled.
 - Worker tick timer: start/stop/dispose, pause/resume, and the worker-error fallback; a Playwright assertion that playback creates the Worker.
 
@@ -244,6 +250,7 @@ Automated tests cover parsing and scheduling logic; device behaviour is checked 
 - Reload restores the playlist, current entry and audio settings.
 - Seek: click/drag and keyboard seeking while playing and paused (state restoration, no hanging notes) and the disabled-while-stopped policy.
 - Track switch: Panic is timestamped before the first note of the new track.
+- Metadata (T20): a Shift_JIS title replaces the row/LCD title, `untitled` falls back, the dialog lists all three fields, Esc closes it without Panicking, focus returns to the key, HTML values render literally, the title survives a reload, M3U keeps the file-name path, and the dialog fits at 360 px.
 
 **Manual matrix**
 

@@ -17,17 +17,21 @@ import {
   parseSongForPlayback,
   summarizeInstruments,
   type ChannelInstrument,
+  type MidiTextValue,
   type ParseResult,
+  type SongMetadata,
 } from './parser';
 import { Scheduler, type SchedulerOptions } from './scheduler';
 
 export interface PlaylistEntry {
   id: string;
   file: File;
-  /** File name without its extension. */
+  /** File name without its extension (the display fallback). */
   name: string;
   /** Filled in by the background parse. */
   durationSec?: number;
+  /** The display title and text metadata from the file (T20). */
+  metadata?: SongMetadata;
   status: 'ready' | 'error';
   error?: string;
 }
@@ -44,6 +48,8 @@ interface StoredEntry {
   /** File bytes, base64-encoded. */
   data: string;
   durationSec?: number;
+  /** Optional so playlists written before T20 remain readable. */
+  metadata?: SongMetadata;
   status: 'ready' | 'error';
   error?: string;
 }
@@ -68,7 +74,7 @@ export type PlaylistAction =
   /** Moves the entry so it ends up at `toIndex` of the resulting list. */
   | { type: 'move'; id: string; toIndex: number }
   | { type: 'setCurrent'; id: string | null }
-  | { type: 'parsed'; id: string; durationSec: number }
+  | { type: 'parsed'; id: string; durationSec: number; metadata: SongMetadata }
   | { type: 'failed'; id: string; error: string };
 
 export const emptyPlaylist: PlaylistState = { entries: [], currentId: null };
@@ -102,6 +108,66 @@ function entryName(fileName: string): string {
   return fileName.replace(/\.[^./\\]*$/, '');
 }
 
+/**
+ * What the UI calls a song: the file's usable Track Name when it has one,
+ * otherwise the file name without its extension (T20). Identity, persistence
+ * and M3U paths keep using `entry.name` / `entry.file.name`.
+ */
+export function entryDisplayName(entry: PlaylistEntry): string {
+  return entry.metadata?.title ?? entry.name;
+}
+
+/** One stored metadata value, or null when its shape is not trustworthy. */
+function storedMetadataValue(value: unknown): MidiTextValue | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const candidate = value as Partial<MidiTextValue>;
+  if (
+    typeof candidate.track !== 'number' ||
+    !Number.isInteger(candidate.track) ||
+    candidate.track < 0 ||
+    typeof candidate.text !== 'string'
+  ) {
+    return null;
+  }
+  return { track: candidate.track, text: candidate.text };
+}
+
+/**
+ * Validates metadata restored from storage. Older T20-less payloads simply
+ * have no field; a malformed one is ignored so the background parse can fill
+ * it in again rather than trusting bad data.
+ */
+function storedMetadata(value: unknown): SongMetadata | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const candidate = value as Partial<SongMetadata>;
+  if (
+    !Array.isArray(candidate.trackNames) ||
+    !Array.isArray(candidate.textEvents) ||
+    !Array.isArray(candidate.copyrights) ||
+    (candidate.title !== null && typeof candidate.title !== 'string') ||
+    typeof candidate.truncated !== 'boolean'
+  ) {
+    return undefined;
+  }
+  const lists = [candidate.trackNames, candidate.textEvents, candidate.copyrights].map(
+    (list) => list.map(storedMetadataValue),
+  );
+  if (lists.some((list) => list.some((item) => item === null))) return undefined;
+  const restoredTitle =
+    typeof candidate.title === 'string' ? candidate.title.replace(/\s+/g, ' ').trim() : '';
+  const title =
+    restoredTitle === '' || restoredTitle.toLowerCase() === 'untitled'
+      ? null
+      : restoredTitle;
+  return {
+    trackNames: lists[0] as MidiTextValue[],
+    textEvents: lists[1] as MidiTextValue[],
+    copyrights: lists[2] as MidiTextValue[],
+    title,
+    truncated: candidate.truncated,
+  };
+}
+
 /** Rebuilds a playlist entry from its stored form; null when it is malformed. */
 function storedToEntry(value: unknown): PlaylistEntry | null {
   if (typeof value !== 'object' || value === null) return null;
@@ -126,6 +192,7 @@ function storedToEntry(value: unknown): PlaylistEntry | null {
     file,
     name: entryName(stored.fileName),
     durationSec: typeof stored.durationSec === 'number' ? stored.durationSec : undefined,
+    metadata: storedMetadata(stored.metadata),
     status: stored.status,
     error: typeof stored.error === 'string' ? stored.error : undefined,
   };
@@ -211,7 +278,7 @@ export function buildM3u(entries: PlaylistEntry[]): string {
       entry.durationSec !== undefined && Number.isFinite(entry.durationSec)
         ? Math.round(entry.durationSec)
         : -1;
-    lines.push(`#EXTINF:${seconds},${m3uLine(entry.name || entry.file.name)}`);
+    lines.push(`#EXTINF:${seconds},${m3uLine(entryDisplayName(entry) || entry.file.name)}`);
     lines.push(m3uLine(entry.file.name));
   }
   return `${lines.join('\n')}\n`;
@@ -452,7 +519,10 @@ export function playlistReducer(state: PlaylistState, action: PlaylistAction): P
     case 'setCurrent':
       return state.currentId === action.id ? state : { ...state, currentId: action.id };
     case 'parsed':
-      return updateEntry(state, action.id, { durationSec: action.durationSec });
+      return updateEntry(state, action.id, {
+        durationSec: action.durationSec,
+        metadata: action.metadata,
+      });
     case 'failed': {
       const updated = updateEntry(state, action.id, { status: 'error', error: action.error });
       if (updated === state || state.currentId !== action.id) return updated;
@@ -521,6 +591,11 @@ export function previousReadyId(state: PlaylistState, beforeId: string | null): 
 
 export type PlayerState = 'stopped' | 'playing' | 'paused';
 
+/** Outcome of reading a song's metadata for the viewer (T20). */
+export type MetadataResult =
+  | { status: 'ok'; metadata: SongMetadata }
+  | { status: 'error'; message: string };
+
 /**
  * The instrument summary of the song currently playing. Deliberately not tied
  * to the highlighted playlist entry: the card follows playback only.
@@ -565,6 +640,10 @@ export class PlaylistPlayer {
   private loadToken = 0;
   private gapTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly parseQueue: string[] = [];
+  /** In-flight parses by entry id, shared by playback, the queue and T20. */
+  private readonly parseInFlight = new Map<string, Promise<ParseResult>>();
+  /** In-flight metadata-only reads, so repeated clicks share one parse (T20). */
+  private readonly metadataReads = new Map<string, Promise<MetadataResult>>();
   private parsing = false;
   private readonly storage: PlaylistStorage | null;
   /** Base64 of each entry's bytes, so repeated saves do not re-read the files. */
@@ -606,6 +685,49 @@ export class PlaylistPlayer {
 
   currentEntry(): PlaylistEntry | null {
     return this.list.entries.find((e) => e.id === this.list.currentId) ?? null;
+  }
+
+  /**
+   * Metadata for the viewer: the stored summary when it exists, otherwise one
+   * parse of the file. Repeated calls share the in-flight read. A read failure
+   * is returned for the dialog and does not change the row or transport.
+   */
+  async metadataFor(id: string): Promise<MetadataResult> {
+    const entry = this.list.entries.find((e) => e.id === id);
+    if (entry === undefined) {
+      return { status: 'error', message: 'Song not found in the playlist.' };
+    }
+    if (entry.metadata !== undefined) {
+      return { status: 'ok', metadata: entry.metadata };
+    }
+    if (entry.status === 'error') {
+      return { status: 'error', message: entry.error ?? 'This file cannot be read.' };
+    }
+    const pending = this.metadataReads.get(id);
+    if (pending !== undefined) return pending;
+    const read = this.readMetadata(entry).finally(() => {
+      this.metadataReads.delete(id);
+    });
+    this.metadataReads.set(id, read);
+    return read;
+  }
+
+  private async readMetadata(entry: PlaylistEntry): Promise<MetadataResult> {
+    const result = await this.parseEntry(entry);
+    if (result.status === 'error') {
+      return { status: 'error', message: result.message };
+    }
+    // The row may have been removed while the read was in flight; never
+    // resurrect it just to attach metadata.
+    if (this.list.entries.some((e) => e.id === entry.id)) {
+      this.dispatch({
+        type: 'parsed',
+        id: entry.id,
+        durationSec: result.song.duration,
+        metadata: result.song.metadata,
+      });
+    }
+    return { status: 'ok', metadata: result.song.metadata };
   }
 
   /** Song position in seconds (0 while loading or in the gap between songs). */
@@ -822,7 +944,7 @@ export class PlaylistPlayer {
     const entry = this.list.entries.find((e) => e.id === id);
     if (!entry) return;
     if (entry.status === 'error') {
-      this.options.onStatus(`${entry.name}: ${entry.error ?? 'cannot be played'}`);
+      this.options.onStatus(`${entryDisplayName(entry)}: ${entry.error ?? 'cannot be played'}`);
       return;
     }
     void this.start(id);
@@ -916,24 +1038,23 @@ export class PlaylistPlayer {
     this.setState('playing');
     this.setInstruments({ status: 'loading' });
 
-    let result: ParseResult;
-    try {
-      result = await this.parse(entry.file);
-    } catch (err) {
-      // A throwing parse must not leave the transport stuck in `playing`.
-      result = parseFailure(err);
-    }
+    const result = await this.parseEntry(entry);
     if (token !== this.loadToken) return;
     if (result.status === 'error') {
       this.setInstruments({ status: 'none' });
       this.dispatch({ type: 'failed', id, error: result.message });
-      this.options.onStatus(`${entry.name}: ${result.message}`);
+      this.options.onStatus(`${entryDisplayName(entry)}: ${result.message}`);
       const following = nextReadyId(this.list, id);
       if (following === null) this.stop();
       else void this.start(following);
       return;
     }
-    this.dispatch({ type: 'parsed', id, durationSec: result.song.duration });
+    this.dispatch({
+      type: 'parsed',
+      id,
+      durationSec: result.song.duration,
+      metadata: result.song.metadata,
+    });
     this.setInstruments({ status: 'ready', channels: summarizeInstruments(result.song) });
     const scheduler = this.createScheduler({
       output,
@@ -989,6 +1110,24 @@ export class PlaylistPlayer {
     }
   }
 
+  /**
+   * Parses one entry once, sharing the promise with any concurrent playback,
+   * background-duration or metadata read. Failures become a `ParseResult`
+   * instead of rejecting, so every caller handles them the same way.
+   */
+  private parseEntry(entry: PlaylistEntry): Promise<ParseResult> {
+    const pending = this.parseInFlight.get(entry.id);
+    if (pending !== undefined) return pending;
+    const parsed = Promise.resolve()
+      .then(() => this.parse(entry.file))
+      .catch((err: unknown) => parseFailure(err))
+      .finally(() => {
+        this.parseInFlight.delete(entry.id);
+      });
+    this.parseInFlight.set(entry.id, parsed);
+    return parsed;
+  }
+
   private async pumpParseQueue(): Promise<void> {
     if (this.parsing) return;
     this.parsing = true;
@@ -996,20 +1135,26 @@ export class PlaylistPlayer {
       while (this.parseQueue.length > 0) {
         const id = this.parseQueue.shift()!;
         const entry = this.list.entries.find((e) => e.id === id);
-        if (!entry || entry.status === 'error' || entry.durationSec !== undefined) continue;
-        let result: ParseResult;
-        try {
-          result = await this.parse(entry.file);
-        } catch (err) {
-          // One unreadable file must not wedge the queue for the rest.
-          result = parseFailure(err);
-        }
+        if (
+          !entry ||
+          entry.status === 'error' ||
+          (entry.durationSec !== undefined && entry.metadata !== undefined)
+        )
+          continue;
+        // One unreadable file must not wedge the queue for the rest, and a
+        // metadata read already in flight is reused rather than duplicated.
+        const result = await this.parseEntry(entry);
         if (!this.list.entries.some((e) => e.id === id)) continue;
         if (result.status === 'ok') {
-          this.dispatch({ type: 'parsed', id, durationSec: result.song.duration });
+          this.dispatch({
+            type: 'parsed',
+            id,
+            durationSec: result.song.duration,
+            metadata: result.song.metadata,
+          });
         } else {
           this.dispatch({ type: 'failed', id, error: result.message });
-          this.options.onStatus(`${entry.name}: ${result.message}`);
+          this.options.onStatus(`${entryDisplayName(entry)}: ${result.message}`);
         }
       }
     } finally {
@@ -1067,7 +1212,12 @@ export class PlaylistPlayer {
       currentId: current?.id ?? firstReadyId({ entries, currentId: null }),
     };
     for (const entry of entries) {
-      if (entry.status === 'ready' && entry.durationSec === undefined) this.parseQueue.push(entry.id);
+      if (
+        entry.status === 'ready' &&
+        (entry.durationSec === undefined || entry.metadata === undefined)
+      ) {
+        this.parseQueue.push(entry.id);
+      }
     }
     void this.pumpParseQueue();
   }
@@ -1100,6 +1250,7 @@ export class PlaylistPlayer {
           fileName: entry.file.name,
           data,
           durationSec: entry.durationSec,
+          metadata: entry.metadata,
           status: entry.status,
           error: entry.error,
         });

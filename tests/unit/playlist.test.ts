@@ -6,6 +6,7 @@ import {
   buildM3u,
   createEntry,
   emptyPlaylist,
+  entryDisplayName,
   isPlaylistFileName,
   matchM3u,
   nextReadyId,
@@ -17,7 +18,7 @@ import {
   type PlaylistStorage,
   type TransportScheduler,
 } from '../../src/playlist';
-import type { ParseResult } from '../../src/parser';
+import type { ParseResult, SongMetadata } from '../../src/parser';
 import type { SchedulerOptions } from '../../src/scheduler';
 
 const file = (name: string) => new File([new Uint8Array([0])], name);
@@ -37,6 +38,13 @@ function stateWith(...names: string[]): PlaylistState {
 }
 
 const last = <T,>(items: T[]): T => items[items.length - 1];
+const emptyMetadata = (title: string | null = null): SongMetadata => ({
+  trackNames: [],
+  textEvents: [],
+  copyrights: [],
+  title,
+  truncated: false,
+});
 const names = (s: PlaylistState) => s.entries.map((e) => e.name);
 
 describe('playlistReducer', () => {
@@ -115,10 +123,36 @@ describe('playlistReducer', () => {
 
   it('marks failed entries as errors and records parsed durations', () => {
     let s = stateWith('a.mid', 'b.mid');
-    s = playlistReducer(s, { type: 'parsed', id: s.entries[0].id, durationSec: 12.5 });
+    s = playlistReducer(s, {
+      type: 'parsed',
+      id: s.entries[0].id,
+      durationSec: 12.5,
+      metadata: emptyMetadata(),
+    });
     s = playlistReducer(s, { type: 'failed', id: s.entries[1].id, error: 'bad header' });
     expect(s.entries[0].durationSec).toBe(12.5);
     expect(s.entries[1]).toMatchObject({ status: 'error', error: 'bad header' });
+  });
+
+  it('stores parsed metadata and displays the Track Name while keeping the file path', () => {
+    let s = stateWith('bgaregga1.mid');
+    const metadata: SongMetadata = {
+      trackNames: [{ track: 0, text: 'Battle Garegga' }],
+      textEvents: [],
+      copyrights: [{ track: 0, text: '(C)RAIZING' }],
+      title: 'Battle Garegga',
+      truncated: false,
+    };
+    s = playlistReducer(s, {
+      type: 'parsed',
+      id: s.entries[0].id,
+      durationSec: 10,
+      metadata,
+    });
+    expect(s.entries[0].metadata).toBe(metadata);
+    expect(entryDisplayName(s.entries[0])).toBe('Battle Garegga');
+    expect(buildM3u(s.entries)).toContain('#EXTINF:10,Battle Garegga\nbgaregga1.mid\n');
+    expect(entryDisplayName(createEntry(file('plain.mid')))).toBe('plain');
   });
 
   it('moves the highlight off a failed current entry to the next ready one', () => {
@@ -154,7 +188,12 @@ describe('M3U playlist files (T10)', () => {
     entries.forEach((entry, index) => {
       const durationSec = durations[index];
       if (durationSec !== undefined) {
-        s = playlistReducer(s, { type: 'parsed', id: entry.id, durationSec });
+        s = playlistReducer(s, {
+          type: 'parsed',
+          id: entry.id,
+          durationSec,
+          metadata: emptyMetadata(),
+        });
       }
     });
     return s.entries;
@@ -369,7 +408,26 @@ describe('PlaylistPlayer', () => {
   const parse = async (f: File): Promise<ParseResult> =>
     f.name.startsWith('bad')
       ? { status: 'error', message: 'not a MIDI file' }
-      : { status: 'ok', song: { events: [], duration: 10, tempos: [] } };
+      : {
+          status: 'ok',
+          song: { events: [], duration: 10, tempos: [], metadata: emptyMetadata() },
+        };
+
+  const metadataSong = (title: string | null, text = 'hello'): ParseResult => ({
+    status: 'ok',
+    song: {
+      events: [],
+      duration: 10,
+      tempos: [],
+      metadata: {
+        trackNames: title === null ? [] : [{ track: 0, text: title }],
+        textEvents: [{ track: 0, text }],
+        copyrights: [],
+        title,
+        truncated: false,
+      },
+    },
+  });
 
   const flush = () => vi.advanceTimersByTimeAsync(0);
 
@@ -664,6 +722,99 @@ describe('PlaylistPlayer', () => {
     expect(restored.playlist.entries[0].status).toBe('ready');
   });
 
+  it('persists metadata and restores its title without reparsing', async () => {
+    parseFile = async () => metadataSong('Battle Garegga', '@DRUID:\t\tvalue');
+    player.add([file('bgaregga1.mid')]);
+    await flush();
+    await player.flushPersistence();
+
+    parseFile = async () => {
+      throw new Error('should not parse stored metadata');
+    };
+    const restored = makePlayer();
+    expect(entryDisplayName(restored.playlist.entries[0])).toBe('Battle Garegga');
+    expect(restored.playlist.entries[0].metadata?.textEvents).toEqual([
+      { track: 0, text: '@DRUID:\t\tvalue' },
+    ]);
+    await flush();
+    expect(restored.playlist.entries[0].status).toBe('ready');
+  });
+
+  it('reparses a legacy stored entry that has no metadata', async () => {
+    player.add([file('a.mid')]);
+    await flush();
+    await player.flushPersistence();
+    const payload = JSON.parse(storage.getItem(PLAYLIST_STORAGE_KEY)!) as {
+      entries: Array<{ metadata?: unknown }>;
+    };
+    delete payload.entries[0].metadata;
+    storage.setItem(PLAYLIST_STORAGE_KEY, JSON.stringify(payload));
+
+    parseFile = async () => metadataSong('Recovered Title');
+    const restored = makePlayer();
+    await flush();
+    expect(restored.playlist.entries[0].metadata?.title).toBe('Recovered Title');
+    expect(entryDisplayName(restored.playlist.entries[0])).toBe('Recovered Title');
+  });
+
+  it('ignores malformed stored metadata and reparses the file', async () => {
+    player.add([file('a.mid')]);
+    await flush();
+    await player.flushPersistence();
+    const payload = JSON.parse(storage.getItem(PLAYLIST_STORAGE_KEY)!) as {
+      entries: Array<{ metadata?: unknown }>;
+    };
+    payload.entries[0].metadata = {
+      trackNames: [{ track: -1, text: 'bad' }],
+      textEvents: [],
+      copyrights: [],
+      title: 'Bad',
+      truncated: false,
+    };
+    storage.setItem(PLAYLIST_STORAGE_KEY, JSON.stringify(payload));
+
+    parseFile = async () => metadataSong('Recovered Title');
+    const restored = makePlayer();
+    await flush();
+    expect(restored.playlist.entries[0].metadata?.title).toBe('Recovered Title');
+  });
+
+  it('reads metadata on demand, caches it and shares an in-flight parse', async () => {
+    let calls = 0;
+    let release!: (result: ParseResult) => void;
+    parseFile = () => {
+      calls += 1;
+      return new Promise<ParseResult>((resolve) => {
+        release = resolve;
+      });
+    };
+    player.add([file('a.mid')]);
+    const id = player.playlist.entries[0].id;
+    const first = player.metadataFor(id);
+    const second = player.metadataFor(id);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(1);
+
+    release(metadataSong('On demand'));
+    expect(await first).toEqual({
+      status: 'ok',
+      metadata: expect.objectContaining({ title: 'On demand' }),
+    });
+    expect(await second).toEqual({
+      status: 'ok',
+      metadata: expect.objectContaining({ title: 'On demand' }),
+    });
+    await flush();
+    expect(entryDisplayName(player.playlist.entries[0])).toBe('On demand');
+
+    expect(await player.metadataFor(id)).toEqual({
+      status: 'ok',
+      metadata: expect.objectContaining({ title: 'On demand' }),
+    });
+    expect(calls).toBe(1);
+    expect(await player.metadataFor('missing')).toMatchObject({ status: 'error' });
+  });
+
   it('ignores corrupt stored data and keeps working when storage rejects writes', async () => {
     storage = memoryStorage({ [PLAYLIST_STORAGE_KEY]: '{not json' });
     const corrupt = makePlayer();
@@ -870,6 +1021,7 @@ describe('PlaylistPlayer', () => {
       ],
       duration: 10,
       tempos: [],
+      metadata: emptyMetadata(),
     },
   });
 

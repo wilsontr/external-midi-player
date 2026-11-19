@@ -350,6 +350,8 @@ body {
 
 .lcd-title {
   margin: 6px 0;
+  font-family: 'Graph 35 Pix', 'Courier New', 'Hiragino Sans', 'Noto Sans JP',
+    'Noto Sans CJK JP', monospace;
   font-size: 32px;
   line-height: 1.15;
   min-height: 1.15em;
@@ -981,6 +983,10 @@ button:disabled {
   flex: 1 1 8em;
   min-width: 0;
   overflow-wrap: anywhere;
+  /* The file's Track Name may be Japanese; keep the pixel font for Latin and
+     fall through to a system CJK face for glyphs it does not have (T20). */
+  font-family: 'Graph 35 Pix', 'Courier New', 'Hiragino Sans', 'Noto Sans JP',
+    'Noto Sans CJK JP', monospace;
   /* A long name gets the width the slim row frees up, then an ellipsis: rows
      stay one line at every width (T17, and the 23-character first-run sample
      at 360 px in T12), and the full name stays in the DOM for screen readers. */
@@ -1042,12 +1048,135 @@ button:disabled {
   border-color: var(--lcd-inv-ink);
 }
 
+/* --------------------------------------------------------------- metadata (T20) */
+
+.metadata-dialog {
+  box-sizing: border-box;
+  width: min(92vw, 40rem);
+  max-width: calc(100vw - 16px);
+  max-height: 82vh;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--lcd-edge);
+  border-radius: 4px;
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 1px var(--lcd-bg-hi);
+}
+
+.metadata-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.metadata-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.metadata-head {
+  flex: 0 0 auto;
+  padding: 10px 12px 8px;
+  border-bottom: 1px dashed var(--lcd-ghost);
+}
+
+.metadata-heading {
+  margin: 2px 0;
+  font-family: 'Graph 35 Pix', 'Courier New', 'Hiragino Sans', 'Noto Sans JP',
+    'Noto Sans CJK JP', monospace;
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.metadata-filename {
+  margin: 0;
+  font-family: 'Graph 35 Pix', 'Courier New', 'Hiragino Sans', 'Noto Sans JP',
+    'Noto Sans CJK JP', monospace;
+  font-size: 16px;
+  color: var(--lcd-ink-dim);
+  overflow-wrap: anywhere;
+}
+
+.metadata-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 10px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.metadata-status,
+.metadata-empty,
+.metadata-truncated {
+  margin: 0;
+  color: var(--lcd-ink-dim);
+}
+
+.metadata-field {
+  margin: 0 0 14px;
+}
+
+.metadata-field:last-child {
+  margin-bottom: 0;
+}
+
+.metadata-list {
+  display: grid;
+  gap: 0;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.metadata-row {
+  display: grid;
+  grid-template-columns: 5.25rem minmax(0, 1fr);
+  gap: 14px;
+  padding: 4px 0;
+  border-bottom: 1px dotted var(--lcd-ghost);
+}
+
+.metadata-row:last-child {
+  border-bottom: 0;
+}
+
+.metadata-track {
+  color: var(--lcd-ink-dim);
+  white-space: nowrap;
+}
+
+.metadata-value {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+  font-family: 'Graph 35 Pix', 'Courier New', 'Hiragino Sans', 'Noto Sans JP', 'Noto Sans CJK JP', monospace;
+}
+
+.metadata-foot {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding: 8px 12px 10px;
+  border-top: 1px dashed var(--lcd-ghost);
+}
+
+@media (max-width: 480px) {
+  .metadata-row {
+    grid-template-columns: 4.75rem minmax(0, 1fr);
+    gap: 10px;
+  }
+}
+
 /* --------------------------------------------------------------- instruments */
 
 .instruments-caption {
   margin: 0 0 6px;
   font-size: 16px;
   overflow-wrap: anywhere;
+  font-family: 'Graph 35 Pix', 'Courier New', 'Hiragino Sans', 'Noto Sans JP',
+    'Noto Sans CJK JP', monospace;
 }
 
 .instrument-list {

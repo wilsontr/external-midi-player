@@ -25,6 +25,10 @@
  * staying a single O(n) pass (the high-level `Midi` constructor pairs notes in
  * O(n²), which can stall the UI on large files).
  *
+ * The three SMF text metas (Track Name, Text Event, Copyright Notice) are
+ * decoded separately for the metadata viewer (T20), including Japanese
+ * encodings, and never enter the playback event list.
+ *
  * Files are validated on the way in: a missing "MThd" header, an unsupported
  * time division, or any parse failure surfaces as a `ParseError` — never an
  * uncaught throw from the underlying parser.
@@ -41,7 +45,7 @@ export type ParsedMidiEvent =
   | { type: 'pitch-bend'; time: number; channel: number; value: number }
   | { type: 'channel-pressure'; time: number; channel: number; value: number };
 
-/** A parsed song: flat time-sorted events, duration, and the tempo map. */
+/** A parsed song: flat time-sorted events, duration, tempo map and metadata. */
 export interface ParsedSong {
   /** Flat, time-sorted event list (file order is preserved for equal times). */
   events: ParsedMidiEvent[];
@@ -49,7 +53,52 @@ export interface ParsedSong {
   duration: number;
   /** Tempo changes in file order: time in seconds, bpm. */
   tempos: Array<{ time: number; bpm: number }>;
+  /** The file's Track Name, Text Event and Copyright Notice values (T20). */
+  metadata: SongMetadata;
 }
+
+/** Encodings SMF text can plausibly use, in the order the detector tries them. */
+export type MidiTextEncoding =
+  | 'ascii'
+  | 'utf-8'
+  | 'shift_jis'
+  | 'euc-jp'
+  | 'iso-2022-jp'
+  | 'windows-1252';
+
+/** One decoded text meta value and the 0-based MTrk chunk it came from. */
+export interface MidiTextValue {
+  /** 0-based MTrk index; the viewer shows it 1-based. */
+  track: number;
+  /** Decoded, NUL-stripped and NFC-normalised text. */
+  text: string;
+}
+
+/** Text metadata retained from a song, plus the title resolved from it. */
+export interface SongMetadata {
+  /** Every non-empty Track Name value, in file order. */
+  trackNames: MidiTextValue[];
+  /** Every non-empty Text Event value, in file order. */
+  textEvents: MidiTextValue[];
+  /** Every non-empty Copyright Notice value, in file order. */
+  copyrights: MidiTextValue[];
+  /** A usable Track Name for the song, or null when the file has none. */
+  title: string | null;
+  /** True when the retention cap dropped values. */
+  truncated: boolean;
+}
+
+/** Result of decoding one SMF text value. */
+export interface DecodedMidiText {
+  text: string;
+  encoding: MidiTextEncoding;
+}
+
+/** Most values retained per metadata field (T20). */
+export const METADATA_MAX_VALUES = 256;
+
+/** Total characters of metadata text retained per song (T20). */
+export const METADATA_MAX_CHARS = 16_000;
 
 /** Thrown when a MIDI file cannot be parsed. */
 export class ParseError extends Error {
@@ -57,6 +106,214 @@ export class ParseError extends Error {
     super(message);
     this.name = 'ParseError';
   }
+}
+
+/**
+ * Decoders are stateless and safe to reuse; keeping one per (label, fatal)
+ * avoids rebuilding them for every text event in a long file.
+ */
+const textDecoders = new Map<string, TextDecoder>();
+
+function getDecoder(label: string, fatal = false): TextDecoder {
+  const key = `${label}\u0000${fatal ? 'fatal' : 'loose'}`;
+  let decoder = textDecoders.get(key);
+  if (decoder === undefined) {
+    decoder = new TextDecoder(label, { fatal });
+    textDecoders.set(key, decoder);
+  }
+  return decoder;
+}
+
+/** Decodes `bytes` with `label`, returning null instead of throwing. */
+function tryDecode(bytes: Uint8Array, label: string): string | null {
+  try {
+    return getDecoder(label, true).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True when the bytes look like ISO-2022-JP: an ESC followed by `$` or `(`.
+ * ISO-2022-JP is 7-bit, so it would otherwise pass the UTF-8/ASCII checks.
+ */
+function hasIso2022JpEscape(bytes: Uint8Array): boolean {
+  for (let i = 0; i + 1 < bytes.length; i += 1) {
+    if (bytes[i] === 0x1b && (bytes[i + 1] === 0x24 || bytes[i + 1] === 0x28)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * True for the Japanese characters this detector treats as evidence of a
+ * Japanese encoding. Half-width katakana is deliberately excluded: a single
+ * 0xA9 is also Windows-1252 `©`, and a lone Latin-1 byte must not tip a
+ * Western copyright line into Shift_JIS.
+ */
+function isJapaneseCharacter(cp: number): boolean {
+  return (
+    (cp >= 0x3000 && cp <= 0x303f) || // CJK punctuation (ideographic space, 〜)
+    (cp >= 0x3040 && cp <= 0x309f) || // hiragana
+    (cp >= 0x30a0 && cp <= 0x30ff) || // katakana
+    (cp >= 0x31f0 && cp <= 0x31ff) || // katakana phonetic extensions
+    (cp >= 0x3400 && cp <= 0x4dbf) || // CJK extension A
+    (cp >= 0x4e00 && cp <= 0x9fff) || // CJK unified ideographs
+    (cp >= 0xf900 && cp <= 0xfaff) || // CJK compatibility ideographs
+    (cp >= 0xff00 && cp <= 0xff60) || // full-width forms (not half-width kana)
+    (cp >= 0xffe0 && cp <= 0xffef)
+  );
+}
+
+/** Scores a candidate by Japanese content, penalising control characters. */
+function japaneseScore(text: string): number {
+  let score = 0;
+  for (const char of text) {
+    const cp = char.codePointAt(0) ?? 0;
+    if (isJapaneseCharacter(cp)) score += 1;
+    else if ((cp < 0x20 && cp !== 0x09 && cp !== 0x0a) || (cp >= 0x7f && cp <= 0x9f)) {
+      score -= 2;
+    }
+  }
+  return score;
+}
+
+/**
+ * Cleans a decoded value for display: normalises line endings, strips NULs,
+ * turns C0/C1 controls into spaces, normalises to NFC and trims. Tabs and
+ * newlines survive because Stanford-style Text Events are tab-separated.
+ */
+function cleanMetadataText(text: string): string {
+  return text
+    .replace(/\r\n?/g, '\n')
+    .replace(/\u0000/g, '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, ' ')
+    .normalize('NFC')
+    .trim();
+}
+
+/**
+ * Decodes one SMF text value (T20).
+ *
+ * `midi-file` 1.2.4 reads meta text with `String.fromCharCode`, i.e. Latin-1,
+ * so a string coming from that parser can be turned back into the exact
+ * original bytes. This module also accepts raw bytes directly, which keeps the
+ * detector testable without constructing a whole MIDI file.
+ *
+ * Detection order: UTF-8 BOM, ISO-2022-JP escapes, plain ASCII, valid UTF-8,
+ * then Shift_JIS/EUC-JP scored by their Japanese content, and finally
+ * Windows-1252. The Japanese candidates must contain at least one non-half-width
+ * Japanese character to win; otherwise Western text such as `Copyright © 2004`
+ * is kept as Windows-1252 rather than decoded as half-width katakana.
+ */
+export function decodeMidiText(raw: string | Uint8Array): DecodedMidiText {
+  let bytes: Uint8Array;
+  if (typeof raw === 'string') {
+    bytes = Uint8Array.from(raw, (char) => char.charCodeAt(0) & 0xff);
+  } else {
+    bytes = raw;
+  }
+
+  if (
+    bytes.length >= 3 &&
+    bytes[0] === 0xef &&
+    bytes[1] === 0xbb &&
+    bytes[2] === 0xbf
+  ) {
+    return {
+      text: cleanMetadataText(getDecoder('utf-8').decode(bytes.subarray(3))),
+      encoding: 'utf-8',
+    };
+  }
+
+  if (hasIso2022JpEscape(bytes)) {
+    const text = tryDecode(bytes, 'iso-2022-jp');
+    if (text !== null) {
+      return { text: cleanMetadataText(text), encoding: 'iso-2022-jp' };
+    }
+  }
+
+  if (bytes.every((byte) => byte < 0x80)) {
+    return {
+      text: cleanMetadataText(getDecoder('utf-8').decode(bytes)),
+      encoding: 'ascii',
+    };
+  }
+
+  const utf8 = tryDecode(bytes, 'utf-8');
+  if (utf8 !== null) {
+    return { text: cleanMetadataText(utf8), encoding: 'utf-8' };
+  }
+
+  const shiftJis = tryDecode(bytes, 'shift_jis');
+  const eucJp = tryDecode(bytes, 'euc-jp');
+  const shiftJisScore = shiftJis === null ? 0 : japaneseScore(shiftJis);
+  const eucJpScore = eucJp === null ? 0 : japaneseScore(eucJp);
+
+  if (eucJpScore > shiftJisScore && eucJpScore > 0 && eucJp !== null) {
+    return { text: cleanMetadataText(eucJp), encoding: 'euc-jp' };
+  }
+  if (shiftJisScore > 0 && shiftJis !== null) {
+    return { text: cleanMetadataText(shiftJis), encoding: 'shift_jis' };
+  }
+
+  return {
+    text: cleanMetadataText(getDecoder('windows-1252').decode(bytes)),
+    encoding: 'windows-1252',
+  };
+}
+
+/** The title a Track Name list yields; see the track-0 rule in `collectEvents`. */
+function resolveMetadataTitle(
+  trackNames: MidiTextValue[],
+  trackZeroNamed: boolean,
+): string | null {
+  // If track 0 carries a Track Name, that is the sequence name. An unusable
+  // one (`untitled`) means "no title", never an instrument track's name.
+  // If track 0 has none at all, use the first usable name in file order.
+  const candidates = trackZeroNamed
+    ? trackNames.filter((value) => value.track === 0)
+    : trackNames;
+  for (const value of candidates) {
+    const title = value.text.replace(/\s+/g, ' ').trim();
+    if (title !== '' && title.toLowerCase() !== 'untitled') return title;
+  }
+  return null;
+}
+
+/**
+ * Applies the retention cap after the title has been resolved, so a dropped
+ * list entry can never change the displayed title. The three lists share one
+ * character budget; values are kept in file order until it runs out.
+ */
+function capMetadata(
+  trackNames: MidiTextValue[],
+  textEvents: MidiTextValue[],
+  copyrights: MidiTextValue[],
+  title: string | null,
+): SongMetadata {
+  let remaining = METADATA_MAX_CHARS;
+  let truncated = false;
+  const cap = (values: MidiTextValue[]): MidiTextValue[] => {
+    const kept: MidiTextValue[] = [];
+    for (const value of values) {
+      if (kept.length >= METADATA_MAX_VALUES || value.text.length > remaining) {
+        truncated = true;
+        continue;
+      }
+      kept.push(value);
+      remaining -= value.text.length;
+    }
+    return kept;
+  };
+  return {
+    trackNames: cap(trackNames),
+    textEvents: cap(textEvents),
+    copyrights: cap(copyrights),
+    title,
+    truncated,
+  };
 }
 
 /** One program selected on a channel, with the bank in effect at that moment. */
@@ -320,16 +577,34 @@ interface TempoSegment {
 }
 
 /**
- * Walks every track, collecting channel events (with absolute ticks) and
- * setTempo points. Tempo is global in Standard MIDI Files, so points are
- * taken from all tracks (format 1 files may keep them on a dedicated track).
- * Meta events other than tempo, polyphonic aftertouch, SysEx and end-of-track
- * are dropped, per the ticket.
+ * Walks every track, collecting channel events (with absolute ticks),
+ * setTempo points and the three text metas T20 displays. Tempo is global in
+ * Standard MIDI Files, so points are taken from all tracks (format 1 files may
+ * keep them on a dedicated track). Other meta events, polyphonic aftertouch,
+ * SysEx and end-of-track are dropped for playback, as before.
  */
-function collectEvents(raw: MidiData): { events: RawEvent[]; tempos: TempoPoint[] } {
+function collectEvents(raw: MidiData): {
+  events: RawEvent[];
+  tempos: TempoPoint[];
+  metadata: SongMetadata;
+} {
   const events: RawEvent[] = [];
   const tempos: TempoPoint[] = [];
-  for (const track of raw.tracks) {
+  const trackNames: MidiTextValue[] = [];
+  const textEvents: MidiTextValue[] = [];
+  const copyrights: MidiTextValue[] = [];
+  // Track 0's Track Name is the sequence name. A present-but-unusable one
+  // must suppress the track-1 fallback, so remember the event itself rather
+  // than only the non-empty values retained for display.
+  let trackZeroNamed = false;
+
+  const textValue = (track: number, rawText: string): MidiTextValue | null => {
+    const decoded = decodeMidiText(rawText);
+    return decoded.text === '' ? null : { track, text: decoded.text };
+  };
+
+  for (let trackIndex = 0; trackIndex < raw.tracks.length; trackIndex += 1) {
+    const track = raw.tracks[trackIndex];
     let ticks = 0;
     for (const e of track) {
       ticks += e.deltaTime;
@@ -356,12 +631,34 @@ function collectEvents(raw: MidiData): { events: RawEvent[]; tempos: TempoPoint[
         case 'setTempo':
           tempos.push({ ticks, usPerBeat: e.microsecondsPerBeat });
           break;
+        case 'trackName': {
+          if (trackIndex === 0) trackZeroNamed = true;
+          const value = textValue(trackIndex, e.text);
+          if (value !== null) trackNames.push(value);
+          break;
+        }
+        case 'text': {
+          const value = textValue(trackIndex, e.text);
+          if (value !== null) textEvents.push(value);
+          break;
+        }
+        case 'copyrightNotice': {
+          const value = textValue(trackIndex, e.text);
+          if (value !== null) copyrights.push(value);
+          break;
+        }
         default:
           break;
       }
     }
   }
-  return { events, tempos };
+
+  const title = resolveMetadataTitle(trackNames, trackZeroNamed);
+  return {
+    events,
+    tempos,
+    metadata: capMetadata(trackNames, textEvents, copyrights, title),
+  };
 }
 
 /**
@@ -455,7 +752,7 @@ export function parseMidiData(buffer: ArrayBuffer | Uint8Array): ParsedSong {
     throw new ParseError('Unsupported MIDI time division (SMPTE time is not supported)');
   }
 
-  const { events, tempos } = collectEvents(raw);
+  const { events, tempos, metadata } = collectEvents(raw);
   const points = normalizeTempoPoints(tempos);
   for (const p of points) {
     if (p.usPerBeat <= 0) {
@@ -493,7 +790,7 @@ export function parseMidiData(buffer: ArrayBuffer | Uint8Array): ParsedSong {
     bpm: 60_000_000 / p.usPerBeat,
   }));
 
-  return { events: songEvents, duration, tempos: temposOut };
+  return { events: songEvents, duration, tempos: temposOut, metadata };
 }
 
 /** True when the file name has a .mid or .midi extension (case-insensitive). */

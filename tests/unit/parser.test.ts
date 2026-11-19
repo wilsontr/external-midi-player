@@ -9,6 +9,8 @@ import {
   gmInstrumentName,
   GM_INSTRUMENTS,
   ParseError,
+  decodeMidiText,
+  METADATA_MAX_VALUES,
   type ParsedMidiEvent,
   type MidiFileLike,
 } from '../../src/parser';
@@ -40,6 +42,8 @@ interface RawEventSpec {
   pitch?: [channel: number, lo: number, hi: number];
   pressure?: [channel: number, value: number];
   tempo?: number;
+  /** Raw meta event; 0xFF and the length are added by the builder. */
+  meta?: { type: number; data: number[] };
 }
 
 function buildMidi(format: 0 | 1 | 2, ppq: number, tracks: RawEventSpec[][]): Uint8Array<ArrayBuffer> {
@@ -70,6 +74,8 @@ function buildMidi(format: 0 | 1 | 2, ppq: number, tracks: RawEventSpec[][]): Ui
         body.push(0xd0 | ch, val);
       } else if (e.tempo !== undefined) {
         body.push(0xff, 0x51, 0x03, (e.tempo >> 16) & 0xff, (e.tempo >> 8) & 0xff, e.tempo & 0xff);
+      } else if (e.meta !== undefined) {
+        body.push(0xff, e.meta.type, ...vlq(e.meta.data.length), ...e.meta.data);
       } else {
         throw new Error('unhandled event spec');
       }
@@ -311,6 +317,158 @@ describe('parseMidiData', () => {
   it('rejects a zero tempo', () => {
     const bytes = buildMidi(0, 60, [[{ d: 0, tempo: 0 }]]);
     expect(() => parseMidiData(bytes)).toThrow('Invalid tempo');
+  });
+});
+
+describe('decodeMidiText (T20)', () => {
+  const ascii = (text: string) => Array.from(text, (char) => char.charCodeAt(0));
+  // 並木学
+  const SHIFT_JIS_NAMIKI = [0x95, 0xc0, 0x96, 0xd8, 0x8a, 0x77];
+  const EUC_JP_NAMIKI = [0xca, 0xc2, 0xcc, 0xda, 0xb3, 0xd8];
+  const ISO_2022_JP_NAMIKI = [
+    0x1b, 0x24, 0x42, 0x4a, 0x42, 0x4c, 0x5a, 0x33, 0x58, 0x1b, 0x28, 0x42,
+  ];
+  const UTF8_NAMIKI = [0xe4, 0xb8, 0xa6, 0xe6, 0x9c, 0xa8, 0xe5, 0xad, 0xa6];
+
+  it('decodes plain ASCII and strips NULs', () => {
+    expect(decodeMidiText('Track 1')).toEqual({ text: 'Track 1', encoding: 'ascii' });
+    expect(decodeMidiText(Uint8Array.from([0x41, 0x00, 0x42]))).toEqual({
+      text: 'AB',
+      encoding: 'ascii',
+    });
+  });
+
+  it('decodes UTF-8 Japanese and a UTF-8 BOM', () => {
+    expect(decodeMidiText(Uint8Array.from(UTF8_NAMIKI))).toEqual({
+      text: '並木学',
+      encoding: 'utf-8',
+    });
+    expect(decodeMidiText(Uint8Array.from([0xef, 0xbb, 0xbf, ...UTF8_NAMIKI]))).toEqual({
+      text: '並木学',
+      encoding: 'utf-8',
+    });
+  });
+
+  it('decodes Shift_JIS, including the bytes midi-file hands over as Latin-1', () => {
+    const latin1 = String.fromCharCode(...SHIFT_JIS_NAMIKI);
+    expect(decodeMidiText(latin1)).toEqual({ text: '並木学', encoding: 'shift_jis' });
+  });
+
+  it('decodes EUC-JP even though the same bytes are valid half-width Shift_JIS', () => {
+    expect(decodeMidiText(Uint8Array.from(EUC_JP_NAMIKI))).toEqual({
+      text: '並木学',
+      encoding: 'euc-jp',
+    });
+  });
+
+  it('decodes ISO-2022-JP before the ASCII/UTF-8 checks swallow its escape bytes', () => {
+    expect(decodeMidiText(Uint8Array.from(ISO_2022_JP_NAMIKI))).toEqual({
+      text: '並木学',
+      encoding: 'iso-2022-jp',
+    });
+  });
+
+  it('keeps a lone copyright byte as Windows-1252 rather than half-width katakana', () => {
+    const bytes = Uint8Array.from([...ascii('Copyright '), 0xa9, ...ascii(' 2004')]);
+    expect(decodeMidiText(bytes)).toEqual({
+      text: 'Copyright © 2004',
+      encoding: 'windows-1252',
+    });
+  });
+
+  it('falls back to Windows-1252 for bytes no Japanese candidate qualifies', () => {
+    expect(decodeMidiText(Uint8Array.from([0x80, 0x81, 0xff])).encoding).toBe('windows-1252');
+  });
+
+  it('normalises controls and NFC without losing tabs or newlines', () => {
+    const decoded = decodeMidiText('@DRUID:\t\tjh696my0069\u0081\r\n');
+    expect(decoded.text).toBe('@DRUID:\t\tjh696my0069');
+    expect(decoded.encoding).toBe('windows-1252');
+  });
+});
+
+describe('song metadata (T20)', () => {
+  const ascii = (text: string) => Array.from(text, (char) => char.charCodeAt(0));
+  const SHIFT_JIS_NAMIKI = [0x95, 0xc0, 0x96, 0xd8, 0x8a, 0x77];
+  const name = (data: number[], d = 0) => ({ d, meta: { type: 0x03, data } });
+  const text = (data: number[], d = 0) => ({ d, meta: { type: 0x01, data } });
+  const copyright = (data: number[], d = 0) => ({ d, meta: { type: 0x02, data } });
+
+  it('collects all three text fields with track indices, decodes them and keeps them out of playback', () => {
+    const bytes = buildMidi(1, 480, [
+      [
+        name(SHIFT_JIS_NAMIKI),
+        copyright([...ascii('Copyright '), 0xa9, ...ascii(' 2004')]),
+        text(ascii('@DRUID:\t\tjh696my0069')),
+        { d: 0, tempo: 500_000 },
+        { d: 0, noteOn: [0, 60, 100] },
+        { d: 480, noteOff: [0, 60, 0] },
+      ],
+      [
+        name(ascii('Piano')),
+        text(ascii('second track')),
+        { d: 0, noteOn: [1, 64, 100] },
+        { d: 480, noteOff: [1, 64, 0] },
+      ],
+    ]);
+    const song = parseMidiData(bytes);
+
+    expect(song.metadata).toEqual({
+      trackNames: [
+        { track: 0, text: '並木学' },
+        { track: 1, text: 'Piano' },
+      ],
+      textEvents: [
+        { track: 0, text: '@DRUID:\t\tjh696my0069' },
+        { track: 1, text: 'second track' },
+      ],
+      copyrights: [{ track: 0, text: 'Copyright © 2004' }],
+      title: '並木学',
+      truncated: false,
+    });
+    expect(song.duration).toBe(0.5);
+    expect(song.events.map((event) => event.type)).toEqual([
+      'note-on',
+      'note-on',
+      'note-off',
+      'note-off',
+    ]);
+  });
+
+  it('uses track 0’s name, and an unusable track-0 name suppresses later tracks', () => {
+    const titleFor = (tracks: RawEventSpec[][]): string | null =>
+      parseMidiData(buildMidi(1, 480, tracks)).metadata.title;
+
+    expect(titleFor([[name(ascii('untitled'))], [name(ascii('Voice 2'))]])).toBeNull();
+    expect(titleFor([[name(ascii('  UNTITLED  '))], [name(ascii('Voice 2'))]])).toBeNull();
+    expect(titleFor([[name(ascii(''))], [name(ascii('Voice 2'))]])).toBeNull();
+    expect(titleFor([[name(ascii('Track 1'))]])).toBe('Track 1');
+    expect(titleFor([[name(ascii('  Real\n Title  '))]])).toBe('Real Title');
+    expect(titleFor([[name(ascii('untitled'))], [name(ascii('Real Title'))]])).toBeNull();
+  });
+
+  it('falls back to the first named track only when track 0 has no Track Name event', () => {
+    const bytes = buildMidi(1, 480, [
+      [{ d: 0, noteOn: [0, 60, 100] }],
+      [name(ascii('Chemical Plant')), { d: 0, noteOff: [0, 60, 0] }],
+      [name(ascii('Sonic the Hedgehog 2')), { d: 0, noteOn: [1, 60, 100] }],
+    ]);
+    const song = parseMidiData(bytes);
+    expect(song.metadata.title).toBe('Chemical Plant');
+    expect(song.metadata.trackNames).toEqual([
+      { track: 1, text: 'Chemical Plant' },
+      { track: 2, text: 'Sonic the Hedgehog 2' },
+    ]);
+  });
+
+  it('caps retained values without changing the title', () => {
+    const events = Array.from({ length: METADATA_MAX_VALUES + 5 }, (_, index) =>
+      name(ascii(`Name ${index}`)),
+    );
+    const song = parseMidiData(buildMidi(1, 480, [events]));
+    expect(song.metadata.trackNames).toHaveLength(METADATA_MAX_VALUES);
+    expect(song.metadata.truncated).toBe(true);
+    expect(song.metadata.title).toBe('Name 0');
   });
 });
 

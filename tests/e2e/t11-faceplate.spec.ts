@@ -281,9 +281,10 @@ test.describe("T11 — half-rack faceplate", () => {
         synthesis: style.fontSynthesis,
       };
     });
-    expect(lcd.family).toMatch(
-      /^"?Graph 35 Pix"?, "?Courier New"?, monospace$/,
-    );
+    // T20 appends CJK fallbacks after the pixel font so a Japanese Track Name
+    // still renders; the pixel font stays first, and the stack ends in monospace.
+    expect(lcd.family).toMatch(/^"?Graph 35 Pix"?, "?Courier New"?, .*monospace$/);
+    expect(lcd.family).toContain("Hiragino Sans");
     expect(lcd.size % 8).toBe(0);
     expect(lcd.synthesis).toBe("none");
 
