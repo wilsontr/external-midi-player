@@ -16,6 +16,7 @@ import {
   isMidiFileName,
   parseSongForPlayback,
   summarizeInstruments,
+  ChannelActivity,
   type ChannelInstrument,
   type MidiTextValue,
   type ParseResult,
@@ -609,7 +610,11 @@ export type InstrumentsState =
 export type TransportScheduler = Pick<
   Scheduler,
   'play' | 'pause' | 'stop' | 'panic' | 'dispose' | 'position' | 'seek'
->;
+> &
+  Partial<Pick<Scheduler, 'cursorIndex'>>;
+
+/** No channel is active (stopped, paused, loading, or between songs). */
+const NO_ACTIVE_CHANNELS: ReadonlySet<number> = new Set();
 
 export interface PlaylistPlayerOptions {
   /** The currently selected MIDI output, if any. */
@@ -636,6 +641,13 @@ export class PlaylistPlayer {
   private playerState: PlayerState = 'stopped';
   private instruments: InstrumentsState = { status: 'none' };
   private scheduler: TransportScheduler | null = null;
+  /**
+   * Live per-channel note activity of the song on the wire (T21), built from
+   * the same event array the scheduler plays. Null whenever no song is loaded.
+   */
+  private activity: ChannelActivity | null = null;
+  /** A paused seek adopted the target's pedal state; the next resume keeps it. */
+  private pausedSeekPedal = false;
   /** Bumped by every transition that must abort an in-flight song load. */
   private loadToken = 0;
   private gapTimer: ReturnType<typeof setTimeout> | null = null;
@@ -733,6 +745,19 @@ export class PlaylistPlayer {
   /** Song position in seconds (0 while loading or in the gap between songs). */
   position(): number {
     return this.scheduler?.position() ?? 0;
+  }
+
+  /**
+   * Channels (0–15) with a note sounding at the current position (T21). Empty
+   * unless playing; the UI's progress tick drives it, and each call only
+   * advances the tracker over the events since the previous one.
+   */
+  activeChannels(): ReadonlySet<number> {
+    if (this.playerState !== 'playing' || this.scheduler === null || this.activity === null) {
+      return NO_ACTIVE_CHANNELS;
+    }
+    this.activity.advance(this.scheduler.position());
+    return this.activity.activeChannels();
   }
 
   /** The channels and instruments of the song currently playing. */
@@ -842,6 +867,11 @@ export class PlaylistPlayer {
     if (this.playerState === 'stopped' || this.scheduler === null) return;
     try {
       this.scheduler.seek(positionSec);
+      // The scheduler releases every note and re-sends the controller state
+      // strictly before the target, so the display starts dark there with
+      // the target's pedal state.
+      this.activity?.reset(this.scheduler.position(), { adoptPedal: true });
+      if (this.playerState === 'paused') this.pausedSeekPedal = true;
     } catch (err) {
       this.outputLost();
       this.options.onStatus(
@@ -868,6 +898,14 @@ export class PlaylistPlayer {
     if (this.playerState === 'playing') return;
     if (this.playerState === 'paused' && this.scheduler !== null) {
       this.scheduler.play();
+      // Resume starts dark: pause released every note and nothing is
+      // re-struck. Events handed over before the pause are skipped. The pedal
+      // starts up, unless a paused seek re-sent the target's pedal state.
+      this.activity?.reset(this.scheduler.position(), {
+        adoptPedal: this.pausedSeekPedal,
+        fromIndex: this.scheduler.cursorIndex?.(),
+      });
+      this.pausedSeekPedal = false;
       this.setState('playing');
       return;
     }
@@ -979,6 +1017,7 @@ export class PlaylistPlayer {
     this.cancelPending();
     this.scheduler?.dispose();
     this.scheduler = null;
+    this.clearActivity();
     this.setInstruments({ status: 'none' });
     this.setState('stopped');
   }
@@ -1033,6 +1072,7 @@ export class PlaylistPlayer {
         this.scheduler = null;
       }
     }
+    this.clearActivity();
     const token = ++this.loadToken;
     this.dispatch({ type: 'setCurrent', id });
     this.setState('playing');
@@ -1069,12 +1109,16 @@ export class PlaylistPlayer {
       },
     });
     this.scheduler = scheduler;
+    const activity = new ChannelActivity(result.song.events);
+    activity.reset(0);
+    this.activity = activity;
     scheduler.play(startAt);
   }
 
   private handleEnded(ended: TransportScheduler): void {
     if (this.scheduler !== ended) return;
     this.scheduler = null;
+    this.clearActivity();
     const following = nextReadyId(this.list, this.list.currentId);
     if (following === null) {
       this.setInstruments({ status: 'none' });
@@ -1099,9 +1143,16 @@ export class PlaylistPlayer {
     }
   }
 
+  /** Drops the activity tracker: nothing of the old song is sounding. */
+  private clearActivity(): void {
+    this.activity = null;
+    this.pausedSeekPedal = false;
+  }
+
   private releaseScheduler(): void {
     const scheduler = this.scheduler;
     this.scheduler = null;
+    this.clearActivity();
     if (scheduler === null) return;
     try {
       scheduler.stop();

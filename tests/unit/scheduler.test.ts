@@ -683,4 +683,25 @@ describe('Scheduler', () => {
     expect(errors).toEqual(['device gone']);
     expect(scheduler.isPlaying()).toBe(false);
   });
+
+  it('treats a note-on with velocity 0 as a note-off in its sounding map (T21)', () => {
+    const { output, calls } = makeOutput();
+    const events: ParsedMidiEvent[] = [
+      { type: 'note-on', time: 0, channel: 0, note: 60, velocity: 100 },
+      { type: 'note-on', time: 0.05, channel: 0, note: 60, velocity: 0 },
+      { type: 'note-on', time: 0.05, channel: 1, note: 64, velocity: 100 },
+      { type: 'note-off', time: 5, channel: 1, note: 64, velocity: 0 },
+    ];
+    const scheduler = new Scheduler({ output, events, duration: 5 });
+    scheduler.play();
+    vi.advanceTimersByTime(300);
+    const before = calls.length;
+    scheduler.pause();
+    const release = calls.slice(before).map((c) => c.bytes);
+    // Only channel 2's note is still sounding: channel 1's ended with velocity 0.
+    expect(release).toEqual([
+      [0x81, 64, 0],
+      [0xb1, 0x40, 0],
+    ]);
+  });
 });

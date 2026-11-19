@@ -11,6 +11,8 @@ import {
   ParseError,
   decodeMidiText,
   METADATA_MAX_VALUES,
+  ChannelActivity,
+  ACTIVITY_HOLD_MS,
   type ParsedMidiEvent,
   type MidiFileLike,
 } from '../../src/parser';
@@ -656,5 +658,181 @@ describe('summarizeInstruments', () => {
     expect(gmInstrumentName(40)).toBe('Violin');
     expect(gmInstrumentName(127)).toBe('Gunshot');
     expect(gmInstrumentName(-1)).toBe('Program 0');
+  });
+});
+
+describe('ChannelActivity (T21)', () => {
+  const on = (time: number, channel: number, note: number, velocity = 100): ParsedMidiEvent => ({
+    type: 'note-on',
+    time,
+    channel,
+    note,
+    velocity,
+  });
+  const off = (time: number, channel: number, note: number): ParsedMidiEvent => ({
+    type: 'note-off',
+    time,
+    channel,
+    note,
+    velocity: 0,
+  });
+  const cc = (time: number, channel: number, controller: number, value: number): ParsedMidiEvent => ({
+    type: 'control-change',
+    time,
+    channel,
+    controller,
+    value,
+  });
+  const hold = ACTIVITY_HOLD_MS / 1000;
+
+  /** Tracker reset at 0, advanced to `t`, returning the sorted active channels. */
+  function at(events: ParsedMidiEvent[], t: number): number[] {
+    const activity = new ChannelActivity(events);
+    activity.reset(0);
+    activity.advance(t);
+    return [...activity.activeChannels()].sort((a, b) => a - b);
+  }
+
+  it('uses a 120 ms hold window', () => {
+    expect(ACTIVITY_HOLD_MS).toBe(120);
+  });
+
+  it('lights a held note and clears within the hold window after its note-off', () => {
+    const events = [on(0, 0, 60), off(1, 0, 60)];
+    expect(at(events, 0)).toEqual([]); // not yet played at exactly t = 0
+    expect(at(events, 0.5)).toEqual([0]);
+    expect(at(events, 1.01)).toEqual([]); // hold window long past the note-on
+  });
+
+  it('keeps overlapping notes lit until the last note-off', () => {
+    const events = [on(0, 2, 60), on(0.2, 2, 64), off(0.5, 2, 60), off(1, 2, 64)];
+    expect(at(events, 0.7)).toEqual([2]);
+    expect(at(events, 1.1)).toEqual([]);
+  });
+
+  it('counts repeated note-ons of the same note until the last matching off', () => {
+    const events = [on(0, 0, 60), on(0.3, 0, 60), off(0.5, 0, 60), off(1, 0, 60)];
+    expect(at(events, 0.7)).toEqual([0]);
+    expect(at(events, 1.1)).toEqual([]);
+  });
+
+  it('treats a note-on with velocity 0 as a note-off', () => {
+    const events = [on(0, 0, 60), on(0.5, 0, 60, 0)];
+    expect(at(events, 0.4)).toEqual([0]);
+    expect(at(events, 0.6)).toEqual([]);
+  });
+
+  it('lights a note shorter than the UI tick for the hold window (channel 10 too)', () => {
+    const events = [on(1, 9, 36), off(1.01, 9, 36)];
+    const activity = new ChannelActivity(events);
+    activity.reset(0);
+    activity.advance(1.05);
+    expect([...activity.activeChannels()]).toEqual([9]);
+    activity.advance(1 + hold - 0.001);
+    expect([...activity.activeChannels()]).toEqual([9]);
+    activity.advance(1 + hold + 0.001);
+    expect([...activity.activeChannels()]).toEqual([]);
+  });
+
+  it('keeps a released note active under sustain until CC64 drops', () => {
+    const events = [cc(0, 0, 64, 127), on(0.1, 0, 60), off(0.3, 0, 60), cc(1, 0, 64, 0)];
+    expect(at(events, 0.8)).toEqual([0]);
+    expect(at(events, 1.01)).toEqual([]);
+    // A pedal pressed with no notes does not light the channel.
+    expect(at([cc(0, 1, 64, 127)], 0.5)).toEqual([]);
+  });
+
+  it.each([120, 123, 121])('clears the channel on CC%i', (controller) => {
+    const events = [
+      cc(0, 0, 64, 127),
+      on(0, 0, 60),
+      on(0.1, 0, 62),
+      off(0.2, 0, 62),
+      on(0, 1, 60),
+      cc(0.5, 0, controller, 0),
+    ];
+    expect(at(events, 0.4)).toEqual([0, 1]);
+    expect(at(events, 0.51)).toEqual([1]);
+  });
+
+  it('never lights a channel with only program changes or controllers', () => {
+    const events: ParsedMidiEvent[] = [
+      { type: 'program-change', time: 0, channel: 4, program: 10 },
+      cc(0.1, 4, 7, 100),
+      { type: 'pitch-bend', time: 0.2, channel: 4, value: 9000 },
+    ];
+    expect(at(events, 0.15)).toEqual([]);
+    expect(at(events, 1)).toEqual([]);
+  });
+
+  it('resets dark inside a held note and lights only later note-ons', () => {
+    const events = [on(0, 0, 60), on(1, 1, 64), off(2, 0, 60), off(2, 1, 64)];
+    const activity = new ChannelActivity(events);
+    activity.reset(0.5);
+    activity.advance(0.9);
+    expect([...activity.activeChannels()]).toEqual([]);
+    activity.advance(1.5);
+    expect([...activity.activeChannels()]).toEqual([1]);
+    // The held channel-0 note's off is ignored (it was never counted).
+    activity.advance(2.5);
+    expect([...activity.activeChannels()]).toEqual([]);
+  });
+
+  it('adopts the pedal state strictly before a seek target only when asked', () => {
+    const events = [cc(0, 0, 64, 127), on(1, 0, 60), off(1.2, 0, 60), cc(3, 0, 64, 0)];
+    const seek = new ChannelActivity(events);
+    seek.reset(0.5, { adoptPedal: true });
+    seek.advance(2);
+    expect([...seek.activeChannels()]).toEqual([0]);
+    seek.advance(3.01);
+    expect([...seek.activeChannels()]).toEqual([]);
+
+    const resume = new ChannelActivity(events);
+    resume.reset(0.5);
+    resume.advance(2);
+    expect([...resume.activeChannels()]).toEqual([]);
+
+    // A pedal-down exactly at the target is not adopted: it plays after it.
+    const exact = new ChannelActivity([cc(1, 0, 64, 127), on(1, 0, 60), off(1.2, 0, 60)]);
+    exact.reset(1, { adoptPedal: true });
+    exact.advance(2);
+    expect([...exact.activeChannels()]).toEqual([0]); // the CC64 at 1 s is played normally
+
+    // A CC121 before the target is re-sent after CC64, leaving the pedal up.
+    const reset = new ChannelActivity([cc(0, 0, 64, 127), cc(0.2, 0, 121, 0), on(1, 0, 60), off(1.2, 0, 60)]);
+    reset.reset(0.5, { adoptPedal: true });
+    reset.advance(2);
+    expect([...reset.activeChannels()]).toEqual([]);
+  });
+
+  it('skips events before `fromIndex` on a resume', () => {
+    const events = [on(1, 0, 60), off(1.5, 0, 60), on(2, 1, 60), off(3, 1, 60)];
+    const activity = new ChannelActivity(events);
+    activity.reset(0.9, { fromIndex: 2 });
+    activity.advance(1.2);
+    expect([...activity.activeChannels()]).toEqual([]);
+    activity.advance(2.5);
+    expect([...activity.activeChannels()]).toEqual([1]);
+  });
+
+  it('visits each event once as the position advances and ignores going backwards', () => {
+    let reads = 0;
+    const base = Array.from({ length: 100 }, (_, i) => on(i * 0.1, i % 16, 60 + (i % 16)));
+    const events = new Proxy(base, {
+      get(target, key, receiver) {
+        if (typeof key === 'string' && /^\d+$/.test(key)) reads += 1;
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    const activity = new ChannelActivity(events);
+    activity.reset(0);
+    reads = 0;
+    for (let t = 0; t <= 11; t += 0.05) activity.advance(t);
+    // One read per applied event plus one boundary read per tick at most.
+    expect(reads).toBeLessThanOrEqual(100 + 221);
+    const before = [...activity.activeChannels()];
+    activity.advance(1);
+    expect(activity.position()).toBeGreaterThan(10);
+    expect([...activity.activeChannels()]).toEqual(before);
   });
 });

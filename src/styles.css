@@ -402,7 +402,9 @@ body {
   cursor: default;
 }
 
-/* The 16 fixed channel cells: lit = used by the playing song. */
+/* The 16 fixed channel cells, a three-step ladder that reads in greyscale:
+   idle = faint outline, used by the playing song = solid double-weight
+   outline, note sounding now (T21) = filled/inverted. */
 .part-strip {
   display: grid;
   grid-template-columns: repeat(16, minmax(0, 1fr));
@@ -423,9 +425,15 @@ body {
 }
 
 .part-cell[data-used='true'] {
+  border-color: var(--lcd-ink);
+  box-shadow: inset 0 0 0 1px var(--lcd-ink);
+}
+
+.part-cell[data-active='true'] {
   background: var(--lcd-ink);
   color: var(--lcd-inv-ink);
   border-color: var(--lcd-ink);
+  box-shadow: none;
 }
 
 .status-region {
@@ -1402,7 +1410,7 @@ button:disabled {
   }
 
   /* 16 cells on one line would touch at this width: two rows of eight stay
-     legible (and the strip is a static view, not a timeline). */
+     legible (the strip is a channel map, not a timeline). */
   .part-strip {
     grid-template-columns: repeat(8, minmax(0, 1fr));
     gap: 2px;

@@ -382,6 +382,14 @@ export class Scheduler {
     this.preRoll.clear();
   }
 
+  /**
+   * Index of the next event the tick loop will send (T21: a resume skips the
+   * events already handed over inside the look-ahead before the pause).
+   */
+  cursorIndex(): number {
+    return this.nextIndex;
+  }
+
   /** True while the song is playing. */
   isPlaying(): boolean {
     return this.t0 !== null;
@@ -517,7 +525,9 @@ export class Scheduler {
         this.sounding.set(e.channel, notes);
       }
       notes.add(e.note);
-    } else if (e.type === 'note-off') {
+    } else if (e.type === 'note-off' || e.type === 'note-on') {
+      // A note-on with velocity 0 is a note-off (the same rule T21's
+      // activity tracker uses), so both notions of "sounding" agree.
       const notes = this.sounding.get(e.channel);
       if (notes !== undefined) {
         notes.delete(e.note);

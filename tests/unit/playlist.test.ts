@@ -404,6 +404,9 @@ describe('PlaylistPlayer', () => {
   /** Wall time the fake scheduler reports from panic()/stop(). */
   let panicWall: number;
   let stopTail: number | null;
+  /** Position (s) and cursor index the fake scheduler reports. */
+  let fakePosition: number;
+  let fakeCursor: number;
 
   const parse = async (f: File): Promise<ParseResult> =>
     f.name.startsWith('bad')
@@ -454,8 +457,12 @@ describe('PlaylistPlayer', () => {
             return panicWall;
           },
           dispose: () => calls.push('dispose'),
-          position: () => 0,
-          seek: (position: number) => calls.push(`seek:${position}`),
+          position: () => fakePosition,
+          cursorIndex: () => fakeCursor,
+          seek: (position: number) => {
+            calls.push(`seek:${position}`);
+            fakePosition = position;
+          },
         };
         schedulers.push(fake);
         return fake;
@@ -472,6 +479,8 @@ describe('PlaylistPlayer', () => {
     storage = memoryStorage();
     panicWall = 100;
     stopTail = null;
+    fakePosition = 0;
+    fakeCursor = 0;
     player = makePlayer();
   });
 
@@ -1101,6 +1110,115 @@ describe('PlaylistPlayer', () => {
 
     player.outputLost();
     expect(player.instrumentsState()).toEqual({ status: 'none' });
+  });
+
+  describe('live channel activity (T21)', () => {
+    /** Channel 0 holds a note 1–3 s, channel 1 holds one 2–4 s; CC64 on 2 at 0.5 s. */
+    const activitySong = (): ParseResult => ({
+      status: 'ok',
+      song: {
+        events: [
+          { type: 'program-change', time: 0, channel: 3, program: 5 },
+          { type: 'control-change', time: 0.5, channel: 2, controller: 64, value: 127 },
+          { type: 'note-on', time: 1, channel: 0, note: 60, velocity: 100 },
+          { type: 'note-on', time: 2, channel: 1, note: 64, velocity: 100 },
+          { type: 'note-off', time: 3, channel: 0, note: 60, velocity: 0 },
+          { type: 'note-off', time: 4, channel: 1, note: 64, velocity: 0 },
+        ],
+        duration: 10,
+        tempos: [],
+        metadata: emptyMetadata(),
+      },
+    });
+    const active = () => [...player.activeChannels()].sort();
+
+    beforeEach(async () => {
+      parseFile = async () => activitySong();
+      player.add([file('a.mid'), file('b.mid')]);
+      player.play();
+      await flush();
+    });
+
+    it('follows the position while playing, from the same event array', () => {
+      expect(active()).toEqual([]);
+      fakePosition = 1.5;
+      expect(active()).toEqual([0]);
+      fakePosition = 2.5;
+      expect(active()).toEqual([0, 1]);
+      fakePosition = 3.5;
+      expect(active()).toEqual([1]);
+      fakePosition = 5;
+      expect(active()).toEqual([]);
+    });
+
+    it('is dark while paused and resumes dark, skipping events already sent', () => {
+      fakePosition = 1.5;
+      expect(active()).toEqual([0]);
+      player.pause();
+      expect(active()).toEqual([]);
+      // The scheduler had already handed over the 2 s note-on before pausing.
+      fakeCursor = 4;
+      player.play();
+      expect(active()).toEqual([]);
+      fakePosition = 2.5;
+      expect(active()).toEqual([]);
+    });
+
+    it('resets on a seek: notes begun before the target stay dark', () => {
+      fakePosition = 1.5;
+      expect(active()).toEqual([0]);
+      player.seek(2.5);
+      expect(active()).toEqual([]);
+      fakePosition = 3.5;
+      expect(active()).toEqual([]);
+      // Backward seek: the 2 s note-on lies after the target and lights.
+      player.seek(1.5);
+      fakePosition = 2.5;
+      expect(active()).toEqual([1]);
+    });
+
+    it('stays dark after a paused seek until resumed past a note-on', () => {
+      player.pause();
+      player.seek(0.8);
+      expect(active()).toEqual([]);
+      player.play();
+      fakePosition = 1.2;
+      expect(active()).toEqual([0]);
+    });
+
+    it('clears on end of song, a track switch, stop and output loss', async () => {
+      // End of song: the between-song gap is dark.
+      fakePosition = 1.5;
+      expect(active()).toEqual([0]);
+      schedulers[0].options.onEnded?.();
+      expect(player.state).toBe('playing');
+      expect(active()).toEqual([]);
+      fakePosition = 0;
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(schedulers).toHaveLength(2);
+      fakePosition = 1.5;
+      expect(active()).toEqual([0]);
+
+      // Track switch: the new song starts dark at 0.
+      player.previous();
+      fakePosition = 0;
+      expect(active()).toEqual([]);
+      await flush();
+      expect(schedulers).toHaveLength(3);
+      expect(active()).toEqual([]);
+      fakePosition = 1.5;
+      expect(active()).toEqual([0]);
+
+      player.stop();
+      expect(active()).toEqual([]);
+
+      player.play();
+      await flush();
+      fakePosition = 1.5;
+      expect(active()).toEqual([0]);
+      player.outputLost();
+      expect(active()).toEqual([]);
+    });
   });
 
   describe('first-run sample seed (T12)', () => {

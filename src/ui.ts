@@ -147,7 +147,7 @@ function partStrip(): string {
     return (
       '<li class="part-cell" data-testid="part-cell" data-channel="' +
       channel +
-      '" data-used="false" aria-label="Channel ' +
+      '" data-used="false" data-active="false" aria-label="Channel ' +
       channel +
       '">' +
       channel +
@@ -783,6 +783,8 @@ export function createUi(root: HTMLElement): void {
 
   /** Last key renderInstruments wrote; ticks only re-render when it changes. */
   let lastInstrumentsSignature = "";
+  /** Channels (1-16) the playing song uses, for the part cells' labels. */
+  let usedChannels = new Set<number>();
 
   function createInstrumentRow(item: ChannelInstrument, program: ChannelProgram): HTMLLIElement {
     const li = document.createElement("li");
@@ -806,7 +808,8 @@ export function createUi(root: HTMLElement): void {
    * marks its channels. The card follows the playback position: each channel
    * shows the program in effect now, so a mid-song program change updates the
    * row as it plays (and a seek back restores the earlier one). The part strip
-   * stays a static view of the channels the song uses.
+   * marks the channels the song uses; `renderActivity` lights the ones with a
+   * note sounding (T21).
    */
   function renderInstruments(): void {
     const state = player.instrumentsState();
@@ -847,16 +850,39 @@ export function createUi(root: HTMLElement): void {
       );
     if (!unchanged) instrumentList.replaceChildren(...rows);
 
-    // The part strip is the static 1-16 view of the same data: lit cells are
+    // The part strip is the 1-16 view of the same data: outlined cells are
     // the channels this song uses, and every cell clears when the song stops.
-    const used = new Set(channels.map((item) => item.channel + 1));
+    usedChannels = new Set(channels.map((item) => item.channel + 1));
+    for (const cell of partCells) {
+      const on = usedChannels.has(Number(cell.dataset.channel));
+      if (cell.dataset.used !== String(on)) cell.dataset.used = String(on);
+    }
+    renderActivity();
+  }
+
+  /**
+   * Live note activity (T21): a filled cell while its channel has a note
+   * sounding. Driven by the progress tick and committed seeks only; the
+   * player returns nothing unless it is playing, so pause, stop, end, output
+   * loss and the between-song gap are dark. Attributes and accessible names
+   * are written only on a transition, and nothing goes to the aria-live
+   * region (this is continuous data, not status).
+   */
+  function renderActivity(): void {
+    const active =
+      player.state === "playing" &&
+      player.instrumentsState().status === "ready"
+        ? player.activeChannels()
+        : null;
     for (const cell of partCells) {
       const channel = Number(cell.dataset.channel);
-      const on = used.has(channel);
-      if (cell.dataset.used !== String(on)) cell.dataset.used = String(on);
+      const on = active !== null && active.has(channel - 1);
+      if (cell.dataset.active !== String(on)) cell.dataset.active = String(on);
       const label = on
-        ? `Channel ${channel}, used by this song`
-        : `Channel ${channel}`;
+        ? `Channel ${channel}, playing`
+        : usedChannels.has(channel)
+          ? `Channel ${channel}, used by this song`
+          : `Channel ${channel}`;
       if (cell.getAttribute("aria-label") !== label)
         cell.setAttribute("aria-label", label);
     }
@@ -911,6 +937,7 @@ export function createUi(root: HTMLElement): void {
     ) {
       renderInstruments();
     }
+    renderActivity();
     const total = currentDuration();
     const seekable = seekableNow();
     if (seekable !== timelineSeekable) {

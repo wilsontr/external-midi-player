@@ -103,7 +103,7 @@ origin stays cleared, exactly as locally.
 | File | Responsibility |
 | --- | --- |
 | `src/midiDevices.ts` | Web MIDI access, output listing, hot-plug, remembering the selected output by name |
-| `src/parser.ts` | Parse `.mid` files into flat, time-sorted event lists (tempo map, channels preserved) |
+| `src/parser.ts` | Parse `.mid` files into flat, time-sorted event lists (tempo map, channels preserved); instrument summary and live channel-activity tracker |
 | `src/scheduler.ts` | Look-ahead scheduler with future-timestamped `MIDIOutput.send()`, note tracking and Panic |
 | `src/synthOutput.ts` | Built-in SpessaSynth output: the bundled GeneralUser GS bank, and a `MIDIOutput` that renders the scheduler's timestamped messages at audio time |
 | `src/playlist.ts` | Playlist entries, load/clear, transport state, background duration parse, auto-advance, seek forwarding, Panic-before-track-switch |
@@ -140,6 +140,13 @@ origin stays cleared, exactly as locally.
   uses and shows the program in effect at the current playback position, so a
   mid-song program change updates its row; pausing or seeking shows the
   program at that position. The channels themselves are listed from the start.
+- **Part strip activity (T21):** in the main LCD's 16-part strip an outlined
+  cell is a channel the playing song uses, and a filled cell is a channel with
+  a note sounding now (held, held by the sustain pedal, or struck within the
+  last 120 ms so short drum hits show). It reads the playback parse at the
+  playhead, not the MIDI wire. Pause, stop, end of song, output loss and a
+  track switch clear it; after a resume or seek, notes that began earlier stay
+  dark (they are not re-struck) and only later note-ons light.
 - **Playlist selection (T15, T18):** a single click selects a row and a
   double click (or the row's Play key) plays it from the start. Selection is
   a dotted outline, playing is the inverted highlight, and a row that is both

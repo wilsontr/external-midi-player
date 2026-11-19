@@ -549,6 +549,198 @@ export function programAt(channel: ChannelInstrument, positionSec: number): Chan
   );
 }
 
+/**
+ * Minimum time (ms) a channel stays active after a note-on (T21), so a note
+ * shorter than the UI's 50 ms progress tick still lights its part cell. This
+ * is a display hold only; it never affects MIDI timing.
+ */
+export const ACTIVITY_HOLD_MS = 120;
+
+/** Sustain pedal (CC64), and the channel-clearing controllers (T21). */
+const CC_SUSTAIN = 64;
+const CC_ALL_SOUND_OFF = 120;
+const CC_RESET_CONTROLLERS = 121;
+const CC_ALL_NOTES_OFF = 123;
+
+export interface ChannelActivityResetOptions {
+  /**
+   * Adopt the sustain-pedal state the file has established strictly before
+   * the position (a seek: the scheduler re-sends that state there). When
+   * false the pedal starts up on every channel (a fresh start or a resume).
+   */
+  adoptPedal?: boolean;
+  /**
+   * Index of the first event the scheduler will still send. A resume passes
+   * it so events already handed over before the pause (inside the look-ahead)
+   * are skipped: they were released on pause and are not sent again.
+   */
+  fromIndex?: number;
+}
+
+/** Per-channel note activity state. */
+interface ChannelNotes {
+  /** Held notes: note number → outstanding note-on count. */
+  held: Map<number, number>;
+  /** Notes released while the pedal was down; cleared when it lifts. */
+  sustained: Set<number>;
+  pedal: boolean;
+  /** Song time (s) of the latest note-on, or -Infinity. */
+  lastNoteOn: number;
+}
+
+/**
+ * Live per-channel note activity (T21), derived from the playback parse.
+ *
+ * A channel is active at the tracked position when it has a held note, a note
+ * released under sustain (until CC64 drops below 64), or a note-on within
+ * `ACTIVITY_HOLD_MS`. The tracker walks the events incrementally: `advance`
+ * visits each event once as the position moves forward, and only `reset`
+ * repositions the cursor. A reset always starts with no notes sounding,
+ * because the scheduler releases notes on pause/seek and never re-strikes a
+ * note that began before the resume or seek point.
+ *
+ * An event counts as played once the position is strictly past its time, so
+ * the tick-0 notes stay dark through the start lead (position 0) and a note
+ * exactly at a seek target lights once playback actually moves.
+ */
+export class ChannelActivity {
+  private readonly events: readonly ParsedMidiEvent[];
+  private readonly channels = new Map<number, ChannelNotes>();
+  private cursor = 0;
+  private positionSec = 0;
+  private readonly holdSec: number;
+
+  constructor(events: readonly ParsedMidiEvent[], holdMs: number = ACTIVITY_HOLD_MS) {
+    this.events = events;
+    this.holdSec = holdMs / 1000;
+  }
+
+  /** The position (seconds) the tracker has advanced to. */
+  position(): number {
+    return this.positionSec;
+  }
+
+  /**
+   * Repositions at `positionSec` with no notes sounding. With `adoptPedal`
+   * the sustain state strictly before the position is adopted (the same
+   * cut-off the scheduler's seek state uses).
+   */
+  reset(positionSec: number, options: ChannelActivityResetOptions = {}): void {
+    const position = Number.isFinite(positionSec) ? Math.max(0, positionSec) : 0;
+    this.channels.clear();
+    this.positionSec = position;
+    this.cursor = Math.min(
+      this.events.length,
+      Math.max(this.firstIndexAtOrAfter(position), options.fromIndex ?? 0),
+    );
+    if (!options.adoptPedal) return;
+    // The scheduler re-sends every controller in number order, so a CC121
+    // anywhere before the target lands after CC64 and leaves the pedal up.
+    const pedal = new Map<number, boolean>();
+    const resetSeen = new Set<number>();
+    for (let i = 0; i < this.cursor; i++) {
+      const e = this.events[i];
+      if (e.type !== 'control-change') continue;
+      if (e.controller === CC_SUSTAIN) pedal.set(e.channel, e.value >= 64);
+      else if (e.controller === CC_RESET_CONTROLLERS) resetSeen.add(e.channel);
+    }
+    for (const [channel, down] of pedal) {
+      if (down && !resetSeen.has(channel)) this.channel(channel).pedal = true;
+    }
+  }
+
+  /**
+   * Moves forward to `positionSec`, applying every event strictly before it.
+   * A position behind the current one is ignored (only `reset` rewinds).
+   */
+  advance(positionSec: number): void {
+    if (!Number.isFinite(positionSec) || positionSec < this.positionSec) return;
+    this.positionSec = positionSec;
+    const epsilon = 1e-9;
+    while (this.cursor < this.events.length) {
+      const e = this.events[this.cursor];
+      if (e.time >= positionSec - epsilon) break;
+      this.apply(e);
+      this.cursor += 1;
+    }
+  }
+
+  /** Channels (0–15) active at the tracked position. */
+  activeChannels(): Set<number> {
+    const active = new Set<number>();
+    for (const [channel, state] of this.channels) {
+      if (
+        state.held.size > 0 ||
+        state.sustained.size > 0 ||
+        this.positionSec - state.lastNoteOn < this.holdSec
+      ) {
+        active.add(channel);
+      }
+    }
+    return active;
+  }
+
+  private apply(e: ParsedMidiEvent): void {
+    if (e.type === 'note-on' && e.velocity > 0) {
+      const state = this.channel(e.channel);
+      state.held.set(e.note, (state.held.get(e.note) ?? 0) + 1);
+      state.lastNoteOn = e.time;
+      return;
+    }
+    if (e.type === 'note-on' || e.type === 'note-off') {
+      const state = this.channels.get(e.channel);
+      const count = state?.held.get(e.note);
+      if (state === undefined || count === undefined) return;
+      if (count > 1) {
+        state.held.set(e.note, count - 1);
+        return;
+      }
+      state.held.delete(e.note);
+      if (state.pedal) state.sustained.add(e.note);
+      return;
+    }
+    if (e.type !== 'control-change') return;
+    if (e.controller === CC_SUSTAIN) {
+      const state = this.channel(e.channel);
+      state.pedal = e.value >= 64;
+      if (!state.pedal) state.sustained.clear();
+    } else if (
+      e.controller === CC_ALL_SOUND_OFF ||
+      e.controller === CC_ALL_NOTES_OFF ||
+      e.controller === CC_RESET_CONTROLLERS
+    ) {
+      const state = this.channels.get(e.channel);
+      if (state === undefined) return;
+      state.held.clear();
+      state.sustained.clear();
+      state.lastNoteOn = -Infinity;
+      if (e.controller === CC_RESET_CONTROLLERS) state.pedal = false;
+    }
+  }
+
+  private channel(channel: number): ChannelNotes {
+    let state = this.channels.get(channel);
+    if (state === undefined) {
+      state = { held: new Map(), sustained: new Set(), pedal: false, lastNoteOn: -Infinity };
+      this.channels.set(channel, state);
+    }
+    return state;
+  }
+
+  /** Index of the first event at/after `positionSec` (events are time-sorted). */
+  private firstIndexAtOrAfter(positionSec: number): number {
+    const epsilon = 1e-9;
+    let lo = 0;
+    let hi = this.events.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.events[mid].time >= positionSec - epsilon) hi = mid;
+      else lo = mid + 1;
+    }
+    return lo;
+  }
+}
+
 /** MIDI default tempo when the file gives none: 120 BPM. */
 const DEFAULT_US_PER_BEAT = 500_000;
 

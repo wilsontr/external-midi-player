@@ -208,7 +208,12 @@ test.describe("T11 — half-rack faceplate", () => {
     expect((await litParts(page)).sort()).toEqual([...rowChannels].sort());
     expect(await page.getByTestId("part-cell").count()).toBe(16);
 
-    // Static: the strip changes only when the playing song changes.
+    // The used-channel map changes only when the playing song changes. The
+    // fixture holds one note for the whole song, so once channel 1 lights
+    // (T21 activity) the strip stays the same.
+    await expect(
+      page.locator('[data-testid="part-cell"][data-channel="1"]'),
+    ).toHaveAttribute("data-active", "true", { timeout: 3000 });
     const stripBefore = await page.getByTestId("part-strip").innerHTML();
     await page.waitForTimeout(700);
     expect(await page.getByTestId("part-strip").innerHTML()).toBe(stripBefore);
