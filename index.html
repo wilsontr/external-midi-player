@@ -3,10 +3,48 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>External MIDI Player</title>
+    <title>External MIDI Player — play MIDI files to your hardware synths</title>
+    <meta
+      name="description"
+      content="Play a playlist of .mid files out to external MIDI hardware and monitor the synth's audio back, right in the browser. Web MIDI in desktop Chrome, Edge and Firefox; no install, no upload."
+    />
+    <meta name="theme-color" content="#22252a" />
+    <link rel="canonical" href="https://wilsontr.github.io/external-midi-player/" />
+
+    <!-- Icons: relative, so they resolve under the GitHub Pages project path (base './'). -->
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+
+    <!-- Open Graph / Twitter: crawlers need absolute URLs, so these name the live site. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="External MIDI Player" />
+    <meta property="og:title" content="External MIDI Player" />
+    <meta
+      property="og:description"
+      content="Play .mid playlists out to your hardware synths and monitor their audio back, right in the browser."
+    />
+    <meta property="og:url" content="https://wilsontr.github.io/external-midi-player/" />
+    <meta property="og:image" content="https://wilsontr.github.io/external-midi-player/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="The player's hardware-style front panel: an amber LCD showing the current song, 16 channel indicators and transport keys"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <noscript>
+        <h1>External MIDI Player</h1>
+        <p>
+          Plays a playlist of .mid files out to external MIDI hardware and monitors that hardware's
+          audio back into the computer. It needs JavaScript and Web MIDI: use a current desktop
+          Chrome, Edge or Firefox.
+        </p>
+      </noscript>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
