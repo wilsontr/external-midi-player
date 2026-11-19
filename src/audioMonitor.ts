@@ -4,10 +4,14 @@
  * the MIDI path. See the design doc, "Audio input routing".
  *
  * Graph: `MediaStreamAudioSourceNode` → `GainNode` (volume / mute) → output.
- * The level meter taps the source *before* the gain stage (through a channel
+ * The level meter taps the sources *before* the gain stage (through a channel
  * splitter and one `AnalyserNode` per channel), so the signal is visible
  * while monitoring is muted — which is how it starts, to avoid a feedback
  * loop when the input is a microphone near the speakers.
+ *
+ * The same bus carries the built-in synth (T24): `attachSource()` puts a
+ * generated source through the same gain and meter tap, so the monitor's
+ * volume, mute, VU ladders and output routing govern SpessaSynth too.
  *
  * Output device routing:
  * - `context`: `AudioContext.setSinkId` (Chrome) — lowest latency.
@@ -20,6 +24,11 @@
  */
 
 export type OutputRouting = 'context' | 'element' | 'default';
+
+/** A generated source (the built-in synth) that can join the monitor bus. */
+export interface MonitorSource {
+  connect(destination: AudioNode): unknown;
+}
 
 export interface AudioDeviceInfo {
   id: string;
@@ -172,6 +181,8 @@ export class AudioMonitor {
   private source: MediaStreamAudioSourceNode | null = null;
   private splitter: ChannelSplitterNode | null = null;
   private analysers: AnalyserNode[] = [];
+  /** Generated sources on the bus (the built-in synth, T24). */
+  private attachedSources: MonitorSource[] = [];
   private audioElement: HTMLAudioElement | null = null;
   private buffer: Float32Array<ArrayBuffer> | null = null;
 
@@ -194,6 +205,23 @@ export class AudioMonitor {
       this.rememberedOutputId = saved.outputId;
       this.rememberedOutputLabel = saved.outputLabel;
     }
+  }
+
+  /**
+   * Puts a generated source (the built-in synth) on the monitor bus: through
+   * the volume/mute gain and into the pre-gain meter tap, so the monitor
+   * controls and VU apply to it (T24). Creates the context if needed.
+   */
+  attachSource(source: MonitorSource): void {
+    this.ensureContext();
+    // Both exist once the context does; the assertion documents that and keeps
+    // a wiring bug loud rather than silently muting the synth.
+    const gain = this.gain!;
+    const meter = this.splitter!;
+    if (this.attachedSources.includes(source)) return;
+    source.connect(gain);
+    source.connect(meter);
+    this.attachedSources.push(source);
   }
 
   /** True when the browser can capture audio at all. */
@@ -343,14 +371,12 @@ export class AudioMonitor {
       return false;
     }
     let source: MediaStreamAudioSourceNode | null = null;
-    let splitter: ChannelSplitterNode | null = null;
     try {
       const context = this.ensureContext();
       source = context.createMediaStreamSource(stream);
       source.connect(this.gain!);
-      splitter = context.createChannelSplitter(2);
-      source.connect(splitter);
-      this.analysers.forEach((analyser, channel) => splitter!.connect(analyser, channel));
+      // The meter tap is shared with the built-in synth (T24).
+      source.connect(this.splitter!);
     } catch {
       // The browser refused to build the graph (no output device, too many
       // contexts, …): release the capture we just opened rather than leaking it.
@@ -371,7 +397,6 @@ export class AudioMonitor {
       }
     });
     this.source = source!;
-    this.splitter = splitter!;
     this.rememberedInputId = id;
     this.rememberedInputLabel = this.inputList.find((d) => d.id === id)?.label ?? '';
     this.resume();
@@ -430,9 +455,14 @@ export class AudioMonitor {
     this.saveSettings();
   }
 
-  /** Peak level per channel, in dBFS, read from the analysers. */
+  /**
+   * Peak level per channel, in dBFS, read from the pre-gain meter tap. Silent
+   * when nothing is on the bus (no capture and no attached synth); an attached
+   * synth keeps it live even while monitoring is muted.
+   */
   peaks(): StereoLevel {
-    if (this.analysers.length < 2 || this.source === null) {
+    const hasSource = this.source !== null || this.attachedSources.length > 0;
+    if (this.analysers.length < 2 || !hasSource) {
       return { left: DB_FLOOR, right: DB_FLOOR };
     }
     const [left, right] = this.analysers.map((analyser) => {
@@ -448,8 +478,10 @@ export class AudioMonitor {
       }
       return toDb(peak);
     });
-    // A mono input only feeds the left channel of the splitter.
-    return { left, right: this.channels < 2 ? left : right };
+    // A mono input only feeds the left channel of the splitter. A synth on the
+    // bus is stereo, so it must not inherit that mirroring.
+    const monoInputOnly = this.channels < 2 && this.attachedSources.length === 0;
+    return { left, right: monoInputOnly ? left : right };
   }
 
   /** The browser's share of the round trip: `baseLatency + outputLatency`, in ms. */
@@ -478,7 +510,10 @@ export class AudioMonitor {
     void this.context?.close();
     this.context = null;
     this.gain = null;
+    this.splitter?.disconnect();
+    this.splitter = null;
     this.analysers = [];
+    this.attachedSources = [];
     if (this.audioElement !== null) {
       this.audioElement.pause();
       this.audioElement.srcObject = null;
@@ -491,10 +526,8 @@ export class AudioMonitor {
     this.stream = null;
     this.source?.disconnect();
     this.source = null;
-    // Disconnect the per-channel meter tap too, so repeated input changes do
-    // not leave old splitters wired into the analysers.
-    this.splitter?.disconnect();
-    this.splitter = null;
+    // The meter tap is permanent (the synth shares it), so it stays wired.
+    this.channels = 2;
     this.inputId = null;
   }
 
@@ -565,8 +598,12 @@ export class AudioMonitor {
     return byLabel.length === 1 ? byLabel[0] : undefined;
   }
 
-  /** Builds the context and the gain → output half of the graph on first use. */
-  private ensureContext(): AudioContext {
+  /**
+   * Builds the context and the gain → output half of the graph on first use,
+   * plus the permanent pre-gain meter tap. Public because the built-in synth
+   * (T24) renders into this same context and bus.
+   */
+  ensureContext(): AudioContext {
     if (this.context !== null) return this.context;
     const options: AudioContextOptions = { latencyHint: 'interactive' };
     const context = this.options.createContext
@@ -579,6 +616,12 @@ export class AudioMonitor {
       analyser.fftSize = 2048;
       return analyser;
     });
+    // One tap for every source on the bus (captured input and the synth), so
+    // the meter keeps working across input changes and with no input at all.
+    const splitter = context.createChannelSplitter(2);
+    this.analysers.forEach((analyser, channel) =>
+      splitter.connect(analyser, channel),
+    );
 
     if (this.routing === 'element') {
       const destination = context.createMediaStreamDestination();
@@ -593,6 +636,7 @@ export class AudioMonitor {
     }
     this.context = context;
     this.gain = gain;
+    this.splitter = splitter;
     void this.applySink();
     return context;
   }

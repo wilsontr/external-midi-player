@@ -126,6 +126,21 @@ export class SynthMidiOutput extends EventTarget implements MIDIOutput {
 export interface SoftwareSynthOptions {
   /** Every user-visible status message funnels through here (single aria-live region). */
   onStatus: (message: string) => void;
+  /**
+   * The audio monitor's bus (T24). When supplied, the synth renders in the
+   * monitor's `AudioContext` and connects through its volume/mute gain and
+   * level-meter tap, so the monitor strip governs the built-in synth too.
+   * Without it the synth keeps its own context, as it did before T24.
+   */
+  monitor?: SynthMonitorBus;
+}
+
+/** The part of `AudioMonitor` the synth needs to play through the monitor. */
+export interface SynthMonitorBus {
+  /** The monitor's shared `AudioContext`, created on first use. */
+  ensureContext(): AudioContext;
+  /** Wires a generated source into the monitor gain and its meter tap. */
+  attachSource(source: { connect(destination: AudioNode): unknown }): void;
 }
 
 /**
@@ -139,6 +154,8 @@ export interface SoftwareSynthOptions {
  */
 export class SoftwareSynth {
   private context: AudioContext | null = null;
+  /** False when the context is the monitor's shared one (T24). */
+  private ownsContext = false;
   private synth: WorkletSynthesizer | null = null;
   private output: SynthMidiOutput | null = null;
   private loading: Promise<void> | null = null;
@@ -195,10 +212,16 @@ export class SoftwareSynth {
   }
 
   private async load(): Promise<void> {
-    // Constructing the context inside the caller's gesture is what lets it
-    // start running without a second click.
-    const context = new AudioContext({ latencyHint: "interactive" });
+    // The monitor's context when one is supplied: the synth then shares its
+    // gain, mute, meter and output device (T24). Constructing the context
+    // inside the caller's gesture is what lets it start running without a
+    // second click.
+    const monitor = this.options.monitor;
+    const context = monitor
+      ? monitor.ensureContext()
+      : new AudioContext({ latencyHint: "interactive" });
     this.context = context;
+    this.ownsContext = monitor === undefined;
     await context.audioWorklet.addModule(processorUrl);
     // Loaded on demand: the library is only downloaded by visitors who
     // actually pick the built-in synth, and this module stays importable
@@ -214,7 +237,8 @@ export class SoftwareSynth {
     }
     const bank = await response.arrayBuffer();
     await synth.soundBankManager.addSoundBank(bank, "generaluser-gs");
-    synth.connect(context.destination);
+    if (monitor === undefined) synth.connect(context.destination);
+    else monitor.attachSource(synth);
     await context.resume();
     this.output = new SynthMidiOutput(synth, () => performance.now(), () => {
       if (context.state !== "running") void context.resume();
@@ -236,7 +260,11 @@ export class SoftwareSynth {
     }
     this.synth = null;
     const context = this.context;
+    const ownsContext = this.ownsContext;
     this.context = null;
-    if (context !== null) void context.close().catch(() => {});
+    this.ownsContext = false;
+    // The monitor's context outlives the synth (it also carries the captured
+    // input), so only a context this class created may be closed.
+    if (context !== null && ownsContext) void context.close().catch(() => {});
   }
 }

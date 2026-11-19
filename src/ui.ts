@@ -275,7 +275,7 @@ export function createUi(root: HTMLElement): void {
               class="meter"
               data-testid="meter"
               role="meter"
-              aria-label="Input level"
+              aria-label="Monitor level"
               aria-valuemin="-100"
               aria-valuemax="0"
               aria-valuenow="-100"
@@ -703,7 +703,16 @@ export function createUi(root: HTMLElement): void {
     return /firefox/i.test(navigator.userAgent);
   }
 
-  const synth = new SoftwareSynth({ onStatus: setStatus });
+  // The monitor bus is created before the synth because the built-in synth
+  // plays into it (T24): the monitor's volume, mute, VU and output routing
+  // then govern the synth exactly as they govern a captured input.
+  const monitor = new AudioMonitor({
+    onStatus: setStatus,
+    onDevicesChanged: () => renderAudioDevices(),
+    onInputLost: () => renderAudioDevices(),
+  });
+
+  const synth = new SoftwareSynth({ onStatus: setStatus, monitor });
 
   const midi = new MidiDevices({
     onStatus: setStatus,
@@ -1729,11 +1738,6 @@ export function createUi(root: HTMLElement): void {
     renderConnectionLed();
   }
 
-  const monitor = new AudioMonitor({
-    onStatus: setStatus,
-    onDevicesChanged: () => renderAudioDevices(),
-    onInputLost: () => renderAudioDevices(),
-  });
   let audioReady = false;
 
   /** (Re)build both audio pickers from the monitor's device lists. */
@@ -1998,7 +2002,13 @@ export function createUi(root: HTMLElement): void {
       midi.clear();
       synth.select();
       if (player.state !== "stopped") player.stop();
-      setStatus("SpessaSynth ready.");
+      // The synth now plays through the monitor bus (T24), so a muted monitor
+      // means silence even though the instrument is ready. Say so, once.
+      setStatus(
+        monitor.muted
+          ? "SpessaSynth ready. The audio monitor is muted - press Mute to hear it."
+          : "SpessaSynth ready.",
+      );
     } catch (error) {
       synth.deselect();
       const detail = error instanceof Error ? error.message : String(error);

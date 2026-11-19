@@ -118,8 +118,11 @@ test.describe('T1 — scaffold and device access', () => {
 
     const howTo = page.getByTestId('how-to');
     await expect(howTo).toBeVisible();
-    await expect(howTo.locator('li')).toHaveCount(6);
+    await expect(howTo.locator('li')).toHaveCount(7);
     await expect(howTo).toContainText('Allow MIDI and microphone access');
+    // The monitor starts muted (R10), which also silences the built-in synth
+    // (T24), so the steps tell the user to turn Mute off.
+    await expect(howTo).toContainText('Disable the MUTE button');
 
     const [titleBox, quickstartBox, unitBox, howToBox, connectBox, expansionBox] =
       await Promise.all([

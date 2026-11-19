@@ -15,9 +15,9 @@ origin stays cleared, exactly as locally.
 | `src/midiDevices.ts`        | Web MIDI access, output listing, hot-plug, remembering the selected output by name                                                                               |
 | `src/parser.ts`             | Parse `.mid` files into flat, time-sorted event lists (tempo map, channels preserved); instrument summary and live channel-activity tracker                      |
 | `src/scheduler.ts`          | Look-ahead scheduler with future-timestamped `MIDIOutput.send()`, note tracking and Panic                                                                        |
-| `src/synthOutput.ts`        | Built-in SpessaSynth output: the bundled GeneralUser GS bank, and a `MIDIOutput` that renders the scheduler's timestamped messages at audio time                 |
+| `src/synthOutput.ts`        | Built-in SpessaSynth output: the bundled GeneralUser GS bank, and a `MIDIOutput` that renders the scheduler's timestamped messages at audio time; renders into the monitor bus (T24)  |
 | `src/playlist.ts`           | Playlist entries, load/clear, transport state, background duration parse, auto-advance, seek forwarding, Panic-before-track-switch                               |
-| `src/audioMonitor.ts`       | Audio input capture, gain/mute, stereo level meter with an accessible dBFS description, output routing, latency                                                  |
+| `src/audioMonitor.ts`       | The shared monitor bus (context, gain/mute, stereo meter tap with an accessible dBFS description, output routing) for captured input and the built-in synth; capture and latency |
 | `src/ui.ts`                 | Half-rack faceplate markup (two units), knob/LED/part-strip wiring, Connect devices flow (MIDI + mic prompts), seekable timeline, single aria-live status region |
 | `src/styles.css`            | Faceplate skin: `:root` design tokens, chassis and LCD textures, responsive rack layout                                                                          |
 | `src/main.ts`               | Entry point                                                                                                                                                      |
@@ -28,8 +28,18 @@ origin stays cleared, exactly as locally.
 ## Behaviour notes
 
 - **Startup mute policy (T8, intentional):** a fresh profile starts with
-  monitoring muted (R10 feedback safety); later visits restore the saved
-  mute/volume instead of forcing mute.
+  monitoring muted (R10 feedback safety), which since T24 also keeps the
+  built-in synth silent until Mute is turned off; later visits restore the
+  saved mute/volume instead of forcing mute.
+- **Monitor bus (T24):** `AudioMonitor` owns the single `AudioContext`, the
+  volume/mute gain and one permanent pre-gain meter tap. The captured input and
+  the built-in synth both feed that bus, so the monitor knob, Mute, the VU
+  ladders and the chosen output device govern both. The synth does not create
+  or close the context; a failed load tears down only the engine. The VU is a
+  signal meter (tap before the gain), so it keeps reading while muted, as it
+  already did for the input. Selecting the built-in synth while muted reports
+  it in the status line; it does not auto-unmute, because unmuting would also
+  unmute a live microphone monitor.
 - **Track metadata (T20):** the song list, LCD title, Instruments caption,
   row-key names and the M3U `#EXTINF` title use the file's `Track Name` when it
   has a usable one (trimmed, non-empty, not `untitled`); otherwise they keep
@@ -105,7 +115,10 @@ origin stays cleared, exactly as locally.
   next/previous, seek and Panic, and only one output (synth or hardware) is
   selected at a time: Connect devices reselecting your remembered hardware
   hands playback back to it, so the picker always shows what is playing. The
-  bank is not remembered across reloads.
+  bank is not remembered across reloads. Its audio goes through the monitor bus
+  (T24), so the Audio monitor strip's volume, Mute, VU and output device apply
+  to it; with the fresh-profile mute still on it is silent, and the status line
+  says so when it is selected.
 - **Song start (T13, T14):** a fresh start sends the file's tick-0 setup
   (program and bank changes, controllers, pitch bend, channel pressure)
   before the clock starts, spread across a 250 ms start lead but never faster

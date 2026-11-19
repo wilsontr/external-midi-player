@@ -30,8 +30,15 @@ function midiFile(seconds: number): number[] {
 
 /**
  * Web MIDI is mocked (no hardware), but the real `AudioContext` is left in
- * place: the whole point of T7 is the AudioWorklet engine. The analyser is
- * spliced into the synth's output so the test can hear that it is playing.
+ * place: the whole point of T7 is the AudioWorklet engine. Two analysers are
+ * spliced into the graph:
+ *
+ * - `__synthProbe.analysers[0]` taps the synth's own output (before the
+ *   monitor gain), so a test can tell "the engine is rendering" from
+ *   "something is audible";
+ * - `__outputProbe.analyser` taps what goes to the speakers (after the monitor
+ *   gain): the `AudioContext` destination on Chrome, or the `<audio>` path's
+ *   `MediaStreamAudioDestinationNode` on Firefox (T24).
  */
 async function setup(page: Page): Promise<void> {
   await blankPlaylist(page);
@@ -41,6 +48,34 @@ async function setup(page: Page): Promise<void> {
       analysers: AnalyserNode[];
       worklets: number;
     };
+    const outputProbe = (window as any).__outputProbe = { analyser: null } as {
+      analyser: AnalyserNode | null;
+    };
+
+    const originalConnect = AudioNode.prototype.connect as any;
+    (AudioNode.prototype as any).connect = function (
+      this: AudioNode,
+      destination: any,
+      ...rest: any[]
+    ) {
+      // Tap whatever is connected to the speakers: the monitor's gain node
+      // reaches `AudioContext.destination` on Chrome and a
+      // `MediaStreamAudioDestinationNode` (the `<audio>` path) on Firefox.
+      const isOutput =
+        destination instanceof AudioDestinationNode ||
+        (typeof MediaStreamAudioDestinationNode !== 'undefined' &&
+          destination instanceof MediaStreamAudioDestinationNode);
+      if (isOutput) {
+        const analyser = this.context.createAnalyser();
+        analyser.fftSize = 2048;
+        originalConnect.call(this, analyser);
+        originalConnect.call(analyser, destination);
+        outputProbe.analyser = analyser;
+        return destination;
+      }
+      return originalConnect.call(this, destination, ...rest);
+    };
+
     const Original = (window as any).AudioWorkletNode;
     class TeeWorkletNode extends Original {
       constructor(context: AudioContext, name: string, options?: AudioWorkletNodeOptions) {
@@ -61,12 +96,27 @@ async function setup(page: Page): Promise<void> {
   await page.goto('/');
 }
 
-/** Root-mean-square of the synth's current output, 0 when silent. */
+/** Root-mean-square of the synth's own output (pre-monitor), 0 when silent. */
 async function rms(page: Page): Promise<number> {
   return page.evaluate(() => {
     const analyser = (window as any).__synthProbe.analysers[0] as
       | AnalyserNode
       | undefined;
+    if (!analyser) return -1;
+    const buffer = new Float32Array(analyser.fftSize);
+    analyser.getFloatTimeDomainData(buffer);
+    let sum = 0;
+    for (const value of buffer) sum += value * value;
+    return Math.sqrt(sum / buffer.length);
+  });
+}
+
+/** Root-mean-square of what reaches the destination (post monitor gain). */
+async function outputRms(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const analyser = (window as any).__outputProbe.analyser as
+      | AnalyserNode
+      | null;
     if (!analyser) return -1;
     const buffer = new Float32Array(analyser.fftSize);
     analyser.getFloatTimeDomainData(buffer);
@@ -92,11 +142,20 @@ async function pressTransport(page: Page, testId: string): Promise<void> {
 }
 const picker = (page: Page) => page.getByTestId('output-picker');
 
+async function unmute(page: Page): Promise<void> {
+  const mute = page.getByTestId('mute-button');
+  if ((await mute.getAttribute('aria-pressed')) === 'true') await mute.click();
+  await expect(mute).toHaveAttribute('aria-pressed', 'false');
+}
+
 async function selectSynth(page: Page): Promise<void> {
   await picker(page).selectOption('builtin-synth');
   await expect(status(page)).toContainText('SpessaSynth ready', {
     timeout: 30_000,
   });
+  // The synth plays through the monitor bus (T24) and a fresh profile starts
+  // muted (R10), so tests that expect sound unmute first.
+  await unmute(page);
 }
 
 async function dropFile(page: Page, seconds = 4): Promise<void> {
@@ -156,14 +215,89 @@ test.describe('T7 — built-in software synth', () => {
     await dropFile(page);
 
     await pressTransport(page, 'play-button');
-    await expect.poll(() => rms(page), { timeout: 10_000 }).toBeGreaterThan(0.005);
+    // What reaches the destination, i.e. after the monitor gain (T24).
+    await expect
+      .poll(() => outputRms(page), { timeout: 10_000 })
+      .toBeGreaterThan(0.005);
 
     await pressTransport(page, 'stop-button');
     await expect(page.getByTestId('playback-state')).toHaveAttribute(
       'data-state',
       'stopped',
     );
-    await expect.poll(() => rms(page), { timeout: 5_000 }).toBeLessThan(0.002);
+    await expect
+      .poll(() => outputRms(page), { timeout: 5_000 })
+      .toBeLessThan(0.002);
+  });
+
+  test('a fresh profile starts muted, says so, and the Mute key makes the synth audible', async ({
+    page,
+  }) => {
+    await setup(page);
+    // Pick the synth without the helper's unmute.
+    await picker(page).selectOption('builtin-synth');
+    await expect(status(page)).toContainText('The audio monitor is muted', {
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('mute-button')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await dropFile(page);
+
+    await pressTransport(page, 'play-button');
+    // The engine is rendering...
+    await expect.poll(() => rms(page), { timeout: 10_000 }).toBeGreaterThan(0.005);
+    // ...but the monitor gain keeps it off the speakers.
+    expect(await outputRms(page)).toBeLessThan(0.002);
+
+    await page.getByTestId('mute-button').click();
+    await expect
+      .poll(() => outputRms(page), { timeout: 5_000 })
+      .toBeGreaterThan(0.005);
+  });
+
+  test('the monitor strip mutes and meters the built-in synth', async ({ page }) => {
+    await setup(page);
+    await selectSynth(page);
+    await dropFile(page);
+
+    await pressTransport(page, 'play-button');
+    await expect
+      .poll(() => outputRms(page), { timeout: 10_000 })
+      .toBeGreaterThan(0.005);
+
+    // The VU reads the synth's output while it plays.
+    const meter = page.getByTestId('meter');
+    await expect(meter).not.toHaveAttribute(
+      'aria-valuetext',
+      'Left −∞ dBFS, Right −∞ dBFS',
+    );
+
+    // Mute silences the speakers but not the engine or the pre-gain meter.
+    await page.getByTestId('mute-button').click();
+    await expect
+      .poll(() => outputRms(page), { timeout: 5_000 })
+      .toBeLessThan(0.002);
+    expect(await rms(page)).toBeGreaterThan(0.005);
+    await expect(meter).not.toHaveAttribute(
+      'aria-valuetext',
+      'Left −∞ dBFS, Right −∞ dBFS',
+    );
+
+    // The volume knob attenuates it too: zero is silent, full is audible.
+    await page.getByTestId('mute-button').click();
+    await expect
+      .poll(() => outputRms(page), { timeout: 5_000 })
+      .toBeGreaterThan(0.005);
+    await page.getByTestId('volume-slider').fill('0');
+    await expect
+      .poll(() => outputRms(page), { timeout: 5_000 })
+      .toBeLessThan(0.002);
+    await page.getByTestId('volume-slider').fill('100');
+    await expect
+      .poll(() => outputRms(page), { timeout: 5_000 })
+      .toBeGreaterThan(0.005);
   });
 
   test('Pause releases the sounding notes on the synth too', async ({ page }) => {

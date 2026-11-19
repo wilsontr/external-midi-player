@@ -66,6 +66,7 @@ function setup(routing: OutputRouting = 'context', storage = memoryStorage()) {
     },
   }));
   let analyserIndex = 0;
+  const sources: Array<{ connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }> = [];
   const context = {
     baseLatency: 0.01,
     outputLatency: 0.02,
@@ -80,7 +81,11 @@ function setup(routing: OutputRouting = 'context', storage = memoryStorage()) {
       splitters.push(splitter);
       return splitter;
     },
-    createMediaStreamSource: vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn() })),
+    createMediaStreamSource: vi.fn(() => {
+      const source = { connect: vi.fn(), disconnect: vi.fn() };
+      sources.push(source);
+      return source;
+    }),
     createMediaStreamDestination: () => ({ stream: {}, connect: vi.fn() }),
   };
   const createContext = vi.fn(() => context as unknown as AudioContext);
@@ -100,7 +105,7 @@ function setup(routing: OutputRouting = 'context', storage = memoryStorage()) {
     storage,
   });
   return {
-    monitor, mediaDevices, context, gain, samples, streams, splitters, statuses, audio, createContext, storage,
+    monitor, mediaDevices, context, gain, samples, streams, splitters, sources, statuses, audio, createContext, storage,
     onDevicesChanged, onInputLost,
     setDevices: (d: MediaDeviceInfo[]) => (devices = d),
     setChannels: (n: number) => (nextChannels = n),
@@ -290,15 +295,56 @@ describe('AudioMonitor', () => {
     expect(t.statuses[t.statuses.length - 1]).toContain('Could not start audio monitoring');
   });
 
-  it('disconnects the previous meter splitter when the input changes', async () => {
+  it('keeps one meter tap across input changes', async () => {
     await t.monitor.unlock();
     await t.monitor.selectInput('in1');
-    const first = t.splitters[0];
-
     await t.monitor.selectInput('in2');
 
-    expect(first.disconnect).toHaveBeenCalled();
-    expect(t.splitters).toHaveLength(2);
+    // The splitter belongs to the bus (the synth shares it), not the capture.
+    expect(t.splitters).toHaveLength(1);
+    expect(t.sources[0].disconnect).toHaveBeenCalled();
+    expect(t.sources[1].connect).toHaveBeenCalledWith(t.splitters[0]);
+  });
+
+  it('puts a generated source on the monitor bus (gain and meter) with no capture', () => {
+    const source = { connect: vi.fn() };
+
+    t.monitor.attachSource(source);
+
+    expect(t.createContext).toHaveBeenCalledTimes(1);
+    expect(source.connect).toHaveBeenCalledWith(t.gain);
+    expect(source.connect).toHaveBeenCalledWith(t.splitters[0]);
+    // The same mute and volume state governs the synth from the start.
+    expect(t.gain.gain.value).toBe(0);
+    t.monitor.setMuted(false);
+    t.monitor.setVolume(0.5);
+    expect(t.gain.gain.value).toBe(0.5);
+  });
+
+  it('reads the attached synth level even with no captured input', () => {
+    t.samples[0] = [0.5];
+    t.samples[1] = [0.25];
+    // Nothing on the bus: silent, even though the fake analysers hold samples.
+    expect(t.monitor.peaks()).toEqual({ left: DB_FLOOR, right: DB_FLOOR });
+
+    t.monitor.attachSource({ connect: vi.fn() });
+
+    const { left, right } = t.monitor.peaks();
+    expect(left).toBeCloseTo(-6.02, 1);
+    expect(right).toBeCloseTo(-12.04, 1);
+  });
+
+  it('does not mirror a mono input when the synth shares the bus', async () => {
+    t.setChannels(1);
+    await t.monitor.unlock();
+    t.monitor.attachSource({ connect: vi.fn() });
+    await t.monitor.selectInput('in1');
+    t.samples[0] = [0.5];
+    t.samples[1] = [0.25];
+
+    const { left, right } = t.monitor.peaks();
+    expect(left).toBeCloseTo(-6.02, 1);
+    expect(right).toBeCloseTo(-12.04, 1);
   });
 
   it('offers only granted outputs and keeps their group on the <audio> path', async () => {

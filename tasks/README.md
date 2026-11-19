@@ -65,8 +65,9 @@ Rules:
 | T21 | [T21-live-channel-note-activity.md](T21-live-channel-note-activity.md) | After the MVP | 0.5–1 day | done |
 | T22 | [T22-faceplate-info-polish.md](T22-faceplate-info-polish.md) | After the MVP | 0.25 day | done |
 | T23 | [T23-status-line-feedback-warning.md](T23-status-line-feedback-warning.md) | After the MVP | 0.05 day | done |
+| T24 | [T24-monitor-controls-for-built-in-synth.md](T24-monitor-controls-for-built-in-synth.md) | After the MVP | 0.5 day | done |
 
-Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8, T10, T15, T17, T18; R3 → T2, T3, T8, T9, T10, T12, T15, T16, T17, T18, T20, T21, T22; R4 → T1; R5 → T2, T5, T7, T13, T14; R6, R7 → T3, T5, T8; R8 → T2; R9 → T4, T8, T15; R10 → T4, T8, T15, T19, T23; R11 → T4, T5; R12 → T3, T8, T15; R13 → T1, T3, T4, T10, T12, T20, T22.
+Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8, T10, T15, T17, T18; R3 → T2, T3, T8, T9, T10, T12, T15, T16, T17, T18, T20, T21, T22; R4 → T1; R5 → T2, T5, T7, T13, T14; R6, R7 → T3, T5, T8; R8 → T2; R9 → T4, T8, T15; R10 → T4, T8, T15, T19, T23, T24; R11 → T4, T5; R12 → T3, T8, T15; R13 → T1, T3, T4, T10, T12, T20, T22.
 
 T6 is a delivery task: it carries no new functional requirement and exercises R1–R13 against the production HTTPS origin. It splits the deploy half out of milestone 5 so the GitHub Pages + CI work can be reviewed on its own.
 
@@ -89,6 +90,8 @@ T21 is a post-MVP presentation add-on: the 16-part strip lights each channel whi
 T22 is a post-MVP presentation polish: the built-in synth is listed as "SpessaSynth (built-in)", the LCD status line is one ellipsized line, an Info key next to Connect devices opens the playing song's metadata, and the Quick start panel becomes "Info" with a player credit and a GitHub link. It adds no new R-ID and changes no playback behaviour.
 
 T23 is a post-MVP de-duplication: the same-input-and-output warning lives only in the notice box under the audio pickers, so the LCD status line no longer repeats it and stays reserved for device and file status. It adds no new R-ID, cites R10, and leaves the monitor starting muted.
+
+T24 is a post-MVP audio-routing fix: the built-in SpessaSynth used to play straight to the system destination, so the monitor's volume, Mute and VU strip did nothing and stayed dark with the internal synth. The synth now renders into the monitor's `AudioContext` and connects through the same gain and meter tap, so the strip's controls, VU and output-device routing govern it exactly as they govern captured input. It adds no new R-ID, cites R10, keeps the startup mute policy (the status line says when the synth is ready but muted), and leaves the scheduler and its timestamped sends untouched.
 
 T19 is a post-MVP interaction refinement: the monitor volume knob changes on a relative vertical drag (up increases, down decreases, Shift for fine steps) like a DAW knob, instead of the native horizontal range drag under the cap. It cites R10, keeps the range input for keyboard and assistive technology, and changes no stored data or audio behaviour.
 
