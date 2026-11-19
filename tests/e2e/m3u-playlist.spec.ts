@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { mockDevices } from './mocks';
+import { blankPlaylist, mockDevices } from './mocks';
 
 const JUNO = { id: 'o1', name: 'Juno-106', manufacturer: 'Roland' };
 
@@ -36,6 +36,7 @@ const nodeBuffer = (
 ).Buffer;
 
 async function setup(page: Page): Promise<void> {
+  await blankPlaylist(page);
   await mockDevices(page, { outputs: [JUNO] });
   await page.goto('/');
   await page.getByTestId('connect-button').click();

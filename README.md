@@ -8,8 +8,7 @@ Vite + TypeScript app, no backend.
 
 - Design (source of truth):
   [`Browser MIDI Playlist Player — MVP Design.md`](docs/Browser%20MIDI%20Playlist%20Player%20%E2%80%94%20MVP%20Design.md)
-- Milestones: [`tasks/`](tasks/README.md) — T1–T11 and T13–T19 are complete;
-  T12 (first-run sample song) is pending.
+- Milestones: [`tasks/`](tasks/README.md) — T1–T19 are complete.
 
 ## Quickstart
 
@@ -113,6 +112,7 @@ origin stays cleared, exactly as locally.
 | `src/styles.css` | Faceplate skin: `:root` design tokens, chassis and LCD textures, responsive rack layout |
 | `src/main.ts` | Entry point |
 | `public/fonts/` | Self-hosted Graph 35+ pix LCD font (CC BY-SA 3.0) with its licence and attribution |
+| `src/assets/` | Bundled assets fetched at runtime: the first-run sample song (CC BY-NC-SA 4.0) and the built-in synth's GeneralUser GS SoundFont |
 | `legacy/t11-pre-faceplate/` | Pre-T11 UI files, kept for a possible swap back |
 
 ## Behaviour notes
@@ -147,6 +147,15 @@ origin stays cleared, exactly as locally.
   `#monitor-volume` range input remains the control and the single source of
   truth: clicking the knob focuses it, the arrow/Home/End keys and the focus
   ring still work, and only its native pointer behaviour is replaced.
+- **First run (T12):** a browser profile whose playlist store has never been
+  written starts with the bundled `Debussy - Poissons d'or` as the current,
+  stopped entry, so Play works before any files are chosen. It arrives through
+  the ordinary add/persist path (numbering, duration, reorder/remove, M3U
+  export and reload all behave normally) and never autoplays. The first stored
+  write makes the store authoritative, so Clear playlist — or removing the row
+  — survives a reload instead of resurrecting the sample; files added while it
+  is still downloading win, and a missing asset reports one status line and
+  leaves the player empty but usable.
 - **Built-in synth (T7):** the MIDI output picker also offers **Built-in
   synth**, which plays through SpessaSynth inside the page and needs no
   hardware or permission — it is selectable before Connect devices is pressed.
@@ -187,6 +196,18 @@ a format conversion of the original TTF. Both files, their unchanged
 `license.txt` and the archive's `readme.txt` ship together in `public/fonts/`;
 see [`public/fonts/README.md`](public/fonts/README.md) for the full attribution.
 The licence covers the font files only, not the application code.
+
+`src/assets/debussy-poissons-dor.mid` is the first-run sample (T12):
+*Poissons d'or* by Claude Debussy (1862–1918, public domain), as a MIDI
+rendition extracted from the **Welte-Mignon T-100 "red Welte"** piano roll by
+the [Stanford University Piano Roll Archive](https://supra.stanford.edu/)
+(SUPRA), roll `jh696my0069`. The file keeps its own provenance text events
+(`@ROLL_TYPE: welte-red`, `@DRUID: jh696my0069`). SUPRA licenses its extracted
+MIDI files **CC BY-NC-SA 4.0**, which is not compatible with the repository's
+MIT claim: the MIT licence covers the application code only, and this asset is
+included unmodified under its own licence. It ships as a 30,352-byte SMF
+(format 1, 570 PPQ, 3 tracks, 3:19) and is then stored in `localStorage` like
+any other playlist row.
 
 `src/assets/GeneralUserGS.sf3` is **GeneralUser GS 2.0.3 BETA** by S. Christian
 Collins, licensed under the author's

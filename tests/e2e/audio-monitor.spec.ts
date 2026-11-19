@@ -1,9 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
-import { mockDevices, type AudioMockOptions } from './mocks';
+import { blankPlaylist, mockDevices, type AudioMockOptions } from './mocks';
 
 const JUNO = { id: 'o1', name: 'Juno-106', manufacturer: 'Roland' };
 
 async function setup(page: Page, audio: AudioMockOptions = {}): Promise<void> {
+  await blankPlaylist(page);
   await mockDevices(page, { outputs: [JUNO], audio });
   await page.goto('/');
   await page.getByTestId('connect-button').click();
@@ -17,6 +18,7 @@ test.describe('T4 — audio monitoring', () => {
   test('pickers are disabled until permission is granted, then show device names', async ({
     page,
   }) => {
+    await blankPlaylist(page);
     await mockDevices(page, { outputs: [JUNO] });
     await page.goto('/');
     await expect(page.getByTestId('audio-input-picker')).toBeDisabled();

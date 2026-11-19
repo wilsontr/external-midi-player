@@ -1,5 +1,5 @@
 import { test, expect, type FileChooser, type Page } from '@playwright/test';
-import { mockDevices } from './mocks';
+import { blankPlaylist, mockDevices } from './mocks';
 
 const JUNO = { id: 'o1', name: 'Juno-106', manufacturer: 'Roland' };
 
@@ -56,6 +56,7 @@ const song = (name: string, seconds = 5, setup: number[] = []): TestFile => ({
 });
 
 async function setup(page: Page): Promise<void> {
+  await blankPlaylist(page);
   await mockDevices(page, { outputs: [JUNO] });
   await page.goto('/');
   armFileChoosers(page);

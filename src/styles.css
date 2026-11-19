@@ -981,6 +981,12 @@ button:disabled {
   flex: 1 1 8em;
   min-width: 0;
   overflow-wrap: anywhere;
+  /* A long name gets the width the slim row frees up, then an ellipsis: rows
+     stay one line at every width (T17, and the 23-character first-run sample
+     at 360 px in T12), and the full name stays in the DOM for screen readers. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .entry-duration {

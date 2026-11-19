@@ -53,7 +53,7 @@ Rules:
 | T9 | [T9-channel-instruments-card.md](T9-channel-instruments-card.md) | After the MVP | 1 day | done |
 | T10 | [T10-m3u-playlist-saving-loading.md](T10-m3u-playlist-saving-loading.md) | After the MVP | 0.5–1 day | done |
 | T11 | [T11-half-rack-faceplate-skin.md](T11-half-rack-faceplate-skin.md) | After the MVP | 2–3 days | done |
-| T12 | [T12-first-run-sample-song.md](T12-first-run-sample-song.md) | After the MVP | 0.25–0.5 day | pending |
+| T12 | [T12-first-run-sample-song.md](T12-first-run-sample-song.md) | After the MVP | 0.25–0.5 day | done |
 | T13 | [T13-start-setup-pre-roll.md](T13-start-setup-pre-roll.md) | After the MVP | 0.5 day | done |
 | T14 | [T14-start-lead-older-hardware.md](T14-start-lead-older-hardware.md) | After the MVP | 0.5 day | done |
 | T15 | [T15-faceplate-refinements.md](T15-faceplate-refinements.md) | After the MVP | 0.5 day | done |

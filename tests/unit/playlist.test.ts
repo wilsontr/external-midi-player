@@ -950,4 +950,140 @@ describe('PlaylistPlayer', () => {
     player.outputLost();
     expect(player.instrumentsState()).toEqual({ status: 'none' });
   });
+
+  describe('first-run sample seed (T12)', () => {
+    const stored = () => {
+      const raw = storage.getItem(PLAYLIST_STORAGE_KEY);
+      return raw === null ? null : (JSON.parse(raw) as { entries: unknown[] });
+    };
+    const sample = () => file("Debussy - Poissons d'or.mid");
+
+    it('seeds a never-written store once, through the ordinary add path', async () => {
+      expect(player.needsSeed()).toBe(true);
+
+      expect(player.seed(sample())).toBe(true);
+      expect(player.playlist.entries).toHaveLength(1);
+      expect(player.playlist.entries[0]!.name).toBe("Debussy - Poissons d'or");
+      expect(player.currentEntry()?.id).toBe(player.playlist.entries[0]!.id);
+      expect(player.needsSeed()).toBe(false);
+
+      // The duration comes from the same background parse as any other row,
+      // and the bytes are written to the store.
+      await flush();
+      expect(player.playlist.entries[0]!.durationSec).toBe(10);
+      expect(stored()?.entries).toHaveLength(1);
+
+      // A second call is a no-op: one sample, not two.
+      expect(player.seed(sample())).toBe(false);
+      expect(player.playlist.entries).toHaveLength(1);
+    });
+
+    it('caches the bytes, so a second persist does not re-read the file', async () => {
+      const file = sample();
+      const read = vi.spyOn(file, 'arrayBuffer');
+      player.seed(file);
+      await player.flushPersistence();
+      expect(read).toHaveBeenCalledTimes(1);
+
+      await player.flushPersistence();
+      expect(read).toHaveBeenCalledTimes(1);
+    });
+
+    it('restores a seeded store without seeding again', async () => {
+      player.seed(sample());
+      await flush();
+
+      const second = makePlayer();
+      expect(second.playlist.entries).toHaveLength(1);
+      expect(second.playlist.entries[0]!.name).toBe("Debussy - Poissons d'or");
+      expect(second.needsSeed()).toBe(false);
+    });
+
+    it('never seeds over an initialised store, even an empty one (Clear stickiness)', () => {
+      const empty = makePlayer(
+        memoryStorage({
+          [PLAYLIST_STORAGE_KEY]: JSON.stringify({ version: 1, currentId: null, entries: [] }),
+        }),
+      );
+      expect(empty.needsSeed()).toBe(false);
+      expect(empty.seed(sample())).toBe(false);
+      expect(empty.playlist.entries).toHaveLength(0);
+    });
+
+    it('never seeds over a restored playlist', async () => {
+      player.add([file('mine.mid')]);
+      await flush();
+      const second = makePlayer();
+      expect(second.playlist.entries).toHaveLength(1);
+      expect(second.needsSeed()).toBe(false);
+    });
+
+    it('treats a corrupt payload as fresh and replaces it', async () => {
+      const corruptStore = memoryStorage({ [PLAYLIST_STORAGE_KEY]: '{not json' });
+      const corrupt = makePlayer(corruptStore);
+      expect(corrupt.needsSeed()).toBe(true);
+      expect(corrupt.seed(sample())).toBe(true);
+      await flush();
+      expect(corrupt.playlist.entries).toHaveLength(1);
+      expect(
+        JSON.parse(corruptStore.getItem(PLAYLIST_STORAGE_KEY)!).entries,
+      ).toHaveLength(1);
+    });
+
+    it('treats a throwing store as fresh and still seeds', () => {
+      const broken = makePlayer({
+        getItem: () => {
+          throw new Error('blocked');
+        },
+        setItem: () => {
+          throw new Error('blocked');
+        },
+      });
+      expect(broken.needsSeed()).toBe(true);
+      expect(() => broken.seed(sample())).not.toThrow();
+      expect(broken.playlist.entries).toHaveLength(1);
+    });
+
+    it('never overrides what the user did first', async () => {
+      const added = makePlayer();
+      added.add([file('mine.mid')]);
+      expect(added.seed(sample())).toBe(false);
+      expect(added.playlist.entries.map((e) => e.name)).toEqual(['mine']);
+
+      const loaded = makePlayer();
+      loaded.load([file('theirs.mid')]);
+      expect(loaded.seed(sample())).toBe(false);
+      expect(loaded.playlist.entries.map((e) => e.name)).toEqual(['theirs']);
+
+      // Clear on an empty list leaves `entries: []`, which emptiness cannot
+      // tell apart from a fresh store — the touched flag is what stops it.
+      const clearedStore = memoryStorage();
+      const cleared = makePlayer(clearedStore);
+      cleared.clear();
+      expect(cleared.seed(sample())).toBe(false);
+      expect(cleared.playlist.entries).toHaveLength(0);
+      await flush();
+      // Clearing an already-empty list has nothing to save, so the store stays
+      // unwritten (and therefore still "fresh"): `touched` is what keeps the
+      // sample out for the rest of this page load.
+      expect(clearedStore.getItem(PLAYLIST_STORAGE_KEY)).toBeNull();
+    });
+
+    it('seeds once per page load when there is no storage to remember it', () => {
+      // `resolveStorage()` returns null in private mode / a sandboxed iframe.
+      const memoryless = makePlayer(null as unknown as PlaylistStorage);
+      expect(memoryless.needsSeed()).toBe(true);
+      expect(memoryless.seed(sample())).toBe(true);
+      expect(memoryless.playlist.entries).toHaveLength(1);
+      expect(memoryless.needsSeed()).toBe(false);
+      expect(() => memoryless.flushPersistence()).not.toThrow();
+    });
+
+    it('rejects a file that is not a MIDI file, with no entry and no write', () => {
+      expect(player.seed(file('notes.txt'))).toBe(false);
+      expect(player.playlist.entries).toHaveLength(0);
+      expect(player.needsSeed()).toBe(true);
+      expect(storage.getItem(PLAYLIST_STORAGE_KEY)).toBeNull();
+    });
+  });
 });

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { mockDevices } from './mocks';
+import { blankPlaylist, mockDevices } from './mocks';
 
 const JUNO = { id: 'o1', name: 'Juno-106', manufacturer: 'Roland' };
 
@@ -34,6 +34,7 @@ function midiFile(seconds: number): number[] {
  * spliced into the synth's output so the test can hear that it is playing.
  */
 async function setup(page: Page): Promise<void> {
+  await blankPlaylist(page);
   await mockDevices(page, { outputs: [JUNO], mockAudio: false });
   await page.addInitScript(() => {
     const probe = (window as any).__synthProbe = { analysers: [], worklets: 0 } as {

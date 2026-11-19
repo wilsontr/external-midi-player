@@ -573,6 +573,12 @@ export class PlaylistPlayer {
   private persistRevision = 0;
   private persistPromise: Promise<void> = Promise.resolve();
   private persistFailed = false;
+  /** True while the store held no usable playlist when the player was built. */
+  private storeWasFresh = false;
+  /** Set by any user action on the list, so seeding never overrides one. */
+  private touched = false;
+  /** Set by the first `seed()`, so a second call is a no-op. */
+  private seedAttempted = false;
 
   private readonly options: PlaylistPlayerOptions;
   private readonly parse: (file: File) => Promise<ParseResult>;
@@ -623,11 +629,47 @@ export class PlaylistPlayer {
   }
 
   /**
+   * True while the bundled sample song (T12) may still fill the playlist: the
+   * store held nothing when the player was built, the user has not touched the
+   * list, nothing has been seeded yet, and the list is still empty.
+   *
+   * Emptiness alone is not enough — Clear playlist leaves `entries: []` — which
+   * is why the store key, not the list, decides.
+   */
+  needsSeed(): boolean {
+    return (
+      this.storeWasFresh &&
+      !this.touched &&
+      !this.seedAttempted &&
+      this.list.entries.length === 0
+    );
+  }
+
+  /**
+   * Seeds the bundled sample through the same path as `add()`, so it gets a
+   * normal id, name and background duration parse, becomes current (the first
+   * ready entry) and is persisted like any other row. Returns false, with no
+   * side effects, when the store is not fresh, the user got there first, or
+   * the file does not look like a MIDI file.
+   */
+  seed(file: File): boolean {
+    if (!this.needsSeed() || !isMidiFileName(file.name)) return false;
+    this.seedAttempted = true;
+    this.touched = true;
+    const entry = createEntry(file);
+    this.dispatch({ type: 'add', entries: [entry] });
+    this.parseQueue.push(entry.id);
+    void this.pumpParseQueue();
+    return true;
+  }
+
+  /**
    * Adds files in the order given. Files without a .mid/.midi extension are
    * rejected; their names are returned. Durations are parsed in the
    * background, one file at a time.
    */
   add(files: File[]): { added: number; rejected: string[] } {
+    this.touched = true;
     const accepted = files.filter((f) => isMidiFileName(f.name));
     const rejected = files.filter((f) => !isMidiFileName(f.name)).map((f) => f.name);
     if (accepted.length > 0) {
@@ -646,6 +688,7 @@ export class PlaylistPlayer {
    * (the first new entry) becomes the current one.
    */
   load(files: File[]): { added: number; rejected: string[] } {
+    this.touched = true;
     const accepted = files.filter((f) => isMidiFileName(f.name));
     const rejected = files.filter((f) => !isMidiFileName(f.name)).map((f) => f.name);
     if (accepted.length === 0) return { added: 0, rejected };
@@ -661,6 +704,7 @@ export class PlaylistPlayer {
 
   /** Stops playback and empties the playlist, persisting the empty list. */
   clear(): void {
+    this.touched = true;
     this.stop();
     this.parseQueue.length = 0;
     this.fileData.clear();
@@ -685,6 +729,7 @@ export class PlaylistPlayer {
   }
 
   remove(id: string): void {
+    this.touched = true;
     if (this.playerState !== 'stopped' && this.list.currentId === id) {
       this.stop();
     }
@@ -692,6 +737,7 @@ export class PlaylistPlayer {
   }
 
   move(id: string, toIndex: number): void {
+    this.touched = true;
     this.dispatch({ type: 'move', id, toIndex });
   }
 
@@ -982,6 +1028,10 @@ export class PlaylistPlayer {
 
   /** Reads the stored playlist into `this.list`; never fires `onChange`. */
   private restore(): void {
+    // "Fresh" means "never written", not "empty": every way of failing to read
+    // a usable playlist counts, so a corrupt payload is replaced like absent
+    // data already is (see the first-run sample, T12).
+    this.storeWasFresh = true;
     if (this.storage === null) return;
     let raw: string | null;
     try {
@@ -997,6 +1047,9 @@ export class PlaylistPlayer {
       return;
     }
     if (!isStoredPlaylist(parsed)) return;
+    // A readable payload — even `entries: []`, which is what Clear playlist
+    // leaves — means the store has been initialised. Never seed over it.
+    this.storeWasFresh = false;
 
     const entries: PlaylistEntry[] = [];
     for (const stored of parsed.entries) {

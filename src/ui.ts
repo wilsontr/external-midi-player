@@ -12,6 +12,9 @@
 import { AudioMonitor, CLIP_THRESHOLD_DB, DB_FLOOR } from "./audioMonitor";
 import { MidiDevices } from "./midiDevices";
 import { SoftwareSynth, SYNTH_OUTPUT_ID, SYNTH_OUTPUT_NAME } from "./synthOutput";
+// The first-run sample (T12). `?url` keeps the emitted URL base-aware and
+// content-hashed, so it works from a GitHub Pages subpath (T6).
+import sampleSongUrl from "./assets/debussy-poissons-dor.mid?url";
 import {
   M3U_MAX_BYTES,
   PlaylistPlayer,
@@ -44,6 +47,24 @@ const ENTRY_DRAG_TYPE = "application/x-midi-entry";
 
 /** Whether the printed Quick start label is expanded ("1") or collapsed ("0"). */
 const QUICKSTART_STORAGE_KEY = "external-midi-player.quickstart-expanded";
+
+/**
+ * Display name of the bundled first-run song (T12). Its asset file name is
+ * URL-safe and deliberately different from what the playlist row reads.
+ */
+const SAMPLE_SONG_NAME = "Debussy - Poissons d'or";
+
+/** True when `bytes` start with an SMF `MThd` header chunk. */
+function hasMidiHeader(bytes: ArrayBuffer): boolean {
+  const head = new Uint8Array(bytes, 0, Math.min(4, bytes.byteLength));
+  return (
+    head.length === 4 &&
+    head[0] === 0x4d &&
+    head[1] === 0x54 &&
+    head[2] === 0x68 &&
+    head[3] === 0x64
+  );
+}
 
 /** Level LEDs per meter ladder; the red clip light is the twelfth segment. */
 const LADDER_SEGMENTS = 11;
@@ -1771,4 +1792,35 @@ export function createUi(root: HTMLElement): void {
   // The player restores a saved playlist without emitting a change; show it.
   renderPlaylist();
   renderInstruments();
+  void seedSampleSong();
+
+  /**
+   * First-run sample (T12): a profile whose playlist store has never been
+   * written starts with the bundled song, on the ordinary add/persist path, so
+   * the transport, LCD and part map have something to play before the user has
+   * picked any files. Fire-and-forget: it must not delay first paint or block
+   * Connect devices, and it never throws.
+   *
+   * Success is silent — the row and its duration are the feedback. Failure says
+   * one line in the status region and leaves the app fully usable, and is not
+   * retried this session.
+   */
+  async function seedSampleSong(): Promise<void> {
+    if (!player.needsSeed()) return;
+    try {
+      const response = await fetch(sampleSongUrl);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const bytes = await response.arrayBuffer();
+      // Re-check after every await: the user may have added, loaded or cleared
+      // files while this was in flight, and the sample must never override them.
+      if (!player.needsSeed()) return;
+      // An error page or a truncated asset must not become a persisted row.
+      if (!hasMidiHeader(bytes)) throw new Error("not a MIDI file");
+      player.seed(
+        new File([bytes], `${SAMPLE_SONG_NAME}.mid`, { type: "audio/midi" }),
+      );
+    } catch {
+      setStatus("Could not load the sample song — add files to start.");
+    }
+  }
 }

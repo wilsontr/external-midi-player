@@ -2,7 +2,7 @@
 
 - **ID**: T12
 - **Milestone**: After the MVP
-- **Status**: pending
+- **Status**: done
 - **Estimate**: 0.25–0.5 day
 - **Depends on**: T3, T5
 - **Modules**: `src/assets/debussy-poissons-dor.mid` (new asset), `src/playlist.ts` (fresh-store detection, seed), `src/ui.ts` (startup fetch and wiring), unit and e2e tests, `README.md`
@@ -71,17 +71,17 @@ On a browser profile whose playlist store has never been written, start with the
 
 ## Acceptance criteria
 
-- [ ] On a profile where `external-midi-player.playlist` has never been written, exactly one row named `Debussy - Poissons d'or` is present and current, its duration fills in as `3:19`, and the app still starts stopped.
-- [ ] A stored empty playlist (Clear playlist) and any stored playlist with entries both suppress seeding; the empty state survives a reload after Clear or after removing the sample row.
-- [ ] Seeding happens at most once per store: a reload restores the row from `localStorage` and makes no second request for the sample asset (match the emitted hashed URL by its `debussy-poissons-dor` prefix).
-- [ ] Seeding never overrides user input: add, load or clear before the fetch resolves leaves the user's playlist intact and does not insert the sample.
-- [ ] A missing, non-ok, empty or non-`MThd` asset leaves the playlist empty, reports exactly one status line in the single `aria-live` region, and leaves Connect devices, add/load files and transport working.
-- [ ] The seeded song plays, seeks, auto-advances, appears in the T9 instrument card and is included by Save playlist, with no change to Load playlist semantics; the part strip and card show channels 2 and 3, with a default-program entry for the channel that has no program change.
-- [ ] No new runtime dependency, no new module, no new UI panel or control, and no request outside the app's own origin (T5 CSP unchanged); the asset URL is base-aware so the build works at a subpath.
-- [ ] Seed success is silent and does not overwrite the startup status; the README records the file's origin, its Welte roll provenance and its actual licence, with the repo's MIT claim scoped to the code.
-- [ ] The 360 px layout, keyboard access and existing test ids are unchanged, and the longer sample name truncates rather than overflowing.
-- [ ] `npx vitest run`, `npx playwright test` and `npx tsc --noEmit` pass, with the pre-existing e2e specs updated to start from a deliberately blank playlist.
-- [ ] The task index, requirements coverage and design doc are updated.
+- [x] On a profile where `external-midi-player.playlist` has never been written, exactly one row named `Debussy - Poissons d'or` is present and current, its duration fills in as `3:19`, and the app still starts stopped.
+- [x] A stored empty playlist (Clear playlist) and any stored playlist with entries both suppress seeding; the empty state survives a reload after Clear or after removing the sample row.
+- [x] Seeding happens at most once per store: a reload restores the row from `localStorage` and makes no second request for the sample asset (match the emitted hashed URL by its `debussy-poissons-dor` prefix).
+- [x] Seeding never overrides user input: add, load or clear before the fetch resolves leaves the user's playlist intact and does not insert the sample.
+- [x] A missing, non-ok, empty or non-`MThd` asset leaves the playlist empty, reports exactly one status line in the single `aria-live` region, and leaves Connect devices, add/load files and transport working.
+- [x] The seeded song plays, seeks, auto-advances, appears in the T9 instrument card and is included by Save playlist, with no change to Load playlist semantics; the part strip and card show channels 2 and 3, with a default-program entry for the channel that has no program change.
+- [x] No new runtime dependency, no new module, no new UI panel or control, and no request outside the app's own origin (T5 CSP unchanged); the asset URL is base-aware so the build works at a subpath.
+- [x] Seed success is silent and does not overwrite the startup status; the README records the file's origin, its Welte roll provenance and its actual licence, with the repo's MIT claim scoped to the code.
+- [x] The 360 px layout, keyboard access and existing test ids are unchanged, and the longer sample name truncates rather than overflowing.
+- [x] `npx vitest run`, `npx playwright test` and `npx tsc --noEmit` pass, with the pre-existing e2e specs updated to start from a deliberately blank playlist.
+- [x] The task index, requirements coverage and design doc are updated.
 
 ## Notes
 
@@ -96,3 +96,14 @@ On a browser profile whose playlist store has never been written, start with the
 - **Test seam.** `blankPlaylist()` writes the empty payload only when the key is absent, which is exactly "initialized but empty". It therefore does not need a test-only flag in the app, and it keeps reload-restore tests meaningful because the app's own writes are never overwritten.
 - **Out of scope:** more than one bundled song, a sample/demo picker or panel, autoplay, an IndexedDB or offline store, re-seeding after the user removes the row, cross-tab coordination, and the existing `styles.css` `/fonts/` absolute URLs (T6's concern, not this ticket's).
 - **Docs:** the design doc's Playlist → Persistence bullet, the "After the MVP" bullet, the T12 index row and the R3/R13 coverage lists are part of this ticket; leave the implementation-facing decisions for a "Decisions as implemented" subsection once the task is done.
+
+### Decisions as implemented
+
+- **Fresh means "never written".** `restore()` records `storeWasFresh` before it reads anything: an absent key, a throwing `getItem`, invalid JSON, or a payload that is not a `StoredPlaylist` all leave it true; a readable payload — including `entries: []` from Clear playlist — sets it false. `needsSeed()` is `storeWasFresh && !touched && !seedAttempted && entries.length === 0`, so an empty list alone never re-seeds.
+- **`touched` is set by every public playlist mutation** (`add`, `load`, `clear`, `remove`, `move`, `seed`). This is what stops the sample when the user clears or removes before the fetch resolves; `clear()` on an already-empty list writes nothing (the reducer returns the same state), so the store stays unwritten and the sample returns on the next page load. That case is only reachable by pressing Clear in the instant before the sample arrives.
+- **No storage (private mode, sandboxed iframe):** there is no marker, so the sample seeds once per page load and nothing is written; `flushPersistence()` stays a no-op. Documented behaviour, not a bug.
+- **Wiring.** `ui.ts` fetches `sampleSongUrl` fire-and-forget next to the initial `renderPlaylist()`, checks `response.ok`, the body and an `MThd` header, re-checks `needsSeed()` after every `await`, then calls `player.seed(new File(...))`. Success is silent; any failure sets exactly one status line (`Could not load the sample song — add files to start.`) and is not retried that session. The asset is imported with `?url`, so the built app requests `assets/debussy-poissons-dor-<hash>.mid` from its own origin (initial bundle +1.1 kB, CSP unchanged).
+- **Rows truncate.** `.entry-name` gained `white-space: nowrap; overflow: hidden; text-overflow: ellipsis` — there was no existing ellipsis rule, and without it the 23-character sample name wrapped onto a second line at 360 px instead of truncating. The full name stays in the DOM for screen readers.
+- **Program changes (ticket correction).** The file has a program change on **both** channels 2 and 3 (program 0 on each), so there is no implicit-default-program row to show in the T9 card; the card reads "Acoustic Grand Piano · program 1" on both channels. The default-program path remains covered by the T9 unit tests. Everything else in the file's description matches: 30,352 bytes, format 1, 570 PPQ, 3 tracks, 3:19, channels 2–3, no SysEx.
+- **Test seam.** `blankPlaylist(page)` writes `{version:1,currentId:null,entries:[]}` only when the key is absent, before the app reads it. It is used by `transport-playlist`, `player-refinements`, `m3u-playlist`, `instruments-card`, `t11-faceplate`, `audio-monitor` and (added since the ticket was written) `software-synth`, which also assumes a blank playlist. `device-access`, `volume-knob` and `sample-song` deliberately keep the seeded row.
+- **Persistence is debounced**, so the tests wait for the stored payload (Clear, and removing the last row) before reloading; a human reload always lands after the tick.

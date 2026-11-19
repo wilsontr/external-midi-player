@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { PLAYLIST_STORAGE_KEY } from '../../src/playlist';
 
 /**
  * Installs Web MIDI + getUserMedia mocks before the app code runs.
@@ -53,6 +54,29 @@ export interface MidiMockOptions {
   failRequest?: boolean;
   /** navigator.requestMIDIAccess is absent (unsupported browser). */
   noRequest?: boolean;
+}
+
+/**
+ * Marks the playlist store as "initialised but empty", opting a spec out of the
+ * first-run sample song (T12). The app seeds that sample only when the key has
+ * never been written, so this must land before the app reads it.
+ *
+ * The key is written only when it is absent: a spec's own writes are never
+ * overwritten, so reload-restore assertions stay honest.
+ */
+export async function blankPlaylist(page: Page): Promise<void> {
+  await page.addInitScript((key) => {
+    try {
+      if (localStorage.getItem(key) === null) {
+        localStorage.setItem(
+          key,
+          JSON.stringify({ version: 1, currentId: null, entries: [] }),
+        );
+      }
+    } catch {
+      // Storage unavailable (private mode): nothing to seed over anyway.
+    }
+  }, PLAYLIST_STORAGE_KEY);
 }
 
 export async function mockDevices(
