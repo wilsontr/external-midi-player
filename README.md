@@ -2,6 +2,8 @@
 
 Browser-based MIDI playlist player: plays `.mid` files out to external MIDI hardware and plays back that hardware's audio via your audio interface. Static Vite + TypeScript app, no backend.
 
+[Live player here.](https://wilsontr.github.io/external-midi-player/)
+
 ![External MIDI Player with a loaded playlist, the current song playing and the live instrument card](docs/player.png)
 
 ## Features
