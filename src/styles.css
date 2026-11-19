@@ -9,11 +9,11 @@
  */
 
 @font-face {
-  font-family: 'Graph 35 Pix';
+  font-family: "Graph 35 Pix";
   /* Absolute public paths so Vite can rebase them for a non-root `base`. */
   src:
-    url('/fonts/graph-35-pix.woff2') format('woff2'),
-    url('/fonts/graph-35-pix.ttf') format('truetype');
+    url("/fonts/graph-35-pix.woff2") format("woff2"),
+    url("/fonts/graph-35-pix.ttf") format("truetype");
   font-display: swap;
 }
 
@@ -91,12 +91,16 @@ body {
 }
 
 body {
-  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-weight: 400;
   letter-spacing: 0;
   color: var(--silk);
   background-color: var(--chassis-deep);
-  background-image: radial-gradient(circle at 50% 0, var(--page-glow), transparent 68%);
+  background-image: radial-gradient(
+    circle at 50% 0,
+    var(--page-glow),
+    transparent 68%
+  );
   background-repeat: no-repeat;
 }
 
@@ -237,7 +241,7 @@ body {
 .silk-label {
   display: block;
   margin: 0 0 6px;
-  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0;
@@ -246,7 +250,7 @@ body {
 }
 
 .silk-caption {
-  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0;
@@ -280,12 +284,16 @@ body {
   position: relative;
   min-width: 0;
   padding: 10px 12px;
-  font-family: 'Graph 35 Pix', 'Courier New', monospace;
+  font-family: "Graph 35 Pix", "Courier New", monospace;
   font-size: 16px;
   line-height: 1.35;
   color: var(--lcd-ink);
   background-color: var(--lcd-bg);
-  background-image: radial-gradient(circle, var(--lcd-grid) 0 1px, transparent 1.1px);
+  background-image: radial-gradient(
+    circle,
+    var(--lcd-grid) 0 1px,
+    transparent 1.1px
+  );
   background-size: 4px 4px;
   border: 1px solid var(--lcd-edge);
   border-radius: 3px;
@@ -300,7 +308,7 @@ body {
 
 /* Glass glare: a thin diagonal sheen over the dot matrix. */
 .lcd::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
@@ -343,7 +351,7 @@ body {
   line-height: 1.2;
 }
 
-.lcd-state[data-state='playing'] {
+.lcd-state[data-state="playing"] {
   background: var(--lcd-ink);
   color: var(--lcd-inv-ink);
 }
@@ -356,8 +364,9 @@ body {
   max-height: 2.3em;
   margin: 6px 0;
   overflow: hidden;
-  font-family: 'Graph 35 Pix', 'Courier New', 'Hiragino Sans', 'Noto Sans JP',
-    'Noto Sans CJK JP', monospace;
+  font-family:
+    "Graph 35 Pix", "Courier New", "Hiragino Sans", "Noto Sans JP",
+    "Noto Sans CJK JP", monospace;
   font-size: 32px;
   line-height: 1.15;
   min-height: 1.15em;
@@ -424,12 +433,12 @@ body {
   border-radius: 2px;
 }
 
-.part-cell[data-used='true'] {
+.part-cell[data-used="true"] {
   border-color: var(--lcd-ink);
   box-shadow: inset 0 0 0 1px var(--lcd-ink);
 }
 
-.part-cell[data-active='true'] {
+.part-cell[data-active="true"] {
   background: var(--lcd-ink);
   color: var(--lcd-inv-ink);
   border-color: var(--lcd-ink);
@@ -582,13 +591,18 @@ button:disabled {
   gap: 6px;
   min-height: 32px;
   padding: 6px 12px;
-  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0;
   text-transform: uppercase;
   color: var(--key-ink);
-  background: linear-gradient(180deg, var(--key-hi), var(--key) 45%, var(--key-lo));
+  background: linear-gradient(
+    180deg,
+    var(--key-hi),
+    var(--key) 45%,
+    var(--key-lo)
+  );
   border: 1px solid var(--key-edge);
   border-radius: 3px;
   box-shadow:
@@ -651,7 +665,12 @@ button:disabled {
 
 .key-panic {
   min-width: 56px;
-  background: linear-gradient(180deg, var(--key-panic-hi), var(--key-panic) 45%, var(--key-panic-lo));
+  background: linear-gradient(
+    180deg,
+    var(--key-panic-hi),
+    var(--key-panic) 45%,
+    var(--key-panic-lo)
+  );
   color: var(--silk);
 }
 
@@ -722,21 +741,21 @@ button:disabled {
   background: var(--led-red-dim);
 }
 
-.led-red[data-lit='true'] {
+.led-red[data-lit="true"] {
   background: var(--led-red);
   box-shadow:
     0 0 7px var(--led-red),
     inset 0 0 0 1px var(--chassis-deep);
 }
 
-.led-green[data-lit='true'] {
+.led-green[data-lit="true"] {
   background: var(--led-green);
   box-shadow:
     0 0 7px var(--led-green),
     inset 0 0 0 1px var(--chassis-deep);
 }
 
-.led-amber[data-lit='true'] {
+.led-amber[data-lit="true"] {
   background: var(--led-amber);
   box-shadow:
     0 0 7px var(--led-amber),
@@ -749,14 +768,14 @@ button:disabled {
 }
 
 /* Connect key state: red until MIDI access and an output are present. */
-.led-connect[data-state='connected'] {
+.led-connect[data-state="connected"] {
   background: var(--led-green);
   box-shadow:
     0 0 7px var(--led-green),
     inset 0 0 0 1px var(--chassis-deep);
 }
 
-.led-connect[data-state='disconnected'] {
+.led-connect[data-state="disconnected"] {
   background: var(--led-red);
   box-shadow:
     0 0 7px var(--led-red),
@@ -772,14 +791,14 @@ button:disabled {
   height: 6px;
 }
 
-.led-play[data-state='playing'] {
+.led-play[data-state="playing"] {
   background: var(--led-green);
   box-shadow:
     0 0 7px var(--led-green),
     inset 0 0 0 1px var(--chassis-deep);
 }
 
-.led-play[data-state='paused'] {
+.led-play[data-state="paused"] {
   background: var(--led-amber);
   box-shadow:
     0 0 7px var(--led-amber),
@@ -828,7 +847,7 @@ button:disabled {
   background: var(--led-green-dim);
 }
 
-.ladder .led-green[data-lit='true'] {
+.ladder .led-green[data-lit="true"] {
   background: var(--led-green);
   box-shadow: 0 0 5px var(--led-green);
 }
@@ -837,7 +856,7 @@ button:disabled {
   background: var(--led-amber-dim);
 }
 
-.ladder .led-amber[data-lit='true'] {
+.ladder .led-amber[data-lit="true"] {
   background: var(--led-amber);
   box-shadow: 0 0 5px var(--led-amber);
 }
@@ -866,7 +885,7 @@ button:disabled {
 }
 
 .select-wrap::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 50%;
   right: 8px;
@@ -883,7 +902,7 @@ button:disabled {
   width: 100%;
   min-width: 0;
   padding: 4px 22px 4px 6px;
-  font-family: 'Graph 35 Pix', 'Courier New', monospace;
+  font-family: "Graph 35 Pix", "Courier New", monospace;
   font-size: 16px;
   line-height: 1.3;
   color: var(--lcd-ink);
@@ -939,7 +958,7 @@ button:disabled {
 .playlist-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
   padding: 4px;
   font-size: 16px;
@@ -950,7 +969,7 @@ button:disabled {
 /* The dotted outline means "selected". Focus stays on the focused row key
    (the global :focus-visible ring), so a playing row whose Play key was last
    clicked does not keep a selection-looking outline. */
-.playlist-row[data-selected='true'] {
+.playlist-row[data-selected="true"] {
   outline: 2px dashed var(--lcd-ink);
   outline-offset: -2px;
 }
@@ -961,7 +980,7 @@ button:disabled {
   border-bottom-color: var(--lcd-ink);
 }
 
-.playlist-row.current[data-selected='true'] {
+.playlist-row.current[data-selected="true"] {
   outline-color: var(--lcd-inv-ink);
 }
 
@@ -978,11 +997,11 @@ button:disabled {
   box-shadow: 0 2px 0 var(--lcd-ink);
 }
 
-.playlist-row[data-status='error'] {
+.playlist-row[data-status="error"] {
   color: var(--lcd-ink-dim);
 }
 
-.playlist-row[data-status='error'] .entry-name {
+.playlist-row[data-status="error"] .entry-name {
   text-decoration: line-through;
 }
 
@@ -1017,8 +1036,9 @@ button:disabled {
   overflow-wrap: anywhere;
   /* The file's Track Name may be Japanese; keep the pixel font for Latin and
      fall through to a system CJK face for glyphs it does not have (T20). */
-  font-family: 'Graph 35 Pix', 'Courier New', 'Hiragino Sans', 'Noto Sans JP',
-    'Noto Sans CJK JP', monospace;
+  font-family:
+    "Graph 35 Pix", "Courier New", "Hiragino Sans", "Noto Sans JP",
+    "Noto Sans CJK JP", monospace;
   /* A long name gets the width the slim row frees up, then an ellipsis: rows
      stay one line at every width (T17, and the 23-character first-run sample
      at 360 px in T12), and the full name stays in the DOM for screen readers. */
@@ -1113,8 +1133,9 @@ button:disabled {
 
 .metadata-heading {
   margin: 2px 0;
-  font-family: 'Graph 35 Pix', 'Courier New', 'Hiragino Sans', 'Noto Sans JP',
-    'Noto Sans CJK JP', monospace;
+  font-family:
+    "Graph 35 Pix", "Courier New", "Hiragino Sans", "Noto Sans JP",
+    "Noto Sans CJK JP", monospace;
   font-size: 24px;
   font-weight: 400;
   line-height: 1.2;
@@ -1123,8 +1144,9 @@ button:disabled {
 
 .metadata-filename {
   margin: 0;
-  font-family: 'Graph 35 Pix', 'Courier New', 'Hiragino Sans', 'Noto Sans JP',
-    'Noto Sans CJK JP', monospace;
+  font-family:
+    "Graph 35 Pix", "Courier New", "Hiragino Sans", "Noto Sans JP",
+    "Noto Sans CJK JP", monospace;
   font-size: 16px;
   color: var(--lcd-ink-dim);
   overflow-wrap: anywhere;
@@ -1183,7 +1205,9 @@ button:disabled {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   tab-size: 4;
-  font-family: 'Graph 35 Pix', 'Courier New', 'Hiragino Sans', 'Noto Sans JP', 'Noto Sans CJK JP', monospace;
+  font-family:
+    "Graph 35 Pix", "Courier New", "Hiragino Sans", "Noto Sans JP",
+    "Noto Sans CJK JP", monospace;
 }
 
 .metadata-foot {
@@ -1207,8 +1231,9 @@ button:disabled {
   margin: 0 0 6px;
   font-size: 16px;
   overflow-wrap: anywhere;
-  font-family: 'Graph 35 Pix', 'Courier New', 'Hiragino Sans', 'Noto Sans JP',
-    'Noto Sans CJK JP', monospace;
+  font-family:
+    "Graph 35 Pix", "Courier New", "Hiragino Sans", "Noto Sans JP",
+    "Noto Sans CJK JP", monospace;
 }
 
 .instrument-list {
@@ -1361,7 +1386,7 @@ button:disabled {
 }
 
 .notice::before {
-  content: '';
+  content: "";
   flex: 0 0 auto;
   width: 6px;
   height: 6px;

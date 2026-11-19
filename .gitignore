@@ -6,3 +6,4 @@ coverage/
 .pi/
 tmp
 .DS_Store
+.claude
