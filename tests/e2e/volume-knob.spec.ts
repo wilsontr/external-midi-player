@@ -200,9 +200,9 @@ test.describe('T19 — Ableton-style volume knob drag', () => {
     const control = page.getByRole('slider', { name: 'Volume' });
     await expect(control).toBeVisible();
 
-    // The documented tab order is unchanged: the Volume control follows Quick
-    // start's toggle and the two font-credit links.
-    for (let i = 0; i < 4; i += 1) await page.keyboard.press('Tab');
+    // The documented tab order is unchanged: the Volume control follows the
+    // Info panel's toggle, the two font-credit links and the GitHub link.
+    for (let i = 0; i < 5; i += 1) await page.keyboard.press('Tab');
     await expect(control).toBeFocused();
     const outline = await knob(page).evaluate(
       (el) => getComputedStyle(el).outlineStyle,

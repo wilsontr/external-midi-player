@@ -50,6 +50,9 @@ const ENTRY_DRAG_TYPE = "application/x-midi-entry";
 /** Whether the printed Quick start label is expanded ("1") or collapsed ("0"). */
 const QUICKSTART_STORAGE_KEY = "external-midi-player.quickstart-expanded";
 
+/** GitHub mark (Octicons "mark-github", MIT), drawn in currentColor. */
+const GITHUB_ICON = `<svg class="github-icon" viewBox="0 0 16 16" width="24" height="24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>`;
+
 /**
  * Display name of the bundled first-run song (T12). Its asset file name is
  * URL-safe and deliberately different from what the playlist row reads.
@@ -166,14 +169,14 @@ export function createUi(root: HTMLElement): void {
     <div class="rack">
       <section class="quickstart" data-testid="quickstart" aria-labelledby="quickstart-heading">
         <div class="quickstart-head">
-          <h2 class="silk-label" id="quickstart-heading">Quick start</h2>
+          <h2 class="silk-label" id="quickstart-heading">Info</h2>
           <button
             type="button"
             class="rubber-key quickstart-toggle"
             data-testid="quickstart-toggle"
             aria-expanded="true"
             aria-controls="quickstart-body"
-          >Hide quick start</button>
+          >Hide info</button>
         </div>
         <div class="quickstart-body" id="quickstart-body">
           <p class="how-to-intro">
@@ -200,12 +203,26 @@ export function createUi(root: HTMLElement): void {
             talk to your MIDI hardware. Click "Connect devices", then allow the
             permission when asked.
           </p>
+          <div class="info-foot">
+          <div class="info-credits">
+          <p class="font-credit" data-testid="player-credit">Player by Trevor Wilson</p>
           <p class="font-credit">
             LCD font:
             <a href="http://fontstruct.com/fontstructions/show/664062" rel="license noopener" target="_blank">Graph 35+ pix</a>
             by 30100flo,
             <a href="https://creativecommons.org/licenses/by-sa/3.0/" rel="license noopener" target="_blank">CC BY-SA 3.0</a>
           </p>
+          </div>
+          <a
+            class="github-link"
+            data-testid="github-link"
+            href="https://github.com/wilsontr/external-midi-player"
+            rel="noopener"
+            target="_blank"
+            aria-label="Source on GitHub"
+            title="Source on GitHub"
+          >${GITHUB_ICON}</a>
+          </div>
         </div>
       </section>
       <header class="unit unit-front" data-testid="header" aria-label="App header">
@@ -337,6 +354,7 @@ export function createUi(root: HTMLElement): void {
               The input and output are the same device. Unmute with care: a microphone near the
               speakers can cause feedback.
             </p>
+            <div class="transport-block">
             <div class="keypad" data-testid="keypad" role="group" aria-label="Transport">
               <div class="key-cell">
                 <button type="button" class="rubber-key key-transport" data-testid="previous-button" aria-label="⏮ Previous">${icon("previous")}</button>
@@ -364,6 +382,8 @@ export function createUi(root: HTMLElement): void {
               <span class="led led-connect" data-testid="connect-led" data-state="disconnected" aria-hidden="true"></span>
               <button type="button" class="rubber-key connect-key" data-testid="connect-button">Connect devices</button>
               <button type="button" class="rubber-key connect-key" data-testid="retry-button" hidden>Retry</button>
+              <button type="button" class="rubber-key connect-key info-key" data-testid="info-button" aria-label="Info: metadata for the playing song">Info</button>
+            </div>
             </div>
           </div>
         </div>
@@ -671,6 +691,9 @@ export function createUi(root: HTMLElement): void {
   )!;
   function setStatus(message: string): void {
     statusRegion.textContent = message;
+    // The line is clipped to one row; the title keeps the full text readable.
+    if (message) statusRegion.title = message;
+    else statusRegion.removeAttribute("title");
   }
 
   function isFirefox(): boolean {
@@ -1261,6 +1284,15 @@ export function createUi(root: HTMLElement): void {
   }
 
   metadataClose.addEventListener("click", () => metadataDialog.close());
+
+  // Info key (T22): the playing or paused song's metadata; a no-op otherwise.
+  root
+    .querySelector<HTMLButtonElement>('[data-testid="info-button"]')!
+    .addEventListener("click", () => {
+      if (player.state === "stopped") return;
+      const current = player.currentEntry();
+      if (current !== null) void openMetadata(current.id);
+    });
   metadataDialog.addEventListener("click", (event) => {
     // A click on the backdrop targets the dialog itself; clicks on the panel
     // bubble from a child.
@@ -1893,8 +1925,8 @@ export function createUi(root: HTMLElement): void {
         const count = midi.listOutputs().length;
         parts.push(
           count > 0
-            ? `Connected - ${count} MIDI output${count === 1 ? "" : "s"} found.`
-            : "Connected - no MIDI outputs found yet.",
+            ? "Connected."
+            : "Connected, no MIDI outputs.",
         );
       } else {
         parts.push("MIDI access denied or cancelled.");
@@ -1947,7 +1979,7 @@ export function createUi(root: HTMLElement): void {
       midi.clear();
       synth.select();
       if (player.state !== "stopped") player.stop();
-      setStatus("Built-in synth ready.");
+      setStatus("SpessaSynth ready.");
     } catch (error) {
       synth.deselect();
       const detail = error instanceof Error ? error.message : String(error);
@@ -2004,8 +2036,8 @@ export function createUi(root: HTMLElement): void {
   function setQuickstartExpanded(expand: boolean, persist: boolean): void {
     quickstartToggle.setAttribute("aria-expanded", String(expand));
     quickstartToggle.textContent = expand
-      ? "Hide quick start"
-      : "Show quick start";
+      ? "Hide info"
+      : "Show info";
     quickstartBody.hidden = !expand;
     if (!persist) return;
     try {

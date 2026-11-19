@@ -363,3 +363,108 @@ test.describe('T20 — track metadata titles and viewer', () => {
     await page.getByTestId('metadata-close').click();
   });
 });
+
+test.describe('T22 — faceplate and Info panel polish', () => {
+  test('the Info key opens the playing song\'s metadata and is a no-op when stopped', async ({
+    page,
+  }) => {
+    await setup(page);
+    await addFiles(page, [japaneseFile()]);
+    await expect(rowName(page)).toHaveText(titleOfJapaneseFile);
+
+    const info = page.getByTestId('info-button');
+    await expect(info).toHaveText('Info');
+    // Nothing playing: the key does nothing.
+    await info.click();
+    await expect(dialog(page)).toBeHidden();
+
+    await page.getByTestId('play-button').click();
+    await expect(page.getByTestId('playback-state')).toHaveAttribute('data-state', 'playing');
+    await info.click();
+    await expect(dialog(page)).toBeVisible();
+    await expect(page.locator('#metadata-title')).toHaveText(titleOfJapaneseFile);
+    await expect(page.getByTestId('metadata-filename')).toHaveText('bgaregga1.mid');
+    await page.getByTestId('metadata-close').click();
+    await expect(dialog(page)).toBeHidden();
+
+    // Paused still counts as the current song.
+    await page.getByTestId('play-button').click();
+    await expect(page.getByTestId('playback-state')).toHaveAttribute('data-state', 'paused');
+    await info.click();
+    await expect(dialog(page)).toBeVisible();
+    await page.getByTestId('metadata-close').click();
+
+    await page.getByTestId('stop-button').click();
+    await info.click();
+    await expect(dialog(page)).toBeHidden();
+  });
+
+  test('the Info key sits right of Connect devices, flush with Panic', async ({ page }) => {
+    await setup(page);
+    const [info, panic, connect] = await Promise.all([
+      page.getByTestId('info-button').boundingBox(),
+      page.getByTestId('panic-button').boundingBox(),
+      page.getByTestId('connect-button').boundingBox(),
+    ]);
+    expect(Math.abs(info!.x + info!.width - (panic!.x + panic!.width))).toBeLessThan(1);
+    expect(info!.x).toBeGreaterThan(connect!.x + connect!.width);
+    expect(Math.abs(info!.y - connect!.y)).toBeLessThan(1);
+  });
+
+  test('the status line stays on one line and ellipsizes long messages', async ({ page }) => {
+    await setup(page);
+    const status = page.getByTestId('status-region');
+    await expect(status).toHaveText('Connected. Microphone access granted.');
+    const style = await status.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return [cs.whiteSpace, cs.textOverflow, cs.overflow];
+    });
+    expect(style).toEqual(['nowrap', 'ellipsis', 'hidden']);
+
+    const long = Array.from({ length: 12 }, (_, i) => `not-a-midi-file-${i}.txt`);
+    await page.getByTestId('file-input').setInputFiles(
+      long.map((name) => ({
+        name,
+        mimeType: 'text/plain',
+        buffer: nodeBuffer.from(new Uint8Array([1])) as never,
+      })),
+    );
+    await expect(status).toContainText('Rejected 12 files');
+    await expect(status).toHaveAttribute('title', /not-a-midi-file-11\.txt/);
+    const { lineHeight, height, clipped } = await status.evaluate((el) => ({
+      lineHeight: parseFloat(getComputedStyle(el).lineHeight),
+      height: el.getBoundingClientRect().height,
+      clipped: el.scrollWidth > el.clientWidth,
+    }));
+    expect(clipped).toBe(true);
+    expect(height).toBeLessThan(lineHeight * 1.5);
+  });
+
+  test('the Info panel credits the player and links to GitHub', async ({ page }) => {
+    await setup(page);
+    await expect(page.locator('#quickstart-heading')).toHaveText('Info');
+    await expect(page.getByTestId('quickstart-toggle')).toHaveText('Hide info');
+
+    const credit = page.getByTestId('player-credit');
+    await expect(credit).toHaveText('Player by Trevor Wilson');
+    const lcdCredit = page.locator('.font-credit', { hasText: 'LCD font' });
+    expect((await credit.boundingBox())!.y).toBeLessThan((await lcdCredit.boundingBox())!.y);
+
+    const shortcutsSize = await page
+      .getByTestId('quickstart-shortcuts')
+      .evaluate((el) => getComputedStyle(el).fontSize);
+    const howToSize = await page.getByTestId('how-to').evaluate((el) => getComputedStyle(el).fontSize);
+    expect(shortcutsSize).toBe(howToSize);
+
+    const github = page.getByTestId('github-link');
+    await expect(github).toHaveAttribute('href', 'https://github.com/wilsontr/external-midi-player');
+    await expect(github).toHaveAccessibleName('Source on GitHub');
+    const [link, panel] = await Promise.all([
+      github.boundingBox(),
+      page.getByTestId('quickstart').boundingBox(),
+    ]);
+    // Lower-right corner of the panel.
+    expect(link!.x + link!.width).toBeGreaterThan(panel!.x + panel!.width - 40);
+    expect(link!.y + link!.height).toBeGreaterThan(panel!.y + panel!.height - 40);
+  });
+});

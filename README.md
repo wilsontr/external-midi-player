@@ -179,8 +179,14 @@ origin stays cleared, exactly as locally.
   — survives a reload instead of resurrecting the sample; files added while it
   is still downloading win, and a missing asset reports one status line and
   leaves the player empty but usable.
-- **Built-in synth (T7):** the MIDI output picker also offers **Built-in
-  synth**, which plays through SpessaSynth inside the page and needs no
+- **Info key and panel (T22):** the **Info** key right of Connect devices
+  opens the metadata viewer for the playing or paused song (it does nothing
+  when stopped). The panel above the rack is headed **Info**, credits the
+  player and the LCD font, and links to the GitHub repository. The LCD status
+  line is a single line; a long message ellipsizes and its full text is in the
+  line's tooltip.
+- **Built-in synth (T7):** the MIDI output picker also offers **SpessaSynth
+  (built-in)**, which plays through SpessaSynth inside the page and needs no
   hardware or permission — it is selectable before Connect devices is pressed.
   Picking it loads the engine and the bundled GeneralUser GS SoundFont (about
   8.4 MB, fetched once) and only then selects it, so Play can never start

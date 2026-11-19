@@ -29,7 +29,7 @@ import processorUrl from "spessasynth_lib/dist/spessasynth_processor.min.js?url"
 import soundBankUrl from "./assets/GeneralUserGS.sf3?url";
 
 export const SYNTH_OUTPUT_ID = "builtin-synth";
-export const SYNTH_OUTPUT_NAME = "Built-in synth";
+export const SYNTH_OUTPUT_NAME = "SpessaSynth (built-in)";
 
 /** The part of the synthesizer the MIDI adapter needs (injectable for tests). */
 export interface ScheduledMidiSink {

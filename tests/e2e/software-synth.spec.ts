@@ -94,7 +94,7 @@ const picker = (page: Page) => page.getByTestId('output-picker');
 
 async function selectSynth(page: Page): Promise<void> {
   await picker(page).selectOption('builtin-synth');
-  await expect(status(page)).toContainText('Built-in synth ready', {
+  await expect(status(page)).toContainText('SpessaSynth ready', {
     timeout: 30_000,
   });
 }
@@ -146,7 +146,7 @@ test.describe('T7 — built-in software synth', () => {
     // Loading is one-off: switching away and back reuses the engine.
     await picker(page).selectOption('');
     await picker(page).selectOption('builtin-synth');
-    await expect(status(page)).toContainText('Built-in synth ready');
+    await expect(status(page)).toContainText('SpessaSynth ready');
     expect(banks).toHaveLength(1);
   });
 

@@ -63,8 +63,9 @@ Rules:
 | T19 | [T19-ableton-volume-knob-drag.md](T19-ableton-volume-knob-drag.md) | After the MVP | 0.5 day | done |
 | T20 | [T20-track-metadata-titles-and-viewer.md](T20-track-metadata-titles-and-viewer.md) | After the MVP | 1–1.5 days | done |
 | T21 | [T21-live-channel-note-activity.md](T21-live-channel-note-activity.md) | After the MVP | 0.5–1 day | done |
+| T22 | [T22-faceplate-info-polish.md](T22-faceplate-info-polish.md) | After the MVP | 0.25 day | done |
 
-Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8, T10, T15, T17, T18; R3 → T2, T3, T8, T9, T10, T12, T15, T16, T17, T18, T20, T21; R4 → T1; R5 → T2, T5, T7, T13, T14; R6, R7 → T3, T5, T8; R8 → T2; R9 → T4, T8, T15; R10 → T4, T8, T15, T19; R11 → T4, T5; R12 → T3, T8, T15; R13 → T1, T3, T4, T10, T12, T20.
+Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8, T10, T15, T17, T18; R3 → T2, T3, T8, T9, T10, T12, T15, T16, T17, T18, T20, T21, T22; R4 → T1; R5 → T2, T5, T7, T13, T14; R6, R7 → T3, T5, T8; R8 → T2; R9 → T4, T8, T15; R10 → T4, T8, T15, T19; R11 → T4, T5; R12 → T3, T8, T15; R13 → T1, T3, T4, T10, T12, T20, T22.
 
 T6 is a delivery task: it carries no new functional requirement and exercises R1–R13 against the production HTTPS origin. It splits the deploy half out of milestone 5 so the GitHub Pages + CI work can be reviewed on its own.
 
@@ -83,6 +84,8 @@ T12 is a post-MVP first-run convenience: it ships one small General MIDI file an
 T20 is a post-MVP metadata task: it reads the SMF `Track Name`, `Text Event` and `Copyright Notice` metas, decodes them as UTF-8, Shift_JIS, EUC-JP, ISO-2022-JP or Windows-1252, uses a usable `Track Name` as the displayed song title, and adds a per-row viewer that lists all three fields on an LCD-style dialog. It cites R3 and R13; the file name remains the identity for persistence and M3U paths, and playback timing is untouched.
 
 T21 is a post-MVP presentation add-on: the 16-part strip lights each channel while it has a note sounding (held or sustained, with a short minimum lit time), follows playback and seeks, and clears on pause, stop and track changes. It adds no new R-ID and cites R3; activity is derived from the playback parse, so nothing is stored and no timer is added. It also fixes the scheduler's note-on-velocity-0 tracking so both notions of "sounding" agree.
+
+T22 is a post-MVP presentation polish: the built-in synth is listed as "SpessaSynth (built-in)", the LCD status line is one ellipsized line, an Info key next to Connect devices opens the playing song's metadata, and the Quick start panel becomes "Info" with a player credit and a GitHub link. It adds no new R-ID and changes no playback behaviour.
 
 T19 is a post-MVP interaction refinement: the monitor volume knob changes on a relative vertical drag (up increases, down decreases, Shift for fine steps) like a DAW knob, instead of the native horizontal range drag under the cap. It cites R10, keeps the range input for keyboard and assistive technology, and changes no stored data or audio behaviour.
 

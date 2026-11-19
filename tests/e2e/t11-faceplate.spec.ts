@@ -478,12 +478,12 @@ test.describe("T11 — half-rack faceplate", () => {
     await expect(page.getByTestId("header")).not.toContainText("Shortcuts");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
-    await expect(toggle).toHaveText("Show quick start");
+    await expect(toggle).toHaveText("Show info");
     await expect(page.getByTestId("how-to")).toBeHidden();
     await expect(page.getByTestId("quickstart-shortcuts")).toBeHidden();
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
-    await expect(toggle).toHaveText("Hide quick start");
+    await expect(toggle).toHaveText("Hide info");
     await expect(page.getByTestId("how-to")).toBeVisible();
     await expect(page.getByTestId("quickstart-shortcuts")).toBeVisible();
   });
@@ -509,7 +509,7 @@ test.describe("T11 — half-rack faceplate", () => {
 
     await page.reload();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
-    await expect(toggle).toHaveText("Show quick start");
+    await expect(toggle).toHaveText("Show info");
     await expect(howTo).toBeHidden();
 
     await toggle.click();
@@ -521,7 +521,7 @@ test.describe("T11 — half-rack faceplate", () => {
 
     await page.reload();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
-    await expect(toggle).toHaveText("Hide quick start");
+    await expect(toggle).toHaveText("Hide info");
     await expect(howTo).toBeVisible();
   });
 

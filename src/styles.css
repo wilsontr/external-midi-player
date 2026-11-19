@@ -440,10 +440,13 @@ body {
   min-height: 1.35em;
 }
 
+/* One line only (T22): a long message ellipsizes; its title holds the rest. */
 .lcd-status {
   margin: 6px 0 0;
   font-size: 16px;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .lcd-songs {
@@ -676,12 +679,26 @@ button:disabled {
   gap: 4px;
 }
 
+/* Keypad and connect row share one shrink-to-fit block so the Info key's
+   right edge lands on the Panic key's right edge (T22). */
+.transport-block {
+  display: flex;
+  flex-direction: column;
+  align-self: flex-start;
+  gap: 10px;
+  max-width: 100%;
+  margin-top: auto;
+}
+
 .connect-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: auto;
+}
+
+.info-key {
+  margin-left: auto;
 }
 
 .connect-key {
@@ -1273,11 +1290,43 @@ button:disabled {
 
 .quickstart-shortcuts {
   margin: 10px 0 0;
+  font-size: inherit;
   overflow-wrap: anywhere;
 }
 
 .quickstart .notice {
   font-size: inherit;
+}
+
+/* Credits on the left, the GitHub mark in the lower-right corner. */
+.info-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.info-credits {
+  min-width: 0;
+}
+
+.info-credits .font-credit + .font-credit {
+  margin-top: 0.25em;
+}
+
+.github-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--silk-dim);
+}
+
+.github-link:hover,
+.github-link:focus-visible {
+  color: var(--silk);
+}
+
+.github-icon {
+  display: block;
 }
 
 .font-credit {
