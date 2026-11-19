@@ -60,8 +60,9 @@ Rules:
 | T16 | [T16-live-instruments-card.md](T16-live-instruments-card.md) | After the MVP | 0.5 day | done |
 | T17 | [T17-slim-playlist-rows.md](T17-slim-playlist-rows.md) | After the MVP | 0.25 day | done |
 | T18 | [T18-selection-playing-markers.md](T18-selection-playing-markers.md) | After the MVP | 0.25 day | done |
+| T19 | [T19-ableton-volume-knob-drag.md](T19-ableton-volume-knob-drag.md) | After the MVP | 0.5 day | pending |
 
-Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8, T10, T15, T17, T18; R3 → T2, T3, T8, T9, T10, T12, T15, T16, T17, T18; R4 → T1; R5 → T2, T5, T7, T13, T14; R6, R7 → T3, T5, T8; R8 → T2; R9, R10 → T4, T8, T15; R11 → T4, T5; R12 → T3, T8, T15; R13 → T1, T3, T4, T10, T12.
+Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8, T10, T15, T17, T18; R3 → T2, T3, T8, T9, T10, T12, T15, T16, T17, T18; R4 → T1; R5 → T2, T5, T7, T13, T14; R6, R7 → T3, T5, T8; R8 → T2; R9 → T4, T8, T15; R10 → T4, T8, T15, T19; R11 → T4, T5; R12 → T3, T8, T15; R13 → T1, T3, T4, T10, T12.
 
 T6 is a delivery task: it carries no new functional requirement and exercises R1–R13 against the production HTTPS origin. It splits the deploy half out of milestone 5 so the GitHub Pages + CI work can be reviewed on its own.
 
@@ -76,6 +77,8 @@ T10 is a post-MVP playlist interchange feature: it saves the current playlist as
 T11 is a post-MVP presentation task: it reskins the player as a 90s half-rack module (amber dot-matrix LCDs, rubber keys with LEDs, Helvetica Neue silkscreen labels) and regroups the existing panels into two rack units. It adds no new R-ID and changes no playback behaviour; every control, test ID and accessible name stays. Live per-channel note activity in the 16-part strip is deliberately left for a follow-up.
 
 T12 is a post-MVP first-run convenience: it ships one small General MIDI file and seeds the playlist with it only when the playlist store has never been written, so a new visitor can press Play before selecting any files. It adds no new R-ID and reuses the ordinary add/persist path, so Clear playlist stays clear across reloads and M3U load/save semantics are unchanged.
+
+T19 is a post-MVP interaction refinement: the monitor volume knob changes on a relative vertical drag (up increases, down decreases, Shift for fine steps) like a DAW knob, instead of the native horizontal range drag under the cap. It cites R10, keeps the range input for keyboard and assistive technology, and changes no stored data or audio behaviour.
 
 T18 is a post-MVP playlist presentation fix: selection is a dotted outline and playing is the inverted highlight, both shown together when a row is selected and playing; focus moved to the focused control so it no longer looks like selection. It adds no new R-ID and changes nothing about which entry plays.
 

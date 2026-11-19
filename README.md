@@ -8,8 +8,9 @@ Vite + TypeScript app, no backend.
 
 - Design (source of truth):
   [`Browser MIDI Playlist Player — MVP Design.md`](docs/Browser%20MIDI%20Playlist%20Player%20%E2%80%94%20MVP%20Design.md)
-- Milestones: [`tasks/`](tasks/README.md) — T1–T6 and T8–T18 are complete;
-  T7 (software synth output) and T12 (first-run sample song) are pending.
+- Milestones: [`tasks/`](tasks/README.md) — T1–T6, T8–T11 and T13–T18 are
+  complete; T7 (software synth output), T12 (first-run sample song) and T19
+  (Ableton-style volume knob drag) are pending.
 
 ## Quickstart
 
