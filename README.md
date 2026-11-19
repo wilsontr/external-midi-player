@@ -123,8 +123,9 @@ origin stays cleared, exactly as locally.
 - **Track metadata (T20):** the song list, LCD title, Instruments caption,
   row-key names and the M3U `#EXTINF` title use the file's `Track Name` when it
   has a usable one (trimmed, non-empty, not `untitled`); otherwise they keep
-  the file name without its extension. Track 0's name wins, and a title on
-  track 1 is used only when track 0 has no `Track Name` event at all. The
+  the file name without its extension. Only the first track's (`Track 1` in
+  the viewer) name may name the song; if it has no usable `Track Name`, every
+  later track is ignored and the file name is used. The
   `Track Name`, `Text Event` and `Copyright Notice` values are decoded per
   value as UTF-8, ISO-2022-JP, Shift_JIS, EUC-JP or Windows-1252, so
   Stanford-style Text Events and Japanese titles read correctly. Every healthy

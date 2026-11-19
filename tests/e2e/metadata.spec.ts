@@ -151,7 +151,7 @@ test.describe('T20 — track metadata titles and viewer', () => {
     await expect(metadataButton(page)).toBeFocused();
   });
 
-  test('falls back to the filename for untitled and to track 1 when track 0 has no name', async ({
+  test('uses only the first track\'s name and otherwise keeps the filename', async ({
     page,
   }) => {
     await setup(page);
@@ -174,7 +174,8 @@ test.describe('T20 — track metadata titles and viewer', () => {
     ]);
 
     await expect(rowName(page, 0)).toHaveText('green-brinstar');
-    await expect(rowName(page, 1)).toHaveText('Chemical Plant');
+    // Track 1 has no Track Name, so the later "Chemical Plant" is ignored.
+    await expect(rowName(page, 1)).toHaveText('sonic-2');
 
     // The viewer still shows the literal "untitled" value; only the title falls back.
     await metadataButton(page, 0).click();

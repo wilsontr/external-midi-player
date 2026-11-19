@@ -447,14 +447,15 @@ describe('song metadata (T20)', () => {
     expect(titleFor([[name(ascii('untitled'))], [name(ascii('Real Title'))]])).toBeNull();
   });
 
-  it('falls back to the first named track only when track 0 has no Track Name event', () => {
+  it('ignores every track after the first when the first has no Track Name', () => {
     const bytes = buildMidi(1, 480, [
       [{ d: 0, noteOn: [0, 60, 100] }],
       [name(ascii('Chemical Plant')), { d: 0, noteOff: [0, 60, 0] }],
       [name(ascii('Sonic the Hedgehog 2')), { d: 0, noteOn: [1, 60, 100] }],
     ]);
     const song = parseMidiData(bytes);
-    expect(song.metadata.title).toBe('Chemical Plant');
+    expect(song.metadata.title).toBeNull();
+    // The viewer still lists every track's Track Name, including the ignored ones.
     expect(song.metadata.trackNames).toEqual([
       { track: 1, text: 'Chemical Plant' },
       { track: 2, text: 'Sonic the Hedgehog 2' },

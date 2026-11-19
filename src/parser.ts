@@ -264,18 +264,14 @@ export function decodeMidiText(raw: string | Uint8Array): DecodedMidiText {
   };
 }
 
-/** The title a Track Name list yields; see the track-0 rule in `collectEvents`. */
-function resolveMetadataTitle(
-  trackNames: MidiTextValue[],
-  trackZeroNamed: boolean,
-): string | null {
-  // If track 0 carries a Track Name, that is the sequence name. An unusable
-  // one (`untitled`) means "no title", never an instrument track's name.
-  // If track 0 has none at all, use the first usable name in file order.
-  const candidates = trackZeroNamed
-    ? trackNames.filter((value) => value.track === 0)
-    : trackNames;
-  for (const value of candidates) {
+/**
+ * The title a Track Name list yields. Only the first track (MTrk index 0, UI
+ * "Track 1") may name the song; if it has no usable name, later tracks are
+ * ignored and the caller keeps the file name.
+ */
+function resolveMetadataTitle(trackNames: MidiTextValue[]): string | null {
+  for (const value of trackNames) {
+    if (value.track !== 0) continue;
     const title = value.text.replace(/\s+/g, ' ').trim();
     if (title !== '' && title.toLowerCase() !== 'untitled') return title;
   }
@@ -593,10 +589,6 @@ function collectEvents(raw: MidiData): {
   const trackNames: MidiTextValue[] = [];
   const textEvents: MidiTextValue[] = [];
   const copyrights: MidiTextValue[] = [];
-  // Track 0's Track Name is the sequence name. A present-but-unusable one
-  // must suppress the track-1 fallback, so remember the event itself rather
-  // than only the non-empty values retained for display.
-  let trackZeroNamed = false;
 
   const textValue = (track: number, rawText: string): MidiTextValue | null => {
     const decoded = decodeMidiText(rawText);
@@ -632,7 +624,6 @@ function collectEvents(raw: MidiData): {
           tempos.push({ ticks, usPerBeat: e.microsecondsPerBeat });
           break;
         case 'trackName': {
-          if (trackIndex === 0) trackZeroNamed = true;
           const value = textValue(trackIndex, e.text);
           if (value !== null) trackNames.push(value);
           break;
@@ -653,7 +644,7 @@ function collectEvents(raw: MidiData): {
     }
   }
 
-  const title = resolveMetadataTitle(trackNames, trackZeroNamed);
+  const title = resolveMetadataTitle(trackNames);
   return {
     events,
     tempos,
