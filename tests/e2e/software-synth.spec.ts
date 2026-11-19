@@ -182,6 +182,40 @@ test.describe('T7 — built-in software synth', () => {
     );
   });
 
+  test('connecting devices hands playback back to the remembered hardware', async ({
+    page,
+  }) => {
+    // A profile that used the Juno before: Connect reselects it by name.
+    await page.addInitScript(() => {
+      localStorage.setItem('external-midi-player.selected-output', 'Juno-106');
+      // The mic is not part of this test; deny it so Connect cannot hang on a
+      // permission prompt while the real AudioContext stays available.
+      Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+        configurable: true,
+        value: () => Promise.reject(new DOMException('denied', 'NotAllowedError')),
+      });
+    });
+    await setup(page);
+    await selectSynth(page);
+
+    await page.getByTestId('connect-button').click();
+    // The picker shows the hardware again...
+    await expect(picker(page)).toHaveValue('o1');
+    await expect(page.getByTestId('connect-led')).toHaveAttribute(
+      'data-state',
+      'connected',
+    );
+
+    // ...and the notes must go there, not to the synth that was playing before.
+    await dropFile(page);
+    await pressTransport(page, 'play-button');
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__mockMidi.sent.length), {
+        timeout: 10_000,
+      })
+      .toBeGreaterThan(0);
+  });
+
   test('Panic silences the synth like it silences hardware', async ({ page }) => {
     await setup(page);
     await selectSynth(page);

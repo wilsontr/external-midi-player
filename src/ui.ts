@@ -569,7 +569,13 @@ export function createUi(root: HTMLElement): void {
     onStatus: setStatus,
     onOutputsChanged: () => renderOutputs(),
     onSelectionChange: (id) => {
-      outputPicker.value = id ?? "";
+      // A hardware output taking over — picked, or the remembered device
+      // reselected by Connect devices — releases the built-in synth. Without
+      // this the picker showed the device while `selectedOutput` kept
+      // preferring the synth, so playback went somewhere the UI did not show.
+      if (id !== null) synth.deselect();
+      outputPicker.value = synth.selectedId() ?? id ?? "";
+      renderConnectionLed();
       // Switching outputs mid-song: release on the old one, don't carry over.
       if (id !== null && player.state !== "stopped") player.stop();
     },

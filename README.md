@@ -155,7 +155,9 @@ origin stays cleared, exactly as locally.
   against a half-loaded instrument; the status line reports loading and
   failure. It is an ordinary output otherwise: the same scheduler, pause, stop,
   next/previous, seek and Panic, and only one output (synth or hardware) is
-  selected at a time. The bank is not remembered across reloads.
+  selected at a time: Connect devices reselecting your remembered hardware
+  hands playback back to it, so the picker always shows what is playing. The
+  bank is not remembered across reloads.
 - **Song start (T13, T14):** a fresh start sends the file's tick-0 setup
   (program and bank changes, controllers, pitch bend, channel pressure)
   before the clock starts, spread across a 250 ms start lead but never faster
