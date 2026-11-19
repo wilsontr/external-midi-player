@@ -258,22 +258,43 @@ test.describe('T3 — transport and playlist', () => {
     await expect(page.getByTestId('entry-duration')).toHaveText('0:20');
     await page.getByTestId('play-button').click();
     await expect(page.getByTestId('playback-state')).toHaveText('Playing');
+    await page.bringToFront();
     await page.waitForTimeout(500);
 
-    const updates = await page.evaluate(
+    const startText = await page.getByTestId('time-display').textContent();
+
+    /*
+     * The elapsed readout only changes 10 times a second (its finest unit is
+     * 0.1 s), so counting its mutations sits exactly on the R12 threshold and
+     * flakes on one dropped tick. The timeline fill is redrawn on every 50 ms
+     * progress update, so measure that rate over 1.5 s and divide by the real
+     * elapsed time; a 1 Hz or paused loop still fails, while ordinary CI
+     * scheduling jitter no longer does.
+     */
+    const { updates, seconds } = await page.evaluate(
       () =>
-        new Promise<number>((resolve) => {
-          const display = document.querySelector('[data-testid="time-display"]')!;
-          let count = 0;
-          const observer = new MutationObserver((records) => (count += records.length));
-          observer.observe(display, { childList: true, characterData: true, subtree: true });
+        new Promise<{ updates: number; seconds: number }>((resolve) => {
+          const fill = document.querySelector('[data-testid="timeline-fill"]') as HTMLElement;
+          let updates = 0;
+          let lastWidth = fill.style.width;
+          const observer = new MutationObserver(() => {
+            if (fill.style.width !== lastWidth) {
+              lastWidth = fill.style.width;
+              updates += 1;
+            }
+          });
+          observer.observe(fill, { attributes: true, attributeFilter: ['style'] });
+          const started = performance.now();
           setTimeout(() => {
             observer.disconnect();
-            resolve(count);
-          }, 1000);
+            resolve({ updates, seconds: (performance.now() - started) / 1000 });
+          }, 1500);
         }),
     );
-    expect(updates).toBeGreaterThanOrEqual(10);
+
+    expect(updates / seconds).toBeGreaterThanOrEqual(10);
+    // The elapsed readout advanced during the sample and still knows the total.
+    expect(await page.getByTestId('time-display').textContent()).not.toBe(startText);
     await expect(page.getByTestId('time-display')).toContainText('/ 0:20');
   });
 
