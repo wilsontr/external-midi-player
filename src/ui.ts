@@ -192,6 +192,7 @@ export function createUi(root: HTMLElement): void {
             <li>Allow MIDI and microphone access when the browser asks.</li>
             <li>Select your MIDI output.</li>
             <li>Select your audio input and output.</li>
+            <li>Disable the MUTE button (on by default to prevent feedback).</li>
             <li>Load your MIDI files and listen.</li>
           </ol>
           <p class="silk-hint quickstart-shortcuts" data-testid="quickstart-shortcuts">
