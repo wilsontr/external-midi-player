@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type FileChooser, type Page } from '@playwright/test';
 import { mockDevices } from './mocks';
 
 const JUNO = { id: 'o1', name: 'Juno-106', manufacturer: 'Roland' };
@@ -58,6 +58,11 @@ const song = (name: string, seconds = 5, setup: number[] = []): TestFile => ({
 async function setup(page: Page): Promise<void> {
   await mockDevices(page, { outputs: [JUNO] });
   await page.goto('/');
+  armFileChoosers(page);
+  // Settle the pixel LCD font swap before interacting: it reflows the front
+  // unit, and a click split across that reflow lands on whatever moved under
+  // the pointer.
+  await page.evaluate(() => document.fonts.ready);
   await page.getByTestId('connect-button').click();
   await page.getByTestId('output-picker').selectOption('o1');
 }
@@ -73,6 +78,31 @@ async function dropFiles(page: Page, files: TestFile[]): Promise<void> {
 }
 
 /**
+ * File-chooser interception is armed once per page, before the first click.
+ * Registering a `waitForEvent` and clicking in the same turn races the
+ * browser-side listener: when the listener is not in place yet, Firefox opens
+ * its native dialog and Playwright never sees the event, which then blocks
+ * every later chooser on that page. One persistent listener fixes the race and
+ * queues choosers for the helper below.
+ */
+const chooserQueues = new WeakMap<Page, FileChooser[]>();
+
+function armFileChoosers(page: Page): void {
+  const queue: FileChooser[] = [];
+  chooserQueues.set(page, queue);
+  page.on('filechooser', (chooser) => queue.push(chooser));
+}
+
+async function openChooser(page: Page, buttonTestId: string): Promise<FileChooser> {
+  const queue = chooserQueues.get(page);
+  if (!queue) throw new Error('File-chooser listener was not armed for this page');
+  const before = queue.length;
+  await page.getByTestId(buttonTestId).click();
+  await expect.poll(() => queue.length, { timeout: 5_000 }).toBeGreaterThan(before);
+  return queue[before]!;
+}
+
+/**
  * Drives a real file chooser: the "+" and "Load files" buttons must open one.
  * Node's Buffer is read off `globalThis` so this test file needs no @types/node.
  */
@@ -81,9 +111,7 @@ const nodeBuffer = (
 ).Buffer;
 
 async function pickFiles(page: Page, buttonTestId: string, files: TestFile[]): Promise<void> {
-  const chooserPromise = page.waitForEvent('filechooser');
-  await page.getByTestId(buttonTestId).click();
-  const chooser = await chooserPromise;
+  const chooser = await openChooser(page, buttonTestId);
   await chooser.setFiles(
     files.map((f) => ({
       name: f.name,
