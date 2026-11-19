@@ -48,6 +48,16 @@ const QUICKSTART_STORAGE_KEY = "external-midi-player.quickstart-expanded";
 const LADDER_SEGMENTS = 11;
 
 /**
+ * Vertical pointer travel, in CSS pixels, that covers the knob's whole 0–100
+ * range. Roughly the knob's own visual height, so the gesture feels like the
+ * hardware it represents (T19).
+ */
+const KNOB_TRAVEL_PX = 120;
+
+/** Shift-drag trims at a quarter speed for fine level setting (T19). */
+const KNOB_FINE_SCALE = 0.25;
+
+/**
  * Transport icons are inline SVG: the LCD font has no play/stop glyphs, and a
  * text glyph would fall back to a different typeface mid-key.
  */
@@ -470,6 +480,7 @@ export function createUi(root: HTMLElement): void {
   };
   const clipLeds = [...root.querySelectorAll<HTMLElement>(".led-clip")];
   const knob = root.querySelector<HTMLElement>('[data-testid="volume-knob"]')!;
+  const knobWrap = root.querySelector<HTMLElement>(".knob-wrap")!;
   const muteLed = root.querySelector<HTMLElement>('[data-testid="mute-led"]')!;
   const lcdState = root.querySelector<HTMLElement>(
     '[data-testid="lcd-state"]',
@@ -1516,6 +1527,66 @@ export function createUi(root: HTMLElement): void {
     monitor.setVolume(Number(volumeSlider.value) / 100);
     renderMonitorControls();
   });
+
+  /**
+   * T19: the knob is a relative vertical drag — up increases, down decreases —
+   * with the change taken from the pointer delta, never from the pointer's
+   * position. The range input stays the accessible control and the single
+   * source of truth; only its native pointer drag is replaced (the input is
+   * `pointer-events: none`, so the gesture lands on `.knob-wrap`). The value is
+   * accumulated separately from the input so sub-step movement still adds up:
+   * reading the rounded percentage back each move would dead-zone slow drags.
+   */
+  let knobDrag: { pointerId: number; lastY: number; value: number } | null =
+    null;
+
+  function endKnobDrag(event: PointerEvent): void {
+    if (knobDrag === null || event.pointerId !== knobDrag.pointerId) return;
+    knobDrag = null;
+    delete knobWrap.dataset.dragging;
+    document.body.classList.remove("knob-dragging");
+    if (knobWrap.hasPointerCapture(event.pointerId))
+      knobWrap.releasePointerCapture(event.pointerId);
+  }
+
+  knobWrap.addEventListener("pointerdown", (event) => {
+    // Primary button / first touch only: a right-click is not a drag, and a
+    // second pointer must never take over a drag that is already in progress.
+    if (event.button !== 0 || knobDrag !== null) return;
+    knobDrag = {
+      pointerId: event.pointerId,
+      lastY: event.clientY,
+      value: Number(volumeSlider.value),
+    };
+    // Capture keeps the gesture tracking once the finger leaves the knob.
+    knobWrap.setPointerCapture(event.pointerId);
+    knobWrap.dataset.dragging = "true";
+    document.body.classList.add("knob-dragging");
+    // The input can no longer be clicked through (`pointer-events: none`), so
+    // keep the click-to-focus behaviour of the control the knob replaces.
+    volumeSlider.focus({ preventScroll: true });
+    // No text selection, and no scroll from the pointer gesture itself.
+    event.preventDefault();
+  });
+
+  knobWrap.addEventListener("pointermove", (event) => {
+    if (knobDrag === null || event.pointerId !== knobDrag.pointerId) return;
+    const dy = knobDrag.lastY - event.clientY;
+    if (dy === 0) return;
+    knobDrag.lastY = event.clientY;
+    const scale = event.shiftKey ? KNOB_FINE_SCALE : 1;
+    knobDrag.value = Math.min(
+      100,
+      Math.max(0, knobDrag.value + (dy / KNOB_TRAVEL_PX) * 100 * scale),
+    );
+    volumeSlider.value = String(knobDrag.value);
+    monitor.setVolume(Number(volumeSlider.value) / 100);
+    renderMonitorControls();
+  });
+
+  knobWrap.addEventListener("pointerup", endKnobDrag);
+  knobWrap.addEventListener("pointercancel", endKnobDrag);
+  knobWrap.addEventListener("lostpointercapture", endKnobDrag);
 
   if (!monitor.supported) {
     monitorUnavailable.hidden = false;

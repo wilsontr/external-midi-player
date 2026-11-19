@@ -470,6 +470,15 @@ body {
   width: 64px;
   height: 64px;
   margin: 8px auto 0;
+  cursor: grab;
+  /* T19: the knob owns the pointer gesture, so a touch that starts on it must
+     not also scroll the page. Scoped here, so the rest of the page scrolls. */
+  touch-action: none;
+}
+
+/* Held for the duration of a drag (set from ui.ts). */
+.knob-wrap[data-dragging="true"] {
+  cursor: grabbing;
 }
 
 .knob-input {
@@ -480,11 +489,9 @@ body {
   height: 100%;
   margin: 0;
   opacity: 0;
-  cursor: grab;
-}
-
-.knob-input:active {
-  cursor: grabbing;
+  /* T19: the wrap owns the pointer gesture; the input keeps focus, the keyboard
+     and the accessible name, and `ui.ts` focuses it on pointerdown. */
+  pointer-events: none;
 }
 
 .knob {
@@ -502,6 +509,12 @@ body {
     0 3px 6px var(--shadow),
     inset 0 1px 0 var(--edge-light);
   transform: rotate(calc(var(--turn, 1) * 270deg - 135deg));
+}
+
+/* A drag that leaves the knob must not select page text on the way. */
+body.knob-dragging {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .knob-pointer {

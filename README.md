@@ -8,9 +8,9 @@ Vite + TypeScript app, no backend.
 
 - Design (source of truth):
   [`Browser MIDI Playlist Player — MVP Design.md`](docs/Browser%20MIDI%20Playlist%20Player%20%E2%80%94%20MVP%20Design.md)
-- Milestones: [`tasks/`](tasks/README.md) — T1–T6, T8–T11 and T13–T18 are
-  complete; T7 (software synth output), T12 (first-run sample song) and T19
-  (Ableton-style volume knob drag) are pending.
+- Milestones: [`tasks/`](tasks/README.md) — T1–T6, T8–T11 and T13–T19 are
+  complete; T7 (software synth output) and T12 (first-run sample song) are
+  pending.
 
 ## Quickstart
 
@@ -138,6 +138,15 @@ origin stays cleared, exactly as locally.
 - **Track switches (T8):** switching to a different entry while playing or
   paused sends the full Panic (CC123/120/121 and CC64 = 0 on all 16 channels)
   after the old queue's tail, and the new track starts after the panic.
+- **Volume knob (T19):** the monitor knob is a relative vertical drag — up
+  increases, down decreases, measured from the value at the press, so pressing
+  the knob never jumps the level to the pointer. About 120 px covers the whole
+  0–100 range, the value clamps at both ends, and Shift trims at a quarter
+  speed for fine setting. Dragging outside the knob keeps tracking (pointer
+  capture) and no longer selects text or scrolls the page. The
+  `#monitor-volume` range input remains the control and the single source of
+  truth: clicking the knob focuses it, the arrow/Home/End keys and the focus
+  ring still work, and only its native pointer behaviour is replaced.
 - **Song start (T13, T14):** a fresh start sends the file's tick-0 setup
   (program and bank changes, controllers, pitch bend, channel pressure)
   before the clock starts, spread across a 250 ms start lead but never faster
@@ -173,8 +182,9 @@ The licence covers the font files only, not the application code.
 - The faceplate is a single committed dark theme. Every colour is a `:root`
   token in `src/styles.css`; there are no image assets. If a light skin is
   wanted later, swap the token block.
-- The volume knob is the existing `#monitor-volume` range input made
-  transparent over a CSS-rotated knob — no custom drag code.
+- The volume knob's rotation is pure CSS, driven by `--turn` from the range
+  input. The input stays the accessible control but is pointer-inert (T19), so
+  `.knob-wrap` handles the drag gesture in `ui.ts` instead.
 - The LCD font is served from `public/` (same-origin), so the production CSP
   allows it; `font-src 'self'` is declared explicitly in `vite.config.ts`.
 - `legacy/t11-pre-faceplate/` holds the pre-T11 `ui.ts` and `styles.css` for a

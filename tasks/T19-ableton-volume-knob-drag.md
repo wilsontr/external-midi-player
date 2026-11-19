@@ -2,7 +2,7 @@
 
 - **ID**: T19
 - **Milestone**: After the MVP
-- **Status**: pending
+- **Status**: done
 - **Estimate**: 0.5 day
 - **Depends on**: T11, T15
 - **Modules**: `src/ui.ts`, `src/styles.css`, `tests/e2e/volume-knob.spec.ts`, `tests/e2e/t11-faceplate.spec.ts`, `README.md`
@@ -23,15 +23,15 @@ Make the monitor volume knob behave like a DAW knob: press anywhere on it and dr
 
 ## Acceptance criteria
 
-- [ ] Dragging up increases the volume and dragging down decreases it; the change is relative to the value at press, so a click never jumps the volume to the pointer position.
-- [ ] A full-height drag covers the whole 0–100 range and the value clamps at both ends.
-- [ ] Shift-drag moves in finer steps.
-- [ ] Horizontal movement alone leaves the value unchanged.
-- [ ] A drag that leaves the knob keeps tracking (pointer capture) and ends cleanly on release or `pointercancel`.
-- [ ] Dragging causes no page scroll and no text selection, including at a 360 px touch width.
-- [ ] Keyboard and assistive technology are unchanged: the range input takes focus, the arrow/Home/End keys still adjust the value, `aria-valuetext` updates and the focus ring remains visible.
-- [ ] The knob rotation, the volume readout and the stored volume follow the new interaction; mute, level metering and audio routing are untouched.
-- [ ] Playwright covers the new gestures; `npx vitest run`, `npx playwright test` and `npx tsc --noEmit` pass; docs and index updated.
+- [x] Dragging up increases the volume and dragging down decreases it; the change is relative to the value at press, so a click never jumps the volume to the pointer position.
+- [x] A full-height drag covers the whole 0–100 range and the value clamps at both ends.
+- [x] Shift-drag moves in finer steps.
+- [x] Horizontal movement alone leaves the value unchanged.
+- [x] A drag that leaves the knob keeps tracking (pointer capture) and ends cleanly on release or `pointercancel`.
+- [x] Dragging causes no page scroll and no text selection, including at a 360 px touch width.
+- [x] Keyboard and assistive technology are unchanged: the range input takes focus, the arrow/Home/End keys still adjust the value, `aria-valuetext` updates and the focus ring remains visible.
+- [x] The knob rotation, the volume readout and the stored volume follow the new interaction; mute, level metering and audio routing are untouched.
+- [x] Playwright covers the new gestures; `npx vitest run`, `npx playwright test` and `npx tsc --noEmit` pass; docs and index updated.
 
 ## Notes
 
@@ -41,3 +41,13 @@ Make the monitor volume knob behave like a DAW knob: press anywhere on it and dr
 - **Touch.** `touch-action: none` must be scoped to the knob so the rest of the page still scrolls; a tap (no movement) must stay inert. Pointer capture covers a finger that slides off the knob.
 - **Out of scope.** Double-click/tap to reset to the default level (Ableton's own behaviour differs by device), mouse-wheel adjustment, and mapped MIDI control of the monitor level. Wheel over the rack is page scroll today and stays that way.
 - **No data changes.** Volume is already persisted by name/origin; this ticket changes only how the value is produced, not what is stored or how it is restored.
+
+### Decisions as implemented
+
+- **Pointer ownership.** The range input is `pointer-events: none` and `.knob-wrap` owns the gesture, because a native range drag cannot be reliably suppressed across engines by `preventDefault` alone. To keep click-to-focus, `pointerdown` on the wrap calls `volumeSlider.focus()`; the keyboard, the accessible name (`Volume`, from the `<label for>`) and the focus ring (`.knob-input:focus-visible + .knob`) are unchanged.
+- **Accumulation, not read-back.** The drag keeps its own continuous value and only writes the rounded percentage into the input. Reading the input back each move would dead-zone slow drags: at 120 px for 0–100, one pixel is 0.83 points, which rounds back to the same integer.
+- **Sensitivity.** `KNOB_TRAVEL_PX = 120` (about 1.3 knob heights on the rendered faceplate) and `KNOB_FINE_SCALE = 0.25`, both module constants in `ui.ts` so review feedback tunes one number.
+- **Clamping is immediate.** The accumulated value clamps at 0/100, so reversing a drag at either end responds at once instead of unwinding the overshoot.
+- **Gesture end.** `pointerup`, `pointercancel` and `lostpointercapture` all end the drag; `pointerdown` ignores non-primary buttons and a second pointer, and a release without movement leaves the level untouched.
+- **No selection or scroll.** `touch-action: none` is scoped to `.knob-wrap`, `pointerdown` is `preventDefault`ed, and `body.knob-dragging` (set for the duration) carries `user-select: none` so a drag across the page selects nothing.
+- **Tests.** `tests/e2e/volume-knob.spec.ts` (10 cases, Chromium and Firefox) covers the relative delta and no press-jump, full travel and both clamps, Shift trim, horizontal-only drags, capture past the knob, the secondary button, click-to-focus plus keys and the tab stop, knob rotation/gain/stored volume, and no scroll or selection at 360 px. The T11 faceplate spec keeps the range-input and arrow-key assertions unchanged.

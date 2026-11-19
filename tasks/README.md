@@ -60,7 +60,7 @@ Rules:
 | T16 | [T16-live-instruments-card.md](T16-live-instruments-card.md) | After the MVP | 0.5 day | done |
 | T17 | [T17-slim-playlist-rows.md](T17-slim-playlist-rows.md) | After the MVP | 0.25 day | done |
 | T18 | [T18-selection-playing-markers.md](T18-selection-playing-markers.md) | After the MVP | 0.25 day | done |
-| T19 | [T19-ableton-volume-knob-drag.md](T19-ableton-volume-knob-drag.md) | After the MVP | 0.5 day | pending |
+| T19 | [T19-ableton-volume-knob-drag.md](T19-ableton-volume-knob-drag.md) | After the MVP | 0.5 day | done |
 
 Requirement coverage (per task `Requirements` field): R1, R2 → T3, T8, T10, T15, T17, T18; R3 → T2, T3, T8, T9, T10, T12, T15, T16, T17, T18; R4 → T1; R5 → T2, T5, T7, T13, T14; R6, R7 → T3, T5, T8; R8 → T2; R9 → T4, T8, T15; R10 → T4, T8, T15, T19; R11 → T4, T5; R12 → T3, T8, T15; R13 → T1, T3, T4, T10, T12.
 

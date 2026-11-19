@@ -275,6 +275,7 @@ The MVP is about 4.5 developer-days for one experienced front-end developer, bui
 - Slim playlist rows (T17): drop the per-row up/down keys and the "Ready" text for a wider name, showing `ERR` only on rejected files; reordering stays drag-only (0.25 day).
 - Live instruments card (T16): the part-map rows show the program in effect at the current playback position instead of the file's whole program history, updating as program changes play and following pause/seek (0.5 day).
 - Faceplate refinements (T15): single-click selection vs double-click playback, clear the Panic notice when a song starts, move the audio pickers onto the front unit, delete the audio-routing card and the browser-latency line, widen the keypad gap to fit Panic, and move the shortcut hints into Quick start (0.5 day).
+- DAW-style volume knob (T19): the monitor knob takes a relative vertical drag (up increases, down decreases, Shift for fine steps) from the value at the press, so pressing it no longer jumps the level; the range input keeps the keyboard, the accessible name and the focus ring (0.5 day).
 - Upgrade playlist persistence from `localStorage` to IndexedDB for very large playlists (0.5 day).
 - Tempo change, A–B looping, per-channel mute and remapping (2–4 days).
 - Record the monitored input to WAV (1 day).
