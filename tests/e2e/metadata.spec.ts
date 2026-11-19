@@ -512,7 +512,8 @@ test.describe("T22 — faceplate and Info panel polish", () => {
     await expect(page.getByTestId("quickstart-toggle")).toHaveText("Hide info");
 
     const credit = page.getByTestId("player-credit");
-    await expect(credit).toHaveText("Player by");
+    await expect(credit).toContainText("Player by");
+    await expect(credit.getByRole("link")).toHaveText("Trevor Wilson");
     const lcdCredit = page.locator(".font-credit", { hasText: "LCD font" });
     expect((await credit.boundingBox())!.y).toBeLessThan(
       (await lcdCredit.boundingBox())!.y,

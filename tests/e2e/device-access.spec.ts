@@ -162,15 +162,17 @@ test.describe('T1 — scaffold and device access', () => {
     await mockDevices(page, { outputs: [JUNO] });
     await page.goto('/');
 
-    // The printed Info panel is first: its disclosure button, then the two
-    // font-credit links and the GitHub link. Then unit 1: volume, mute, MIDI output, audio
-    // input/output, transport.
+    // The printed Info panel is first: its disclosure button, then the player
+    // credit, the two LCD-font credit links and the GitHub link. Then unit 1:
+    // volume, mute, MIDI output, audio input/output, transport.
     await page.keyboard.press('Tab');
     await expect(page.getByTestId('quickstart-toggle')).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(page.locator('.font-credit a').first()).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(page.locator('.font-credit a').nth(1)).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(page.locator('.font-credit a').nth(2)).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(page.getByTestId('github-link')).toBeFocused();
     await page.keyboard.press('Tab');
